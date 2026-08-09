@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ModeToggle, type ModeKey } from './ModeToggle'
+import { AssistantMessage } from './AssistantMessage'
+import { MarkdownBody } from './MarkdownBody'
 
 type Props = {
   ipcOk: boolean | null
@@ -126,7 +128,13 @@ export function ChatWorkspace({ ipcOk, onOpenSettings, notice }: Props): React.J
               messages.map((m, i) => (
                 <div key={i} className={`msg msg-${m.role}`}>
                   <div className="msg-role">{ROLE_LABEL[m.role]}</div>
-                  <pre>{m.content}</pre>
+                  {m.role === 'assistant' ? (
+                    <AssistantMessage content={m.content} />
+                  ) : m.role === 'user' ? (
+                    <MarkdownBody content={m.content} />
+                  ) : (
+                    <pre>{m.content}</pre>
+                  )}
                 </div>
               ))
             )}

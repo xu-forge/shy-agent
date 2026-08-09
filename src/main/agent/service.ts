@@ -82,12 +82,19 @@ export async function runAgent(args: RunArgs): Promise<void> {
 
     for await (const chunk of stream) {
       if (ac.signal.aborted) break
-      const messages = (chunk as { agent?: { messages?: Array<{ content?: unknown }> } }).agent
-        ?.messages
+      const messages = (
+        chunk as {
+          agent?: {
+            messages?: Array<{
+              content?: unknown
+              additional_kwargs?: Record<string, unknown>
+            }>
+          }
+        }
+      ).agent?.messages
       if (messages?.length) {
         const last = messages[messages.length - 1]
-        const content =
-          typeof last.content === 'string' ? last.content : JSON.stringify(last.content)
+        const content = normalizeAssistantText(last)
         if (content && content !== finalText) {
           finalText = content
           emit({ type: 'assistant', content })
@@ -117,4 +124,40 @@ export async function runAgent(args: RunArgs): Promise<void> {
 export function cancelAgent(sessionId: string): void {
   controllers.get(sessionId)?.abort()
   controllers.delete(sessionId)
+}
+
+function normalizeAssistantText(message: {
+  content?: unknown
+  additional_kwargs?: Record<string, unknown>
+}): string {
+  const parts: string[] = []
+  const reasoning =
+    message.additional_kwargs?.reasoning_content ??
+    message.additional_kwargs?.reasoning ??
+    message.additional_kwargs?.think
+  if (typeof reasoning === 'string' && reasoning.trim()) {
+    parts.push(`<think>${reasoning.trim()}</think>`)
+  }
+
+  const content = message.content
+  if (typeof content === 'string') {
+    parts.push(content)
+  } else if (Array.isArray(content)) {
+    const text = content
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (part && typeof part === 'object') {
+          const p = part as { type?: string; text?: string; thinking?: string }
+          if (p.thinking) return `<think>${p.thinking}</think>`
+          if (p.text) return p.text
+        }
+        return ''
+      })
+      .join('')
+    if (text) parts.push(text)
+  } else if (content != null) {
+    parts.push(JSON.stringify(content))
+  }
+
+  return parts.join('\n\n').trim()
 }
