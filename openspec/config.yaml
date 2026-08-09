@@ -1,0 +1,17 @@
+schema: superpowers-bridge
+
+# Project context injected into OpenSpec artifact generation
+context: |
+  项目：my-agent — 个人 Electron Agent 客户端（Windows + macOS）
+  栈：Electron + React + Vite；Agent 编排用 LangGraph；模型为 OpenAI-compatible（如 Minimax）
+  能力：分层记忆、本机操作工具链、双模式（交互式 / 目标模式）、Skills（SKILL.md + 脚本，允许 Agent 自创建）
+  权限：默认全自动；删除等高危操作需用户确认
+  记忆：长期记忆用户可查看/编辑/删除；Agent 默认可写维护且必须告知用户；短期记忆=保关键上下文压缩；存储 SQLite+文件系统
+  文档：docs/product-brief.md 为产品决策源；功能开发走 OpenSpec change（schema=superpowers-bridge）
+  语言：规格与任务以简体中文为主；必要时保留英文专有名词
+
+project:
+  test_commands:
+    - "npm test"
+  # 脚手架落地后再补全
+  # dev_stack_command: "npm run dev"
