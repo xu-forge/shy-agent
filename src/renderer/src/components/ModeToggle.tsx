@@ -7,7 +7,7 @@ type Props = {
 
 export function ModeToggle({ mode, onChange }: Props): React.JSX.Element {
   return (
-    <div className="mode-toggle" title="壳阶段仅占位，尚未接通执行引擎">
+    <div className="mode-toggle" title="交互式逐步协作；目标模式自动续跑">
       <button
         type="button"
         className={mode === 'interactive' ? 'active' : ''}

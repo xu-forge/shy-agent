@@ -1,38 +1,51 @@
 # my-agent
 
-Electron desktop shell (React + TypeScript) for Windows and macOS.
+个人 Electron Agent 客户端（Windows + macOS）：LangGraph 编排、OpenAI-compatible 模型、分层记忆、Skills、本机工具、交互式/目标双模式。UI 参考 Codex。
 
-## Prerequisites
+## 前置
 
-- Node.js 20+（Vitest 4 需要）
+- Node.js 20+
 - npm
+- （可选）`npx playwright install chromium` — 启用 `browser_fetch`
 
-## Setup
+## 安装与启动
 
 ```bash
 npm install
-```
-
-## Development
-
-```bash
+npx electron-builder install-app-deps   # better-sqlite3 原生模块
 npm run dev
 ```
 
-## Quality checks
+打开后：**设置** → 填写 OpenAI-compatible 的 `baseURL` / `apiKey` / `model`（如 Minimax）。
+
+## 功能概览
+
+| 模块 | 说明 |
+|------|------|
+| 聊天 | 交互式 / 目标模式；目标模式自动续跑；可取消 |
+| 记忆 | 长期记忆 SQLite，用户可查看/编辑/删除；Agent 可写并通知 |
+| 短期记忆 | 会话上下文保关键压缩 |
+| 技能 | 本地 `userData/skills/*/SKILL.md`，CRUD；Agent 可创建 |
+| 本机工具 | shell / 读写删文件 / 浏览器打开与抓取 / 截屏 / 点击 |
+| 高危确认 | 删除、敏感覆盖写、安装类命令、GUI 点击等需确认 |
+
+## 脚本
 
 ```bash
 npm run lint
 npm test
-npm run format
-```
-
-## Build
-
-```bash
+npm run typecheck
 npm run build
-npm run build:win   # Windows installer (NSIS)
-npm run build:mac   # macOS disk image (DMG)
+npm run build:win
+npm run build:mac   # 需在 macOS 上执行
 ```
 
-**Note:** macOS packaging (`npm run build:mac`) must run on a macOS host with Xcode command-line tools available.
+## 数据目录
+
+Electron `userData`：`settings.json`、`memory.sqlite`、`skills/`、`screenshots/`。
+
+## 规格与流程
+
+- 产品决策：`docs/product-brief.md`
+- 过夜执行索引：`docs/overnight-execution.md`
+- OpenSpec：`openspec/`（schema: `superpowers-bridge`）
