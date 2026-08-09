@@ -13,6 +13,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'my-agent',
+    backgroundColor: '#f7f7f4',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

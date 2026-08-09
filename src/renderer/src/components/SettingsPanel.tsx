@@ -26,7 +26,8 @@ export function SettingsPanel({ open, onClose }: Props): React.JSX.Element | nul
   return (
     <div className="modal-backdrop">
       <div className="modal">
-        <h2>模型设置（OpenAI-compatible）</h2>
+        <h2>模型设置</h2>
+        <p className="muted">OpenAI-compatible 接口，本地保存。</p>
         <label>
           Base URL
           <input
