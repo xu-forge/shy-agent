@@ -1,8 +1,14 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
+import type { AppPaths } from '../shared/ipc'
+
+export interface MyAgentApi {
+  ping: () => Promise<'pong'>
+  getPaths: () => Promise<AppPaths>
+}
 
 declare global {
   interface Window {
-    electron: ElectronAPI
-    api: unknown
+    myAgent: MyAgentApi
   }
 }
+
+export {}

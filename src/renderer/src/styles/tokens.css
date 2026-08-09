@@ -1,0 +1,29 @@
+:root {
+  --bg: #0f1115;
+  --bg-elevated: #161a22;
+  --bg-input: #1c212c;
+  --border: #2a3140;
+  --text: #e8eaed;
+  --text-muted: #9aa3b2;
+  --accent: #d0d4dc;
+  --accent-soft: #2a3140;
+  --danger: #c45c5c;
+  --ok: #6fbf8b;
+  --sidebar-width: 220px;
+  --font: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}

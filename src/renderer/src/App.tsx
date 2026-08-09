@@ -1,34 +1,44 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useEffect, useState } from 'react'
+import { Sidebar, type NavKey } from './components/Sidebar'
+import { ChatWorkspace } from './components/ChatWorkspace'
+import { PlaceholderView } from './components/PlaceholderView'
+import './styles/tokens.css'
+import './styles/app.css'
 
 function App(): React.JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+  const [nav, setNav] = useState<NavKey>('chat')
+  const [ipcOk, setIpcOk] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    window.myAgent
+      .ping()
+      .then((pong) => {
+        if (!cancelled) setIpcOk(pong === 'pong')
+      })
+      .catch(() => {
+        if (!cancelled) setIpcOk(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
-      </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
+    <div className="app-shell">
+      <Sidebar active={nav} onChange={setNav} />
+      {nav === 'chat' ? <ChatWorkspace ipcOk={ipcOk} /> : null}
+      {nav === 'memory' ? (
+        <div className="main">
+          <PlaceholderView title="记忆" />
         </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
+      ) : null}
+      {nav === 'skills' ? (
+        <div className="main">
+          <PlaceholderView title="技能" />
         </div>
-      </div>
-      <Versions></Versions>
-    </>
+      ) : null}
+    </div>
   )
 }
 

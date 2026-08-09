@@ -13,5 +13,5 @@ context: |
 project:
   test_commands:
     - "npm test"
-  # 脚手架落地后再补全
-  # dev_stack_command: "npm run dev"
+    - "npm run lint"
+  dev_stack_command: "npm run dev"

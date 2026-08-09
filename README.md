@@ -4,7 +4,7 @@ Electron desktop shell (React + TypeScript) for Windows and macOS.
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+（Vitest 4 需要）
 - npm
 
 ## Setup
