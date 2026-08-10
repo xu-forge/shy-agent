@@ -19,9 +19,18 @@ export function getDb(): Database.Database {
       content TEXT NOT NULL,
       tags TEXT NOT NULL DEFAULT '[]',
       source TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS memory_audit (
+      id TEXT PRIMARY KEY,
+      memory_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      source TEXT NOT NULL,
+      snapshot TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS short_memory (
       session_id TEXT PRIMARY KEY,
@@ -29,6 +38,12 @@ export function getDb(): Database.Database {
       updated_at TEXT NOT NULL
     );
   `)
+  // migrate revision column if missing
+  try {
+    db.exec(`ALTER TABLE long_memory ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`)
+  } catch {
+    // already exists
+  }
   return db
 }
 
@@ -39,9 +54,18 @@ function rowToEntry(row: Record<string, unknown>): LongMemoryEntry {
     content: String(row.content),
     tags: JSON.parse(String(row.tags || '[]')) as string[],
     source: row.source === 'agent' ? 'agent' : 'user',
+    revision: Number(row.revision ?? 1),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   }
+}
+
+function audit(memoryId: string, action: string, source: string, snapshot: unknown): void {
+  getDb()
+    .prepare(
+      `INSERT INTO memory_audit (id, memory_id, action, source, snapshot, created_at) VALUES (?,?,?,?,?,?)`
+    )
+    .run(randomUUID(), memoryId, action, source, JSON.stringify(snapshot), new Date().toISOString())
 }
 
 export function listLongMemory(): LongMemoryEntry[] {
@@ -58,31 +82,58 @@ export function upsertLongMemory(input: {
   tags?: string[]
   source: 'user' | 'agent'
 }): LongMemoryEntry {
-  const now = new Date().toISOString()
+  const ts = new Date().toISOString()
   const id = input.id || randomUUID()
   const existing = getDb().prepare(`SELECT * FROM long_memory WHERE id = ?`).get(id) as
-    Record<string, unknown> | undefined
+    | Record<string, unknown>
+    | undefined
   if (existing) {
+    const revision = Number(existing.revision ?? 1) + 1
     getDb()
       .prepare(
-        `UPDATE long_memory SET title=?, content=?, tags=?, source=?, updated_at=?, deleted_at=NULL WHERE id=?`
+        `UPDATE long_memory SET title=?, content=?, tags=?, source=?, revision=?, updated_at=?, deleted_at=NULL WHERE id=?`
       )
-      .run(input.title, input.content, JSON.stringify(input.tags ?? []), input.source, now, id)
-  } else {
-    getDb()
-      .prepare(
-        `INSERT INTO long_memory (id, title, content, tags, source, created_at, updated_at) VALUES (?,?,?,?,?,?,?)`
+      .run(
+        input.title,
+        input.content,
+        JSON.stringify(input.tags ?? []),
+        input.source,
+        revision,
+        ts,
+        id
       )
-      .run(id, input.title, input.content, JSON.stringify(input.tags ?? []), input.source, now, now)
+    const entry = rowToEntry(
+      getDb().prepare(`SELECT * FROM long_memory WHERE id = ?`).get(id) as Record<string, unknown>
+    )
+    audit(id, 'update', input.source, entry)
+    return entry
   }
-  return rowToEntry(
+  getDb()
+    .prepare(
+      `INSERT INTO long_memory (id, title, content, tags, source, revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`
+    )
+    .run(
+      id,
+      input.title,
+      input.content,
+      JSON.stringify(input.tags ?? []),
+      input.source,
+      1,
+      ts,
+      ts
+    )
+  const entry = rowToEntry(
     getDb().prepare(`SELECT * FROM long_memory WHERE id = ?`).get(id) as Record<string, unknown>
   )
+  audit(id, 'create', input.source, entry)
+  return entry
 }
 
 export function deleteLongMemory(id: string): void {
-  const now = new Date().toISOString()
-  getDb().prepare(`UPDATE long_memory SET deleted_at=?, updated_at=? WHERE id=?`).run(now, now, id)
+  const ts = new Date().toISOString()
+  const existing = getDb().prepare(`SELECT * FROM long_memory WHERE id = ?`).get(id)
+  getDb().prepare(`UPDATE long_memory SET deleted_at=?, updated_at=? WHERE id=?`).run(ts, ts, id)
+  if (existing) audit(id, 'delete', 'user', existing)
 }
 
 export function getShortMemory(sessionId: string): string {
@@ -93,21 +144,20 @@ export function getShortMemory(sessionId: string): string {
 }
 
 export function setShortMemory(sessionId: string, compressed: string): void {
-  const now = new Date().toISOString()
+  const ts = new Date().toISOString()
   getDb()
     .prepare(
       `INSERT INTO short_memory (session_id, compressed, updated_at) VALUES (?,?,?)
        ON CONFLICT(session_id) DO UPDATE SET compressed=excluded.compressed, updated_at=excluded.updated_at`
     )
-    .run(sessionId, compressed, now)
+    .run(sessionId, compressed, ts)
 }
 
-/** Keep-key compression: preserve constraints, goals, paths, errors, decisions. */
+/** Keep-key keyword fallback. */
 export function compressContext(messages: string[]): string {
   const keys: string[] = []
   for (const m of messages) {
-    const lines = m.split(/\r?\n/)
-    for (const line of lines) {
+    for (const line of m.split(/\r?\n/)) {
       if (
         /(必须|不要|禁止|偏好|目标|验收|路径|错误|失败|决定|结论|TODO|完成)/i.test(line) ||
         /[A-Za-z]:\\|\//.test(line) ||
@@ -117,6 +167,5 @@ export function compressContext(messages: string[]): string {
       }
     }
   }
-  const uniq = [...new Set(keys)].slice(-80)
-  return uniq.join('\n')
+  return [...new Set(keys)].slice(-80).join('\n')
 }

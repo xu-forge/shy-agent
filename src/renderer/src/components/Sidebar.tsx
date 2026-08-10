@@ -1,8 +1,15 @@
+import type { SessionSummary } from '../../../shared/ipc'
+
 export type NavKey = 'chat' | 'memory' | 'skills'
 
 type Props = {
   active: NavKey
   onChange: (key: NavKey) => void
+  sessions: SessionSummary[]
+  activeSessionId: string
+  onSelectSession: (id: string) => void
+  onNewSession: () => void
+  onDeleteSession: (id: string) => void
 }
 
 const items: { key: NavKey; label: string; icon: React.JSX.Element }[] = [
@@ -37,26 +44,94 @@ const items: { key: NavKey; label: string; icon: React.JSX.Element }[] = [
   }
 ]
 
-export function Sidebar({ active, onChange }: Props): React.JSX.Element {
+export function Sidebar({
+  active,
+  onChange,
+  sessions,
+  activeSessionId,
+  onSelectSession,
+  onNewSession,
+  onDeleteSession
+}: Props): React.JSX.Element {
   return (
     <aside className="sidebar">
-      <div className="brand" title="my-agent">
-        m
+      <div className="sidebar-top">
+        <div className="brand-row">
+          <div className="brand" title="my-agent">
+            m
+          </div>
+          <span className="brand-name">my-agent</span>
+        </div>
+
+        <nav className="sidebar-menu" aria-label="主导航">
+          {items.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              className={`nav-btn${active === item.key ? ' active' : ''}`}
+              onClick={() => onChange(item.key)}
+              aria-current={active === item.key ? 'page' : undefined}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="nav-btn new-session-btn"
+            onClick={onNewSession}
+            title="新建会话"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>新建会话</span>
+          </button>
+        </nav>
       </div>
-      {items.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          className={`nav-btn${active === item.key ? ' active' : ''}`}
-          onClick={() => onChange(item.key)}
-          aria-current={active === item.key ? 'page' : undefined}
-        >
-          {item.icon}
-          <span>{item.label}</span>
-        </button>
-      ))}
-      <div className="rail-spacer" />
-      <div className="rail-foot">my-agent</div>
+
+      <div className="sidebar-history">
+        <div className="history-label">历史会话</div>
+        <div className="session-list">
+          {sessions.length === 0 ? (
+            <p className="history-empty">暂无会话</p>
+          ) : (
+            sessions.map((s) => (
+              <div
+                key={s.id}
+                className={`session-item${s.id === activeSessionId && active === 'chat' ? ' active' : ''}`}
+              >
+                <button
+                  type="button"
+                  className="session-item-main"
+                  onClick={() => {
+                    onChange('chat')
+                    onSelectSession(s.id)
+                  }}
+                  title={s.title}
+                >
+                  <span className="session-title">{s.title}</span>
+                  <span className="session-meta">
+                    {s.mode === 'goal' ? '目标' : '交互'}
+                    {s.paused ? ' · 暂停' : ''}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="session-delete"
+                  aria-label="删除会话"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteSession(s.id)
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </aside>
   )
 }

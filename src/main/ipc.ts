@@ -1,19 +1,24 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { IPC, type AgentMode, type ChatRequest, type ModelSettings } from '../shared/ipc'
 import { getSettings, setSettings } from './settings/store'
-import { runAgent, cancelAgent } from './agent/service'
+import { runAgent, cancelAgent, pauseAgent, resumeAgent } from './agent/service'
 import { createConfirmWaiter, registerConfirmIpc } from './confirm'
 import { registerBuiltinTools } from './agent/tools/builtin'
 import { registerComputerTools } from './agent/tools/computer'
 import {
   deleteLongMemory,
   listLongMemory,
-  upsertLongMemory,
-  compressContext,
-  getShortMemory,
-  setShortMemory
+  upsertLongMemory
 } from './memory/db'
 import { deleteSkill, listSkills, readSkill, writeSkill } from './skills/store'
+import {
+  createSession,
+  deleteSession,
+  ensureSessionTables,
+  getSession,
+  listSessions,
+  updateSessionRuntime
+} from './sessions/store'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -26,6 +31,7 @@ function emitToRenderer(payload: unknown): void {
 }
 
 export function registerCoreIpc(): void {
+  ensureSessionTables()
   registerBuiltinTools()
   registerComputerTools()
   registerConfirmIpc()
@@ -58,28 +64,50 @@ export function registerCoreIpc(): void {
     return { ok: true }
   })
 
+  ipcMain.handle(IPC.sessionsList, async () => listSessions())
+  ipcMain.handle(IPC.sessionsGet, async (_e, id: string) => getSession(id))
+  ipcMain.handle(IPC.sessionsCreate, async (_e, input?: { mode?: AgentMode; title?: string }) =>
+    createSession(input?.mode ?? 'interactive', input?.title)
+  )
+  ipcMain.handle(IPC.sessionsDelete, async (_e, id: string) => {
+    cancelAgent(id)
+    deleteSession(id)
+    return { ok: true }
+  })
+
   ipcMain.handle(IPC.agentCancel, async (_e, sessionId: string) => {
     cancelAgent(sessionId)
     return { ok: true }
   })
 
+  ipcMain.handle(IPC.agentPause, async (_e, sessionId: string) => {
+    pauseAgent(sessionId)
+    emitToRenderer({ sessionId, type: 'status', message: '已请求暂停…' })
+    return { ok: true }
+  })
+
+  ipcMain.handle(IPC.agentResume, async (_e, sessionId: string) => {
+    resumeAgent(
+      sessionId,
+      (event) => emitToRenderer({ sessionId, ...event }),
+      waitConfirm
+    )
+    return { ok: true, started: true }
+  })
+
   ipcMain.handle(IPC.agentChat, async (_e, req: ChatRequest) => {
-    const prior = getShortMemory(req.sessionId)
-    const enriched =
-      prior.length > 0
-        ? `【短期记忆/压缩上下文】\n${prior}\n\n【用户】\n${req.message}`
-        : req.message
+    if (!getSession(req.sessionId)) {
+      createSession(req.mode as AgentMode, req.message.slice(0, 40), req.sessionId)
+    } else {
+      updateSessionRuntime(req.sessionId, { mode: req.mode as AgentMode })
+    }
 
     void runAgent({
       sessionId: req.sessionId,
-      message: enriched,
+      message: req.message,
       mode: req.mode as AgentMode,
       emit: (event) => {
         emitToRenderer({ sessionId: req.sessionId, ...event })
-        if (event.type === 'assistant') {
-          const next = compressContext([prior, req.message, event.content])
-          setShortMemory(req.sessionId, next)
-        }
         if (event.type === 'memory') {
           emitToRenderer({
             sessionId: req.sessionId,

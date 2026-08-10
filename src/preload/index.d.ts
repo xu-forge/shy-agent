@@ -1,8 +1,11 @@
 import type {
+  AgentMode,
   AppPaths,
   ChatRequest,
   LongMemoryEntry,
   ModelSettings,
+  SessionDetail,
+  SessionSummary,
   SkillSummary
 } from '../shared/ipc'
 
@@ -13,6 +16,12 @@ export interface MyAgentApi {
   setSettings: (next: ModelSettings) => Promise<ModelSettings>
   chat: (req: ChatRequest) => Promise<{ ok: boolean; started: boolean }>
   cancel: (sessionId: string) => Promise<{ ok: boolean }>
+  pause: (sessionId: string) => Promise<{ ok: boolean }>
+  resume: (sessionId: string) => Promise<{ ok: boolean; started: boolean }>
+  listSessions: () => Promise<SessionSummary[]>
+  getSession: (id: string) => Promise<SessionDetail | null>
+  createSession: (input?: { mode?: AgentMode; title?: string }) => Promise<SessionSummary>
+  deleteSession: (id: string) => Promise<{ ok: boolean }>
   listMemory: () => Promise<LongMemoryEntry[]>
   upsertMemory: (input: {
     id?: string

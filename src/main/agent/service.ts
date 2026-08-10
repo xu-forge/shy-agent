@@ -1,18 +1,30 @@
 import { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, SystemMessage } from '@langchain/core/messages'
-import { createReactAgent } from '@langchain/langgraph/prebuilt'
+import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages'
 import { getSettings } from '../settings/store'
 import { buildTools, type ToolContext } from './tools/registry'
-import type { AgentMode } from '../../shared/ipc'
+import { buildAgentGraph } from './graph'
+import { matchSkills, formatSkillsForPrompt } from '../skills/match'
+import { listLongMemory } from '../memory/db'
+import { compressWithLlm } from '../memory/compress'
+import {
+  appendMessage,
+  getSession,
+  updateSessionRuntime
+} from '../sessions/store'
+import { summarizeSessionTitle } from '../sessions/title'
+import type { AgentMode, GoalChecklistItem } from '../../shared/ipc'
 
 export type AgentEvent =
   | { type: 'status'; message: string }
   | { type: 'assistant'; content: string }
   | { type: 'tool'; name: string; detail?: unknown }
   | { type: 'memory'; action: string; entryId?: string; title?: string }
+  | { type: 'goal'; goal?: string; checklist?: GoalChecklistItem[] }
   | { type: 'error'; message: string }
   | { type: 'done'; reason: string }
   | { type: 'confirm_required'; action: string; detail: string; requestId: string }
+  | { type: 'notify'; message: string }
+  | { type: 'session'; title?: string }
 
 type RunArgs = {
   sessionId: string
@@ -20,23 +32,53 @@ type RunArgs = {
   mode: AgentMode
   emit: (event: AgentEvent) => void
   waitConfirm: (action: string, detail: string) => Promise<boolean>
+  resume?: boolean
 }
 
-const controllers = new Map<string, AbortController>()
+type SessionRuntime = {
+  controller: AbortController
+  paused: boolean
+  pauseWaiters: Array<() => void>
+  goal?: string
+  checklist: GoalChecklistItem[]
+}
 
-function systemPrompt(mode: AgentMode): string {
-  const base = `你是 my-agent，运行在用户本机的桌面 Agent。使用简体中文回复。需要时调用工具。高危操作会触发确认。`
-  if (mode === 'goal') {
-    return `${base}\n当前为目标模式：围绕用户目标持续推进，直到完成、失败或需要确认。每步简洁说明进展。完成后明确写出「目标完成」。`
-  }
-  return `${base}\n当前为交互式模式：与用户协作，不要擅自进行破坏性操作。`
+const runtimes = new Map<string, SessionRuntime>()
+
+async function waitIfPaused(sessionId: string, emit: (e: AgentEvent) => void): Promise<void> {
+  const rt = runtimes.get(sessionId)
+  if (!rt?.paused) return
+  emit({ type: 'status', message: '已暂停，等待恢复…' })
+  await new Promise<void>((resolve) => {
+    rt.pauseWaiters.push(resolve)
+  })
+}
+
+function formatMemoryBlock(): string {
+  return listLongMemory()
+    .slice(0, 12)
+    .map((m) => `- [${m.title}] (v${m.revision}) ${m.content.slice(0, 400)}`)
+    .join('\n')
 }
 
 export async function runAgent(args: RunArgs): Promise<void> {
-  const { sessionId, message, mode, emit, waitConfirm } = args
-  controllers.get(sessionId)?.abort()
+  const { sessionId, message, mode, emit, waitConfirm, resume } = args
+
+  const existing = runtimes.get(sessionId)
+  if (existing && !existing.controller.signal.aborted && !resume) {
+    existing.controller.abort()
+  }
+
   const ac = new AbortController()
-  controllers.set(sessionId, ac)
+  const session = getSession(sessionId)
+  const rt: SessionRuntime = {
+    controller: ac,
+    paused: false,
+    pauseWaiters: [],
+    goal: session?.goal,
+    checklist: session?.checklist ?? []
+  }
+  runtimes.set(sessionId, rt)
 
   try {
     const settings = await getSettings()
@@ -46,7 +88,15 @@ export async function runAgent(args: RunArgs): Promise<void> {
       return
     }
 
-    emit({ type: 'status', message: mode === 'goal' ? '目标模式运行中…' : '交互式运行中…' })
+    const shortMemory = session?.shortMemory ?? ''
+    emit({
+      type: 'status',
+      message: resume ? '从暂停点恢复…' : mode === 'goal' ? '目标模式启动…' : '交互式运行中…'
+    })
+
+    if (!resume) {
+      appendMessage(sessionId, 'user', message)
+    }
 
     const llm = new ChatOpenAI({
       model: settings.model,
@@ -54,6 +104,15 @@ export async function runAgent(args: RunArgs): Promise<void> {
       configuration: { baseURL: settings.baseURL },
       temperature: 0.2
     })
+
+    const matched = await matchSkills(message || session?.goal || '', 3)
+    const skillBlock = formatSkillsForPrompt(matched)
+    if (matched.length) {
+      emit({
+        type: 'notify',
+        message: `已匹配技能：${matched.map((s) => s.name).join('、')}`
+      })
+    }
 
     const ctx: ToolContext = {
       emit: (event, payload) => {
@@ -69,95 +128,196 @@ export async function runAgent(args: RunArgs): Promise<void> {
     }
 
     const tools = buildTools(ctx)
-    const agent = createReactAgent({ llm, tools })
-    const maxSteps = mode === 'goal' ? 32 : 8
 
-    let finalText = ''
-    const stream = await agent.stream(
-      {
-        messages: [new SystemMessage(systemPrompt(mode)), new HumanMessage(message)]
-      },
-      { signal: ac.signal, recursionLimit: maxSteps }
-    )
-
-    for await (const chunk of stream) {
-      if (ac.signal.aborted) break
-      const messages = (
-        chunk as {
-          agent?: {
-            messages?: Array<{
-              content?: unknown
-              additional_kwargs?: Record<string, unknown>
-            }>
-          }
-        }
-      ).agent?.messages
-      if (messages?.length) {
-        const last = messages[messages.length - 1]
-        const content = normalizeAssistantText(last)
-        if (content && content !== finalText) {
-          finalText = content
-          emit({ type: 'assistant', content })
-        }
+    const graphEmit = (event: {
+      type: string
+      message?: string
+      content?: string
+      checklist?: GoalChecklistItem[]
+      goal?: string
+      name?: string
+      detail?: unknown
+    }): void => {
+      if (event.type === 'status' && event.message) emit({ type: 'status', message: event.message })
+      if (event.type === 'assistant' && event.content) {
+        emit({ type: 'assistant', content: event.content })
+        appendMessage(sessionId, 'assistant', event.content)
+      }
+      if (event.type === 'tool') {
+        emit({ type: 'tool', name: event.name ?? 'tool', detail: event.detail })
+      }
+      if (event.type === 'goal') {
+        rt.goal = event.goal ?? rt.goal
+        if (event.checklist) rt.checklist = event.checklist
+        updateSessionRuntime(sessionId, {
+          goal: rt.goal ?? null,
+          checklist: rt.checklist,
+          paused: false
+        })
+        emit({ type: 'goal', goal: rt.goal, checklist: rt.checklist })
       }
     }
 
+    const graph = buildAgentGraph({
+      llm,
+      tools,
+      emit: graphEmit,
+      skillBlock,
+      memoryBlock: formatMemoryBlock(),
+      beforeStep: async () => {
+        if (ac.signal.aborted) throw new Error('aborted')
+        await waitIfPaused(sessionId, emit)
+      },
+      onStagnate: () => {
+        pauseAgent(sessionId)
+      },
+      budget: {
+        stagnationRounds: settings.stagnationRounds ?? 20,
+        hardRoundCap: settings.hardRoundCap ?? 0
+      }
+    })
+
+    updateSessionRuntime(sessionId, { mode, paused: false })
+
+    const fresh = getSession(sessionId)
+    const history = (fresh?.messages ?? [])
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .slice(-20)
+      .map((m) =>
+        m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content)
+      )
+
+    const finalMessages = resume
+      ? [
+          ...(shortMemory ? [new SystemMessage(`【短期记忆/保关键压缩】\n${shortMemory}`)] : []),
+          ...history,
+          new HumanMessage('请从暂停点继续推进未完成目标，对照验收清单执行。')
+        ]
+      : [
+          ...(shortMemory ? [new SystemMessage(`【短期记忆/保关键压缩】\n${shortMemory}`)] : []),
+          ...history
+        ]
+
+    // LangGraph 递归保险丝：足够高以支撑长任务；真正控空转靠「清单无进展 → 软暂停」
+    const recursionLimit =
+      settings.recursionLimit ?? (mode === 'goal' ? 500 : 80)
+
+    const result = await graph.invoke(
+      {
+        messages: finalMessages,
+        mode,
+        goal: rt.goal ?? '',
+        checklist: rt.checklist,
+        round: 0,
+        lastDoneCount: rt.checklist.filter((c) => c.done).length,
+        stagnantRounds: 0,
+        lastAction: ''
+      },
+      { signal: ac.signal, recursionLimit }
+    )
+
     if (ac.signal.aborted) {
-      emit({ type: 'done', reason: 'cancelled' })
+      updateSessionRuntime(sessionId, {
+        paused: rt.paused,
+        goal: rt.goal ?? null,
+        checklist: rt.checklist,
+        checkpoint: JSON.stringify({
+          goal: rt.goal,
+          checklist: rt.checklist,
+          round: result?.round
+        })
+      })
+      emit({ type: 'done', reason: rt.paused ? 'paused' : 'cancelled' })
       return
     }
-    if (!finalText) emit({ type: 'assistant', content: '（无文本输出）' })
+
+    const compressed = await compressWithLlm(
+      llm,
+      [
+        shortMemory,
+        message,
+        result?.goal
+          ? `目标：${result.goal}\n清单：${JSON.stringify(result.checklist ?? [])}`
+          : ''
+      ],
+      shortMemory
+    )
+    updateSessionRuntime(sessionId, {
+      shortMemory: compressed,
+      goal: (result?.goal as string) || rt.goal || null,
+      checklist: (result?.checklist as GoalChecklistItem[]) || rt.checklist,
+      paused: false,
+      checkpoint: null
+    })
+
+    const title = await summarizeSessionTitle(sessionId, llm)
+    if (title) emit({ type: 'session', title })
+
     emit({ type: 'done', reason: 'completed' })
   } catch (err) {
     if (ac.signal.aborted) {
-      emit({ type: 'done', reason: 'cancelled' })
+      emit({ type: 'done', reason: rt.paused ? 'paused' : 'cancelled' })
       return
     }
     const messageText = err instanceof Error ? err.message : String(err)
+    if (messageText === 'aborted') {
+      emit({ type: 'done', reason: rt.paused ? 'paused' : 'cancelled' })
+      return
+    }
     emit({ type: 'error', message: messageText })
     emit({ type: 'done', reason: 'error' })
-  } finally {
-    if (controllers.get(sessionId) === ac) controllers.delete(sessionId)
   }
 }
 
 export function cancelAgent(sessionId: string): void {
-  controllers.get(sessionId)?.abort()
-  controllers.delete(sessionId)
+  const rt = runtimes.get(sessionId)
+  if (!rt) return
+  rt.paused = false
+  rt.pauseWaiters.forEach((r) => r())
+  rt.pauseWaiters = []
+  rt.controller.abort()
+  updateSessionRuntime(sessionId, { paused: false })
+  runtimes.delete(sessionId)
 }
 
-function normalizeAssistantText(message: {
-  content?: unknown
-  additional_kwargs?: Record<string, unknown>
-}): string {
-  const parts: string[] = []
-  const reasoning =
-    message.additional_kwargs?.reasoning_content ??
-    message.additional_kwargs?.reasoning ??
-    message.additional_kwargs?.think
-  if (typeof reasoning === 'string' && reasoning.trim()) {
-    parts.push(`<think>${reasoning.trim()}</think>`)
-  }
+export function pauseAgent(sessionId: string): void {
+  const rt = runtimes.get(sessionId)
+  if (!rt) return
+  rt.paused = true
+  updateSessionRuntime(sessionId, {
+    paused: true,
+    goal: rt.goal ?? null,
+    checklist: rt.checklist
+  })
+}
 
-  const content = message.content
-  if (typeof content === 'string') {
-    parts.push(content)
-  } else if (Array.isArray(content)) {
-    const text = content
-      .map((part) => {
-        if (typeof part === 'string') return part
-        if (part && typeof part === 'object') {
-          const p = part as { type?: string; text?: string; thinking?: string }
-          if (p.thinking) return `<think>${p.thinking}</think>`
-          if (p.text) return p.text
-        }
-        return ''
-      })
-      .join('')
-    if (text) parts.push(text)
-  } else if (content != null) {
-    parts.push(JSON.stringify(content))
+export function resumeAgent(
+  sessionId: string,
+  emit: (event: AgentEvent) => void,
+  waitConfirm: (action: string, detail: string) => Promise<boolean>
+): void {
+  const rt = runtimes.get(sessionId)
+  if (rt?.paused && rt.pauseWaiters.length) {
+    rt.paused = false
+    updateSessionRuntime(sessionId, { paused: false })
+    const waiters = [...rt.pauseWaiters]
+    rt.pauseWaiters = []
+    waiters.forEach((r) => r())
+    return
   }
-
-  return parts.join('\n\n').trim()
+  const session = getSession(sessionId)
+  if (!session) {
+    emit({ type: 'error', message: '会话不存在，无法恢复' })
+    emit({ type: 'done', reason: 'error' })
+    return
+  }
+  updateSessionRuntime(sessionId, { paused: false })
+  void runAgent({
+    sessionId,
+    message: session.goal || '继续',
+    mode: session.mode,
+    emit,
+    waitConfirm,
+    resume: true
+  })
 }

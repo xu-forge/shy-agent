@@ -4,7 +4,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { app, desktopCapturer, screen } from 'electron'
+import { app, clipboard, desktopCapturer, screen } from 'electron'
 import { registerTool } from './registry'
 
 const execAsync = promisify(exec)
@@ -118,6 +118,35 @@ $m::mouse_event(0x02,0,0,0,0); $m::mouse_event(0x04,0,0,0,0)
             return JSON.stringify({ ok: true, platform: 'darwin' })
           }
           return JSON.stringify({ ok: false, error: `不支持的平台 ${process.platform}` })
+        }
+      })
+  )
+
+  registerTool(
+    'clipboard_read',
+    (ctx) =>
+      new DynamicStructuredTool({
+        name: 'clipboard_read',
+        description: '读取系统剪贴板文本',
+        schema: z.object({}),
+        func: async () => {
+          ctx.emit('tool', { name: 'clipboard_read' })
+          return JSON.stringify({ ok: true, text: clipboard.readText() })
+        }
+      })
+  )
+
+  registerTool(
+    'clipboard_write',
+    (ctx) =>
+      new DynamicStructuredTool({
+        name: 'clipboard_write',
+        description: '写入系统剪贴板文本',
+        schema: z.object({ text: z.string() }),
+        func: async ({ text }) => {
+          ctx.emit('tool', { name: 'clipboard_write', length: text.length })
+          clipboard.writeText(text)
+          return JSON.stringify({ ok: true })
         }
       })
   )

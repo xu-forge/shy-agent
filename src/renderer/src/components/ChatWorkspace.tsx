@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { GoalChecklistItem } from '../../../shared/ipc'
 import { ModeToggle, type ModeKey } from './ModeToggle'
 import { AssistantMessage } from './AssistantMessage'
 import { MarkdownBody } from './MarkdownBody'
@@ -7,6 +8,8 @@ type Props = {
   ipcOk: boolean | null
   onOpenSettings: () => void
   notice?: string
+  sessionId: string
+  onSessionsChanged?: () => void
 }
 
 type Msg = { role: 'user' | 'assistant' | 'system' | 'tool'; content: string }
@@ -18,26 +21,50 @@ const ROLE_LABEL: Record<Msg['role'], string> = {
   tool: '工具'
 }
 
-export function ChatWorkspace({ ipcOk, onOpenSettings, notice }: Props): React.JSX.Element {
-  const [sessionId] = useState(() => `session-${crypto.randomUUID()}`)
+export function ChatWorkspace({
+  ipcOk,
+  onOpenSettings,
+  notice,
+  sessionId,
+  onSessionsChanged
+}: Props): React.JSX.Element {
   const [mode, setMode] = useState<ModeKey>('interactive')
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [paused, setPaused] = useState(false)
   const [status, setStatus] = useState('')
-  const [messages, setMessages] = useState<Msg[]>([
-    {
-      role: 'system',
-      content: '已就绪。请先在右上角打开设置，配置 OpenAI-compatible 凭证（如 Minimax）。'
-    }
-  ])
+  const [goal, setGoal] = useState('')
+  const [checklist, setChecklist] = useState<GoalChecklistItem[]>([])
+  const [messages, setMessages] = useState<Msg[]>([])
   const threadRef = useRef<HTMLDivElement>(null)
 
   const hasConversation = messages.some((m) => m.role === 'user' || m.role === 'assistant')
 
+  const loadSession = useCallback(async (id: string) => {
+    if (!id) return
+    const detail = await window.myAgent.getSession(id)
+    if (!detail) return
+    setMode(detail.mode)
+    setPaused(detail.paused)
+    setGoal(detail.goal ?? '')
+    setChecklist(detail.checklist ?? [])
+    setBusy(false)
+    setStatus('')
+    setMessages(
+      detail.messages.length
+        ? detail.messages.map((m) => ({ role: m.role, content: m.content }))
+        : []
+    )
+  }, [])
+
+  useEffect(() => {
+    void loadSession(sessionId)
+  }, [sessionId, loadSession])
+
   useEffect(() => {
     const el = threadRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages, busy])
+  }, [messages, busy, checklist])
 
   useEffect(() => {
     return window.myAgent.onEvent((payload) => {
@@ -49,19 +76,12 @@ export function ChatWorkspace({ ipcOk, onOpenSettings, notice }: Props): React.J
         name?: string
         detail?: unknown
         reason?: string
+        goal?: string
+        checklist?: GoalChecklistItem[]
       }
       if (ev.sessionId && ev.sessionId !== sessionId) return
       if (ev.type === 'assistant' && ev.content) {
-        setMessages((prev) => {
-          const next = [...prev]
-          const last = next[next.length - 1]
-          if (last?.role === 'assistant') {
-            next[next.length - 1] = { role: 'assistant', content: ev.content! }
-          } else {
-            next.push({ role: 'assistant', content: ev.content! })
-          }
-          return next
-        })
+        setMessages((prev) => [...prev, { role: 'assistant', content: ev.content! }])
       } else if (ev.type === 'tool') {
         setMessages((prev) => [
           ...prev,
@@ -70,37 +90,66 @@ export function ChatWorkspace({ ipcOk, onOpenSettings, notice }: Props): React.J
             content: `${ev.name ?? 'tool'}\n${JSON.stringify(ev.detail ?? {}, null, 2)}`
           }
         ])
+      } else if (ev.type === 'goal') {
+        if (ev.goal) setGoal(ev.goal)
+        if (ev.checklist) setChecklist(ev.checklist)
       } else if (ev.type === 'status' && ev.message) {
         setStatus(ev.message)
+        if (ev.message.includes('暂停')) setPaused(true)
       } else if (ev.type === 'error' && ev.message) {
         setMessages((prev) => [...prev, { role: 'system', content: `错误：${ev.message}` }])
       } else if (ev.type === 'done') {
         setBusy(false)
-        setStatus(ev.reason === 'cancelled' ? '已取消' : '')
+        if (ev.reason === 'paused') {
+          setPaused(true)
+          setStatus('已暂停')
+        } else {
+          setPaused(false)
+          setStatus(ev.reason === 'cancelled' ? '已取消' : '')
+        }
+        onSessionsChanged?.()
       } else if (ev.type === 'notify' && ev.message) {
         setMessages((prev) => [...prev, { role: 'system', content: ev.message! }])
       }
     })
-  }, [sessionId])
+  }, [sessionId, onSessionsChanged])
 
   const onSend = async (): Promise<void> => {
     const text = draft.trim()
-    if (!text || busy) return
+    if (!text || busy || !sessionId) return
     setDraft('')
     setBusy(true)
+    setPaused(false)
     setStatus(mode === 'goal' ? '目标推进中' : '思考中')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     await window.myAgent.chat({ sessionId, message: text, mode })
+    onSessionsChanged?.()
   }
 
   const onCancel = async (): Promise<void> => {
     await window.myAgent.cancel(sessionId)
     setBusy(false)
+    setPaused(false)
     setStatus('正在取消…')
   }
 
+  const onPause = async (): Promise<void> => {
+    await window.myAgent.pause(sessionId)
+    setPaused(true)
+    setStatus('已请求暂停…')
+  }
+
+  const onResume = async (): Promise<void> => {
+    setBusy(true)
+    setPaused(false)
+    setStatus('恢复中…')
+    await window.myAgent.resume(sessionId)
+  }
+
+  const doneCount = checklist.filter((c) => c.done).length
+
   return (
-    <div className="main">
+    <div className="main chat-column">
       <div className="topbar">
         <ModeToggle mode={mode} onChange={setMode} />
         <div className="top-actions">
@@ -117,12 +166,34 @@ export function ChatWorkspace({ ipcOk, onOpenSettings, notice }: Props): React.J
         <div className="workspace-inner">
           {notice ? <div className="banner">{notice}</div> : null}
 
+          {mode === 'goal' && (goal || checklist.length > 0) ? (
+            <div className="goal-panel">
+              <div className="goal-panel-head">
+                <strong>{goal || '目标进度'}</strong>
+                <span className="muted">
+                  {doneCount}/{checklist.length || 0}
+                </span>
+              </div>
+              <ul className="checklist">
+                {checklist.map((c) => (
+                  <li key={c.id} className={c.done ? 'done' : ''}>
+                    <span className="check-mark">{c.done ? '✓' : '○'}</span>
+                    <span>
+                      {c.title}
+                      {c.evidence ? <em className="evidence"> — {c.evidence}</em> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className="thread" ref={threadRef}>
             {!hasConversation ? (
               <div className="empty-state">
                 <div className="empty-mark">m</div>
                 <h1>有什么可以帮忙的？</h1>
-                <p>交互式协作，或切换到目标模式让我持续推进到可验收结果。</p>
+                <p>交互式协作，或切换到目标模式让我规划清单并验收推进。</p>
               </div>
             ) : (
               messages.map((m, i) => (
@@ -154,20 +225,33 @@ export function ChatWorkspace({ ipcOk, onOpenSettings, notice }: Props): React.J
               />
               <div className="composer-bar">
                 <span className="hint">Ctrl / ⌘ + Enter 发送</span>
-                {busy ? (
-                  <button type="button" className="danger-btn" onClick={() => void onCancel()}>
-                    停止
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={() => void onSend()}
-                    disabled={!draft.trim()}
-                  >
-                    发送
-                  </button>
-                )}
+                <div className="composer-actions">
+                  {busy && !paused ? (
+                    <>
+                      <button type="button" className="ghost-btn" onClick={() => void onPause()}>
+                        暂停
+                      </button>
+                      <button type="button" className="danger-btn" onClick={() => void onCancel()}>
+                        停止
+                      </button>
+                    </>
+                  ) : null}
+                  {paused ? (
+                    <button type="button" className="primary" onClick={() => void onResume()}>
+                      继续
+                    </button>
+                  ) : null}
+                  {!busy && !paused ? (
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => void onSend()}
+                      disabled={!draft.trim()}
+                    >
+                      发送
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

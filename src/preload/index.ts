@@ -1,10 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   IPC,
+  type AgentMode,
   type AppPaths,
   type ChatRequest,
   type LongMemoryEntry,
   type ModelSettings,
+  type SessionDetail,
+  type SessionSummary,
   type SkillSummary
 } from '../shared/ipc'
 
@@ -18,6 +21,17 @@ const myAgent = {
     ipcRenderer.invoke(IPC.agentChat, req),
   cancel: (sessionId: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.agentCancel, sessionId),
+  pause: (sessionId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.agentPause, sessionId),
+  resume: (sessionId: string): Promise<{ ok: boolean; started: boolean }> =>
+    ipcRenderer.invoke(IPC.agentResume, sessionId),
+  listSessions: (): Promise<SessionSummary[]> => ipcRenderer.invoke(IPC.sessionsList),
+  getSession: (id: string): Promise<SessionDetail | null> =>
+    ipcRenderer.invoke(IPC.sessionsGet, id),
+  createSession: (input?: { mode?: AgentMode; title?: string }): Promise<SessionSummary> =>
+    ipcRenderer.invoke(IPC.sessionsCreate, input),
+  deleteSession: (id: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.sessionsDelete, id),
   listMemory: (): Promise<LongMemoryEntry[]> => ipcRenderer.invoke(IPC.memoryList),
   upsertMemory: (input: {
     id?: string

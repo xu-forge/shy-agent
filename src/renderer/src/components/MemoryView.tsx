@@ -90,7 +90,7 @@ export function MemoryView(): React.JSX.Element {
               <header>
                 <strong>{item.title}</strong>
                 <span className="muted">
-                  {item.source === 'agent' ? 'Agent' : '你'} ·{' '}
+                  {item.source === 'agent' ? 'Agent' : '你'} · v{item.revision} ·{' '}
                   {new Date(item.updatedAt).toLocaleString()}
                 </span>
               </header>
