@@ -1,7 +1,7 @@
 ## 1. 数据与展开
 
-- [ ] 1.1 共享类型：`ScheduleTask`、动作枚举、payload、展开实例、warnings
-- [ ] 1.2 SQLite `schedule_tasks` 表 + CRUD（list/get/create/update/delete）
+- [x] 1.1 共享类型：`ScheduleTask`、动作枚举、payload、展开实例、warnings
+- [x] 1.2 SQLite `schedule_tasks` 表 + CRUD（list/get/create/update/delete）
 - [ ] 1.3 `expandOccurrences(tasks, range)` 纯函数 + 单测（daily/weekly/monthly）
 - [ ] 1.4 双跑 warnings：对照目标工作流 `schedule.enabled`
 

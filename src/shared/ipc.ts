@@ -210,6 +210,51 @@ export type WorkflowSchedule = {
   cron: string
 }
 
+export type ScheduleTaskAction = 'run_workflow' | 'remind' | 'run_skill'
+
+export type RunWorkflowScheduleTaskPayload = {
+  workflowId: string
+}
+
+export type RemindScheduleTaskPayload = {
+  message: string
+}
+
+export type RunSkillScheduleTaskPayload = {
+  skillId: string
+}
+
+type ScheduleTaskBase = {
+  id: string
+  title: string
+  enabled: boolean
+  schedule: WorkflowSchedule
+  createdAt: string
+  updatedAt: string
+}
+
+export type ScheduleTask = ScheduleTaskBase &
+  (
+    | { action: 'run_workflow'; payload: RunWorkflowScheduleTaskPayload }
+    | { action: 'remind'; payload: RemindScheduleTaskPayload }
+    | { action: 'run_skill'; payload: RunSkillScheduleTaskPayload }
+  )
+
+export type ScheduleOccurrence = {
+  taskId: string
+  at: string
+  title: string
+  action: ScheduleTaskAction
+}
+
+/** 后续冲突检测任务填充；当前先固定供 IPC/UI 复用的警告结构。 */
+export type ScheduleConflictWarning = {
+  type: 'workflow_schedule_conflict'
+  taskId: string
+  workflowId: string
+  message: string
+}
+
 export type Workflow = {
   id: string
   name: string
