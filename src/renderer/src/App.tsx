@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { SessionSummary } from '../../shared/ipc'
+import type { ScheduleReminderEvent, SessionSummary, Workflow } from '../../shared/ipc'
 import { Sidebar, type NavKey } from './components/Sidebar'
 import { Header } from './components/Header'
 import { ChatWorkspace } from './components/ChatWorkspace'
@@ -9,7 +9,6 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { WorkflowsView } from './components/WorkflowsView'
 import { WorkflowEditor } from './components/WorkflowEditor'
 import { CalendarView } from './components/CalendarView'
-import type { Workflow } from '../../shared/ipc'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import './styles/tokens.css'
@@ -54,6 +53,7 @@ function App(): React.JSX.Element {
   const [sessionId, setSessionId] = useState('')
   const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null)
   const [workflowDirty, setWorkflowDirty] = useState(0)
+  const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
 
   // 主题：应用 + 持久化
   useEffect(() => {
@@ -136,6 +136,14 @@ function App(): React.JSX.Element {
       }
     })
   }, [refreshSessions])
+
+  useEffect(() => {
+    return window.shy.onScheduleRemind((ev: ScheduleReminderEvent) => {
+      const id = `${ev.taskId}-${ev.at}`
+      setReminders((list) => [...list, { id, title: ev.title, message: ev.message }])
+      setTimeout(() => setReminders((list) => list.filter((r) => r.id !== id)), 8000)
+    })
+  }, [])
 
   const onNewSession = async (): Promise<void> => {
     const created = await window.shy.createSession({ mode: 'interactive' })
@@ -241,6 +249,16 @@ function App(): React.JSX.Element {
           }}
         />
       ) : null}
+      <div className="calendar-toast-stack">
+        {reminders.map((reminder) => (
+          <div key={reminder.id} className="toast calendar-toast" role="status">
+            <div>
+              <strong>{reminder.title}</strong>
+              <div className="calendar-toast-msg">{reminder.message}</div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

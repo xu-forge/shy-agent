@@ -3,7 +3,6 @@ import type {
   CreateScheduleTaskInput,
   ScheduleConflictWarning,
   ScheduleOccurrence,
-  ScheduleReminderEvent,
   ScheduleTask,
   ScheduleTaskAction,
   SkillSummary,
@@ -11,17 +10,10 @@ import type {
   Workflow,
   WorkflowSchedule
 } from '../../../shared/ipc'
+import { dayKey, groupOccurrencesByDay } from '../lib/calendarOccurrences'
 import { WorkflowScheduleEditor } from './WorkflowScheduleEditor'
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : `${n}`
-}
-
-function dayKey(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
-}
 
 /** 6 周 × 7 天的月历网格，含首尾月溢出的日期 */
 function buildGrid(year: number, month: number): Date[] {
@@ -131,25 +123,11 @@ export function CalendarView(): React.JSX.Element {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
-  const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
 
   const grid = useMemo(() => buildGrid(year, month), [year, month])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
 
-  const occurrencesByDay = useMemo(() => {
-    const map = new Map<string, Map<string, ScheduleOccurrence>>()
-    for (const occ of occurrences) {
-      const key = dayKey(new Date(occ.at))
-      let inner = map.get(key)
-      if (!inner) {
-        inner = new Map()
-        map.set(key, inner)
-      }
-      const existing = inner.get(occ.taskId)
-      if (!existing || occ.at < existing.at) inner.set(occ.taskId, occ)
-    }
-    return map
-  }, [occurrences])
+  const occurrencesByDay = useMemo(() => groupOccurrencesByDay(occurrences), [occurrences])
 
   const applyMonthData = (data: MonthData): void => {
     setTasks(data.tasks)
@@ -174,14 +152,6 @@ export function CalendarView(): React.JSX.Element {
   useEffect(() => {
     void window.shy.listWorkflows().then(setWorkflows)
     void window.shy.listSkills().then(setSkills)
-  }, [])
-
-  useEffect(() => {
-    return window.shy.onScheduleRemind((ev: ScheduleReminderEvent) => {
-      const id = `${ev.taskId}-${ev.at}`
-      setReminders((list) => [...list, { id, title: ev.title, message: ev.message }])
-      setTimeout(() => setReminders((list) => list.filter((r) => r.id !== id)), 8000)
-    })
   }, [])
 
   const flashNote = (text: string): void => {
@@ -340,9 +310,7 @@ export function CalendarView(): React.JSX.Element {
             const key = dayKey(date)
             const inMonth = date.getMonth() === month
             const isToday = key === todayKey
-            const dayOccs = Array.from(occurrencesByDay.get(key)?.values() ?? []).sort((a, b) =>
-              a.at.localeCompare(b.at)
-            )
+            const dayOccs = occurrencesByDay.get(key) ?? []
             return (
               <div
                 key={key}
@@ -361,7 +329,7 @@ export function CalendarView(): React.JSX.Element {
                     const task = tasksById.get(occ.taskId)
                     return (
                       <button
-                        key={occ.taskId}
+                        key={`${occ.taskId}-${occ.at}`}
                         type="button"
                         draggable
                         className={`calendar-chip calendar-chip-${occ.action}${task && !task.enabled ? ' calendar-chip-disabled' : ''}`}
@@ -426,7 +394,7 @@ export function CalendarView(): React.JSX.Element {
                   rows={3}
                   value={form.message}
                   onChange={(e) => setForm({ ...form, message: e.target.value })}
-                  placeholder="到点后会在日历页面看到该文案"
+                  placeholder="到点后会在应用中看到该文案"
                 />
               </label>
             ) : null}
@@ -525,17 +493,6 @@ export function CalendarView(): React.JSX.Element {
           </div>
         </div>
       ) : null}
-
-      <div className="calendar-toast-stack">
-        {reminders.map((r) => (
-          <div key={r.id} className="toast calendar-toast" role="status">
-            <div>
-              <strong>{r.title}</strong>
-              <div className="calendar-toast-msg">{r.message}</div>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
