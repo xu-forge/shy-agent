@@ -126,6 +126,22 @@ describe('runWorkflow', () => {
     expect(events.length).toBeGreaterThan(0)
   })
 
+  it('保留日历任务触发来源与 taskId', async () => {
+    const engine = await import('./engine')
+    const dbMod = await import('./db')
+    const workflow = baseWf('wf-calendar')
+    workflow.nodes = [workflow.nodes[0]]
+    workflow.edges = []
+    dbMod.saveWorkflow(workflow)
+
+    const run = await engine.runWorkflow(workflow.id, 'calendar_task', () => undefined, 'task-123')
+    const [persisted] = dbMod.listRuns(workflow.id)
+
+    expect(run.trigger).toBe('calendar_task')
+    expect(run.taskId).toBe('task-123')
+    expect(persisted.taskId).toBe('task-123')
+  })
+
   it('defaultWorkflow 生成完整晨报场景模板', async () => {
     const engine = await import('./engine')
     const wf = engine.defaultWorkflow('股票每日晨报')

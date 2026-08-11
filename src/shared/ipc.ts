@@ -274,7 +274,8 @@ export type WorkflowRun = {
   workflowId: string
   workflowName: string
   status: WorkflowRunStatus
-  trigger: 'manual' | 'schedule'
+  trigger: 'manual' | 'schedule' | 'calendar_task'
+  taskId?: string
   startedAt: string
   finishedAt?: string
   /** 逐节点执行日志 */

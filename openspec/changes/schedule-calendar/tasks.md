@@ -7,11 +7,11 @@
 
 ## 2. 调度与动作执行
 
-- [ ] 2.1 `checkCalendarTasks`（或扩展现有轮询）：cron 匹配 + 防同分钟双触
-- [ ] 2.2 `run_workflow`：调 `runWorkflowNow`，run 元数据带 `taskId` / `calendar_task`
-- [ ] 2.3 `remind`：emit 到 renderer（应用内可见）
-- [ ] 2.4 `run_skill`：最小执行或明确 stub + 日志
-- [ ] 2.5 调度相关单测（匹配/防抖）
+- [x] 2.1 `checkCalendarTasks`（或扩展现有轮询）：cron 匹配 + 防同分钟双触
+- [x] 2.2 `run_workflow`：调 `runWorkflowNow`，run 元数据带 `taskId` / `calendar_task`
+- [x] 2.3 `remind`：emit 到 renderer（应用内可见）
+- [x] 2.4 `run_skill`：最小执行或明确 stub + 日志
+- [x] 2.5 调度相关单测（匹配/防抖）
 
 ## 3. IPC / preload
 

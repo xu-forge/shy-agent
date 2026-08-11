@@ -123,13 +123,14 @@ async function getSharedLlm(): Promise<ChatOpenAI> {
 /** 执行单个工作流；emit 每次 run 更新 */
 export async function runWorkflow(
   workflowId: string,
-  trigger: 'manual' | 'schedule',
-  emit: RunEmit
+  trigger: WorkflowRun['trigger'],
+  emit: RunEmit,
+  taskId?: string
 ): Promise<WorkflowRun> {
   const wf = getWorkflow(workflowId)
   if (!wf) throw new Error('工作流不存在')
 
-  const run = createRun({ workflowId, workflowName: wf.name, trigger })
+  const run = createRun({ workflowId, workflowName: wf.name, trigger, taskId })
   emit(run)
 
   let llm: ChatOpenAI | null = null

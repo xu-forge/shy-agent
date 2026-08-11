@@ -4,8 +4,9 @@ const runWorkflowMock = vi.fn()
 const listWorkflowsMock = vi.fn()
 
 vi.mock('./engine', () => ({
-  runWorkflow: (id: string, trigger: string, emit: (run: unknown) => void) => {
-    runWorkflowMock(id, trigger)
+  runWorkflow: (id: string, trigger: string, emit: (run: unknown) => void, taskId?: string) => {
+    if (taskId) runWorkflowMock(id, trigger, taskId)
+    else runWorkflowMock(id, trigger)
     const run = { id: 'r1', workflowId: id, status: 'success' as const, trigger, logs: [] }
     emit(run)
     return Promise.resolve(run)
@@ -35,7 +36,7 @@ vi.mock('../memory/db', () => ({
   })
 }))
 
-import { checkSchedules, stopScheduler } from './manager'
+import { checkSchedules, runWorkflowCalendarTask, stopScheduler } from './manager'
 
 function wf(
   id: string,
@@ -117,5 +118,13 @@ describe('checkSchedules（定时触发）', () => {
     listWorkflowsMock.mockReturnValue([wf('w1', false, cron)])
     await checkSchedules()
     expect(runWorkflowMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('日历任务触发工作流', () => {
+  it('传递 calendar_task 来源与 taskId', async () => {
+    await runWorkflowCalendarTask('w-calendar', 'task-123')
+
+    expect(runWorkflowMock).toHaveBeenCalledWith('w-calendar', 'calendar_task', 'task-123')
   })
 })

@@ -2,6 +2,11 @@ import type { Workflow, WorkflowRun } from '../../shared/ipc'
 import { listWorkflows, listRuns, getWorkflow } from './db'
 import { runWorkflow } from './engine'
 import { cronMatches, compileCron } from './scheduler'
+import {
+  checkCalendarTasks,
+  setScheduleEventSink,
+  type ScheduleEventSink
+} from '../schedule/runner'
 
 export type WorkflowEventSink = (event: { type: 'workflow_run'; run: WorkflowRun }) => void
 
@@ -10,12 +15,13 @@ let sink: WorkflowEventSink | null = null
 const running = new Set<string>()
 const lastFired = new Map<string, string>()
 
-export function startScheduler(emit: WorkflowEventSink): void {
+export function startScheduler(emit: WorkflowEventSink, emitSchedule?: ScheduleEventSink): void {
   sink = emit
+  setScheduleEventSink(emitSchedule ?? null)
   if (timer) return
-  timer = setInterval(checkSchedules, 30_000)
+  timer = setInterval(checkAllSchedules, 30_000)
   // 启动时立即检查一次
-  void checkSchedules()
+  void checkAllSchedules()
 }
 
 export function stopScheduler(): void {
@@ -23,14 +29,14 @@ export function stopScheduler(): void {
     clearInterval(timer)
     timer = null
   }
+  setScheduleEventSink(null)
 }
 
 function emitRun(run: WorkflowRun): void {
   sink?.({ type: 'workflow_run', run })
 }
 
-export async function checkSchedules(): Promise<void> {
-  const now = new Date()
+export async function checkSchedules(now = new Date()): Promise<void> {
   const stamp = now.toISOString().slice(0, 14) // 分钟精度 key
   for (const wf of listWorkflows()) {
     const sched = wf.schedule
@@ -44,11 +50,20 @@ export async function checkSchedules(): Promise<void> {
   }
 }
 
-async function execute(wf: Workflow, trigger: 'manual' | 'schedule'): Promise<WorkflowRun> {
+async function checkAllSchedules(): Promise<void> {
+  const now = new Date()
+  await Promise.all([checkSchedules(now), checkCalendarTasks(now)])
+}
+
+async function execute(
+  wf: Workflow,
+  trigger: WorkflowRun['trigger'],
+  taskId?: string
+): Promise<WorkflowRun> {
   if (running.has(wf.id)) return Promise.reject(new Error('工作流正在执行中'))
   running.add(wf.id)
   try {
-    const run = await runWorkflow(wf.id, trigger, emitRun)
+    const run = await runWorkflow(wf.id, trigger, emitRun, taskId)
     emitRun(run)
     return run
   } finally {
@@ -61,6 +76,12 @@ export function runWorkflowNow(workflowId: string, emit: WorkflowEventSink): Pro
   const wf = getWorkflow(workflowId)
   if (!wf) return Promise.reject(new Error('工作流不存在'))
   return execute(wf, 'manual')
+}
+
+export function runWorkflowCalendarTask(workflowId: string, taskId: string): Promise<WorkflowRun> {
+  const wf = getWorkflow(workflowId)
+  if (!wf) return Promise.reject(new Error('工作流不存在'))
+  return execute(wf, 'calendar_task', taskId)
 }
 
 export { listRuns }

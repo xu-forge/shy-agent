@@ -21,6 +21,7 @@ export function ensureWorkflowTables(): void {
       workflow_name TEXT NOT NULL,
       status TEXT NOT NULL,
       trigger TEXT NOT NULL,
+      task_id TEXT,
       started_at TEXT NOT NULL,
       finished_at TEXT,
       logs TEXT NOT NULL DEFAULT '[]',
@@ -30,6 +31,11 @@ export function ensureWorkflowTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_workflow_runs_wid ON workflow_runs(workflow_id, started_at DESC);
   `)
+  try {
+    getDb().exec(`ALTER TABLE workflow_runs ADD COLUMN task_id TEXT`)
+  } catch {
+    // 已存在该列。
+  }
 }
 
 function now(): string {
@@ -127,7 +133,8 @@ function rowToWorkflow(row: Record<string, unknown>): Workflow {
 export function createRun(input: {
   workflowId: string
   workflowName: string
-  trigger: 'manual' | 'schedule'
+  trigger: WorkflowRun['trigger']
+  taskId?: string
 }): WorkflowRun {
   ensureWorkflowTables()
   const t = now()
@@ -137,15 +144,26 @@ export function createRun(input: {
     workflowName: input.workflowName,
     status: 'running',
     trigger: input.trigger,
+    taskId: input.taskId,
     startedAt: t,
     logs: []
   }
   getDb()
     .prepare(
-      `INSERT INTO workflow_runs (id, workflow_id, workflow_name, status, trigger, started_at, created_at)
-       VALUES (?,?,?,?,?,?,?)`
+      `INSERT INTO workflow_runs
+       (id, workflow_id, workflow_name, status, trigger, task_id, started_at, created_at)
+       VALUES (?,?,?,?,?,?,?,?)`
     )
-    .run(run.id, run.workflowId, run.workflowName, run.status, run.trigger, run.startedAt, t)
+    .run(
+      run.id,
+      run.workflowId,
+      run.workflowName,
+      run.status,
+      run.trigger,
+      run.taskId ?? null,
+      run.startedAt,
+      t
+    )
   return run
 }
 
@@ -170,6 +188,7 @@ export function updateRun(
     workflowName: String(cur.workflow_name),
     status: patch.status ?? (cur.status as WorkflowRunStatus),
     trigger: String(cur.trigger) as WorkflowRun['trigger'],
+    taskId: cur.task_id ? String(cur.task_id) : undefined,
     startedAt: String(cur.started_at),
     finishedAt: patch.finishedAt ?? (cur.finished_at ? String(cur.finished_at) : undefined),
     logs,
@@ -212,6 +231,7 @@ function rowToRun(row: Record<string, unknown>): WorkflowRun {
     workflowName: String(row.workflow_name),
     status: row.status as WorkflowRunStatus,
     trigger: String(row.trigger) as WorkflowRun['trigger'],
+    taskId: row.task_id ? String(row.task_id) : undefined,
     startedAt: String(row.started_at),
     finishedAt: row.finished_at ? String(row.finished_at) : undefined,
     logs: JSON.parse(String(row.logs || '[]')),
