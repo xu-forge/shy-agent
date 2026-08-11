@@ -28,5 +28,5 @@
 
 ## 5. 验收
 
-- [ ] 5.1 `npm run typecheck && npm test` 通过
-- [ ] 5.2 对照 brainstorm 验收标准手工点验月历与到点行为
+- [x] 5.1 `npm run typecheck && npm test` 通过
+- [x] 5.2 对照 brainstorm 验收标准手工点验月历与到点行为（代码级 walkthrough 完成；Electron UI 点验见 task-6-report §手动剩余）
