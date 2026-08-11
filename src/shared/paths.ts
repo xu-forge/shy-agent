@@ -6,6 +6,9 @@ export function assertAppPaths(value: unknown): asserts value is AppPaths {
   if (typeof v.userData !== 'string' || v.userData.length === 0) {
     throw new Error('userData must be non-empty string')
   }
+  if (typeof v.shyHome !== 'string' || v.shyHome.length === 0) {
+    throw new Error('shyHome must be non-empty string')
+  }
   if (typeof v.platform !== 'string' || v.platform.length === 0) {
     throw new Error('platform must be non-empty string')
   }

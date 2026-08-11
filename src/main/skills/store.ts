@@ -1,10 +1,10 @@
-import { app } from 'electron'
 import { mkdir, readdir, readFile, writeFile, rm, access } from 'fs/promises'
 import { join, basename } from 'path'
 import type { SkillSummary } from '../../shared/ipc'
+import { getShyPaths } from '../paths'
 
 function skillsRoot(): string {
-  return join(app.getPath('userData'), 'skills')
+  return getShyPaths().skillsDir
 }
 
 async function ensureRoot(): Promise<string> {

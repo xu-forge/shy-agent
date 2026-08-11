@@ -1,19 +1,21 @@
-import { app } from 'electron'
 import { mkdir, readFile, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { dirname } from 'path'
 import type { ModelSettings } from '../../shared/ipc'
+import { getShyPaths } from '../paths'
 
 const DEFAULTS: ModelSettings = {
   baseURL: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o-mini',
   stagnationRounds: 20,
-  recursionLimit: undefined,
-  hardRoundCap: 0
+  tokenBudget: 1_000_000_000,
+  segmentSteps: 60,
+  contextWindow: 1_000_000,
+  compressThreshold: 60
 }
 
 function settingsPath(): string {
-  return join(app.getPath('userData'), 'settings.json')
+  return getShyPaths().configSettings
 }
 
 export async function getSettings(): Promise<ModelSettings> {
@@ -35,16 +37,26 @@ export async function setSettings(next: ModelSettings): Promise<ModelSettings> {
       typeof next.stagnationRounds === 'number' && next.stagnationRounds > 0
         ? Math.floor(next.stagnationRounds)
         : DEFAULTS.stagnationRounds,
-    recursionLimit:
-      typeof next.recursionLimit === 'number' && next.recursionLimit > 0
-        ? Math.floor(next.recursionLimit)
-        : undefined,
-    hardRoundCap:
-      typeof next.hardRoundCap === 'number' && next.hardRoundCap >= 0
-        ? Math.floor(next.hardRoundCap)
-        : 0
+    tokenBudget:
+      typeof next.tokenBudget === 'number' && next.tokenBudget >= 0
+        ? Math.floor(next.tokenBudget)
+        : DEFAULTS.tokenBudget,
+    segmentSteps:
+      typeof next.segmentSteps === 'number' && next.segmentSteps > 0
+        ? Math.floor(next.segmentSteps)
+        : DEFAULTS.segmentSteps,
+    contextWindow:
+      typeof next.contextWindow === 'number' && next.contextWindow > 0
+        ? Math.floor(next.contextWindow)
+        : DEFAULTS.contextWindow,
+    compressThreshold:
+      typeof next.compressThreshold === 'number' &&
+      next.compressThreshold > 0 &&
+      next.compressThreshold <= 100
+        ? Math.floor(next.compressThreshold)
+        : DEFAULTS.compressThreshold
   }
-  await mkdir(app.getPath('userData'), { recursive: true })
+  await mkdir(dirname(settingsPath()), { recursive: true })
   await writeFile(settingsPath(), JSON.stringify(merged, null, 2), 'utf8')
   return merged
 }

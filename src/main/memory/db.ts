@@ -1,17 +1,17 @@
-import { app } from 'electron'
 import { mkdirSync } from 'fs'
-import { join } from 'path'
+import { dirname } from 'path'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'crypto'
-import type { LongMemoryEntry } from '../../shared/ipc'
+import type { FileOp, LongMemoryEntry, SessionFileRecord, SessionTaskRecord, TaskSource } from '../../shared/ipc'
+import { getShyPaths } from '../paths'
 
 let db: Database.Database | null = null
 
 export function getDb(): Database.Database {
   if (db) return db
-  const dir = app.getPath('userData')
-  mkdirSync(dir, { recursive: true })
-  db = new Database(join(dir, 'memory.sqlite'))
+  const dbPath = getShyPaths().dbPath
+  mkdirSync(dirname(dbPath), { recursive: true })
+  db = new Database(dbPath)
   db.exec(`
     CREATE TABLE IF NOT EXISTS long_memory (
       id TEXT PRIMARY KEY,
@@ -37,6 +37,25 @@ export function getDb(): Database.Database {
       compressed TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS session_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      op TEXT NOT NULL,
+      path TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_files_sid ON session_files(session_id, occurred_at DESC);
+    CREATE TABLE IF NOT EXISTS session_tasks (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      evidence TEXT,
+      source TEXT NOT NULL,
+      occurred_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_tasks_sid ON session_tasks(session_id, updated_at DESC);
   `)
   // migrate revision column if missing
   try {
@@ -168,4 +187,144 @@ export function compressContext(messages: string[]): string {
     }
   }
   return [...new Set(keys)].slice(-80).join('\n')
+}
+
+/* ────────── session files (本次会话文件操作追踪) ────────── */
+
+export function recordFileOp(sessionId: string, op: FileOp, path: string): SessionFileRecord {
+  const occurredAt = Date.now()
+  const stmt = getDb().prepare(
+    `INSERT INTO session_files (session_id, op, path, occurred_at) VALUES (?, ?, ?, ?)`
+  )
+  const info = stmt.run(sessionId, op, path, occurredAt)
+  return {
+    id: Number(info.lastInsertRowid),
+    sessionId,
+    op,
+    path,
+    occurredAt
+  }
+}
+
+export function listSessionFiles(sessionId: string, limit = 200): SessionFileRecord[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, session_id, op, path, occurred_at
+       FROM session_files WHERE session_id = ? ORDER BY occurred_at DESC LIMIT ?`
+    )
+    .all(sessionId, limit) as Record<string, unknown>[]
+  return rows.map((row) => ({
+    id: Number(row.id),
+    sessionId: String(row.session_id),
+    op: row.op as FileOp,
+    path: String(row.path),
+    occurredAt: Number(row.occurred_at)
+  }))
+}
+
+/* ────────── session tasks (动态任务 + 目标模式 checklist) ────────── */
+
+export function upsertSessionTask(input: {
+  id: string
+  sessionId: string
+  title: string
+  done?: boolean
+  evidence?: string
+  source: TaskSource
+}): SessionTaskRecord {
+  const now = Date.now()
+  const existing = getDb()
+    .prepare(`SELECT occurred_at FROM session_tasks WHERE id = ?`)
+    .get(input.id) as { occurred_at?: number } | undefined
+  const occurredAt = existing?.occurred_at ?? now
+  getDb()
+    .prepare(
+      `INSERT INTO session_tasks (id, session_id, title, done, evidence, source, occurred_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         title=excluded.title,
+         done=excluded.done,
+         evidence=excluded.evidence,
+         source=excluded.source,
+         updated_at=excluded.updated_at`
+    )
+    .run(
+      input.id,
+      input.sessionId,
+      input.title,
+      input.done ? 1 : 0,
+      input.evidence ?? null,
+      input.source,
+      occurredAt,
+      now
+    )
+  return {
+    id: input.id,
+    sessionId: input.sessionId,
+    title: input.title,
+    done: Boolean(input.done),
+    evidence: input.evidence,
+    source: input.source,
+    occurredAt,
+    updatedAt: now
+  }
+}
+
+export function updateSessionTaskDone(
+  sessionId: string,
+  id: string,
+  done: boolean,
+  evidence?: string
+): SessionTaskRecord | null {
+  const now = Date.now()
+  const info = getDb()
+    .prepare(
+      `UPDATE session_tasks
+       SET done = ?, evidence = COALESCE(?, evidence), updated_at = ?
+       WHERE id = ? AND session_id = ?`
+    )
+    .run(done ? 1 : 0, evidence ?? null, now, id, sessionId)
+  if (info.changes === 0) return null
+  return getSessionTask(sessionId, id)
+}
+
+export function deleteSessionTask(sessionId: string, id: string): boolean {
+  const info = getDb()
+    .prepare(`DELETE FROM session_tasks WHERE id = ? AND session_id = ?`)
+    .run(id, sessionId)
+  return info.changes > 0
+}
+
+export function getSessionTask(sessionId: string, id: string): SessionTaskRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, session_id, title, done, evidence, source, occurred_at, updated_at
+       FROM session_tasks WHERE id = ? AND session_id = ?`
+    )
+    .get(id, sessionId) as Record<string, unknown> | undefined
+  if (!row) return null
+  return rowToTask(row)
+}
+
+export function listSessionTasks(sessionId: string, limit = 500): SessionTaskRecord[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, session_id, title, done, evidence, source, occurred_at, updated_at
+       FROM session_tasks WHERE session_id = ? ORDER BY updated_at DESC LIMIT ?`
+    )
+    .all(sessionId, limit) as Record<string, unknown>[]
+  return rows.map(rowToTask)
+}
+
+function rowToTask(row: Record<string, unknown>): SessionTaskRecord {
+  return {
+    id: String(row.id),
+    sessionId: String(row.session_id),
+    title: String(row.title),
+    done: Number(row.done) === 1,
+    evidence: row.evidence ? String(row.evidence) : undefined,
+    source: row.source === 'agent' ? 'agent' : 'goal',
+    occurredAt: Number(row.occurred_at),
+    updatedAt: Number(row.updated_at)
+  }
 }

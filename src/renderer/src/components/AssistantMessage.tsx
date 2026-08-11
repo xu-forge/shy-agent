@@ -22,10 +22,13 @@ export function AssistantMessage({ content }: Props): React.JSX.Element {
             onClick={() => setUserOpen((v) => !v)}
             aria-expanded={shownOpen}
           >
-            <span className="thinking-chevron" data-open={shownOpen ? '1' : '0'}>
-              ▸
+            <span className="thinking-dot" aria-hidden="true" />
+            <span>{thinkingOpen ? '思考中…' : '思考过程'}</span>
+            <span className={`thinking-chevron${shownOpen ? ' open' : ''}`} aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M9 6l6 6-6 6" />
+              </svg>
             </span>
-            {thinkingOpen ? '思考中…' : '思考过程'}
           </button>
           {shownOpen ? <pre className="thinking-body">{thinking}</pre> : null}
         </div>

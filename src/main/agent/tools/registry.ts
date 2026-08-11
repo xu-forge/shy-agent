@@ -4,6 +4,8 @@ import { z } from 'zod'
 export type ToolContext = {
   emit: (event: string, payload: unknown) => void
   confirmHighRisk: (action: string, detail: string) => Promise<boolean>
+  /** 当前会话 id；用于文件追踪埋点（shell-session-side-panel） */
+  sessionId: string
 }
 
 type Factory = (ctx: ToolContext) => DynamicStructuredTool

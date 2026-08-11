@@ -1,6 +1,6 @@
-# my-agent
+# shy
 
-个人 Electron Agent 客户端。产品决策见 [`docs/product-brief.md`](docs/product-brief.md)。
+个人 Electron Agent 客户端（产品名 shy，数据根 `~/.shy`）。产品决策见 [`docs/product-brief.md`](docs/product-brief.md)。
 
 技术栈（已确认）：Electron + React + Vite；Agent 编排 LangGraph。
 

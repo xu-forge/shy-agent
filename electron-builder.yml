@@ -1,5 +1,5 @@
-appId: com.local.my-agent
-productName: my-agent
+appId: com.local.shy
+productName: shy
 directories:
   buildResources: build
   output: release

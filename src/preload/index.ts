@@ -7,11 +7,16 @@ import {
   type LongMemoryEntry,
   type ModelSettings,
   type SessionDetail,
+  type SessionFileRecord,
   type SessionSummary,
-  type SkillSummary
+  type SessionTaskRecord,
+  type SkillSummary,
+  type AgentLogFileSummary,
+  type Workflow,
+  type WorkflowRun
 } from '../shared/ipc'
 
-const myAgent = {
+const shy = {
   ping: (): Promise<'pong'> => ipcRenderer.invoke(IPC.ping),
   getPaths: (): Promise<AppPaths> => ipcRenderer.invoke(IPC.getPaths),
   getSettings: (): Promise<ModelSettings> => ipcRenderer.invoke(IPC.settingsGet),
@@ -50,8 +55,44 @@ const myAgent = {
     scripts?: Record<string, string>
   }): Promise<SkillSummary> => ipcRenderer.invoke(IPC.skillsWrite, input),
   deleteSkill: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.skillsDelete, id),
+  // shell-session-side-panel
+  listSessionFiles: (sessionId: string): Promise<SessionFileRecord[]> =>
+    ipcRenderer.invoke(IPC.sessionFilesList, sessionId),
+  revealSessionFile: (sessionId: string, filePath: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.sessionFilesReveal, sessionId, filePath),
+  listSessionTasks: (sessionId: string): Promise<SessionTaskRecord[]> =>
+    ipcRenderer.invoke(IPC.sessionTasksList, sessionId),
+  updateSessionTask: (input: {
+    sessionId: string
+    id: string
+    done: boolean
+    evidence?: string
+  }): Promise<{ ok: boolean; task?: SessionTaskRecord; error?: string }> =>
+    ipcRenderer.invoke(IPC.sessionTasksUpdate, input),
+  deleteSessionTask: (input: { sessionId: string; id: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.sessionTasksDelete, input),
   confirmTool: (requestId: string, approved: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.toolConfirm, requestId, approved),
+  listWorkflows: (): Promise<Workflow[]> => ipcRenderer.invoke(IPC.workflowList),
+  getWorkflow: (id: string): Promise<Workflow | null> => ipcRenderer.invoke(IPC.workflowGet, id),
+  saveWorkflow: (wf: Workflow): Promise<Workflow> => ipcRenderer.invoke(IPC.workflowSave, wf),
+  deleteWorkflow: (id: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.workflowDelete, id),
+  runWorkflow: (
+    id: string
+  ): Promise<{ ok: boolean; run?: WorkflowRun; error?: string }> =>
+    ipcRenderer.invoke(IPC.workflowRun, id),
+  listWorkflowRuns: (id?: string): Promise<WorkflowRun[]> =>
+    ipcRenderer.invoke(IPC.workflowRunsList, id),
+  getWorkflowTemplate: (): Promise<Workflow> => ipcRenderer.invoke(IPC.workflowTemplate),
+  listAgentLogs: (): Promise<AgentLogFileSummary[]> => ipcRenderer.invoke(IPC.logsAgentList),
+  readAgentLog: (input: {
+    name: string
+    offset?: number
+    limit?: number
+  }): Promise<{ name: string; content: string; truncated: boolean }> =>
+    ipcRenderer.invoke(IPC.logsAgentRead, input),
+  revealAgentLogsDir: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.logsAgentReveal),
   onEvent: (handler: (payload: unknown) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
       handler(payload)
@@ -61,4 +102,4 @@ const myAgent = {
   }
 }
 
-contextBridge.exposeInMainWorld('myAgent', myAgent)
+contextBridge.exposeInMainWorld('shy', shy)

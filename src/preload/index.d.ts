@@ -1,15 +1,20 @@
 import type {
+  AgentLogFileSummary,
   AgentMode,
   AppPaths,
   ChatRequest,
   LongMemoryEntry,
   ModelSettings,
   SessionDetail,
+  SessionFileRecord,
   SessionSummary,
-  SkillSummary
+  SessionTaskRecord,
+  SkillSummary,
+  Workflow,
+  WorkflowRun
 } from '../shared/ipc'
 
-export interface MyAgentApi {
+export interface ShyApi {
   ping: () => Promise<'pong'>
   getPaths: () => Promise<AppPaths>
   getSettings: () => Promise<ModelSettings>
@@ -39,13 +44,37 @@ export interface MyAgentApi {
     scripts?: Record<string, string>
   }) => Promise<SkillSummary>
   deleteSkill: (id: string) => Promise<{ ok: boolean }>
+  listSessionFiles: (sessionId: string) => Promise<SessionFileRecord[]>
+  revealSessionFile: (sessionId: string, filePath: string) => Promise<{ ok: boolean }>
+  listSessionTasks: (sessionId: string) => Promise<SessionTaskRecord[]>
+  updateSessionTask: (input: {
+    sessionId: string
+    id: string
+    done: boolean
+    evidence?: string
+  }) => Promise<{ ok: boolean; task?: SessionTaskRecord; error?: string }>
+  deleteSessionTask: (input: { sessionId: string; id: string }) => Promise<{ ok: boolean }>
   confirmTool: (requestId: string, approved: boolean) => Promise<{ ok: boolean }>
+  listWorkflows: () => Promise<Workflow[]>
+  getWorkflow: (id: string) => Promise<Workflow | null>
+  saveWorkflow: (wf: Workflow) => Promise<Workflow>
+  deleteWorkflow: (id: string) => Promise<{ ok: boolean }>
+  runWorkflow: (id: string) => Promise<{ ok: boolean; run?: WorkflowRun; error?: string }>
+  listWorkflowRuns: (id?: string) => Promise<WorkflowRun[]>
+  getWorkflowTemplate: () => Promise<Workflow>
+  listAgentLogs: () => Promise<AgentLogFileSummary[]>
+  readAgentLog: (input: {
+    name: string
+    offset?: number
+    limit?: number
+  }) => Promise<{ name: string; content: string; truncated: boolean }>
+  revealAgentLogsDir: () => Promise<{ ok: boolean }>
   onEvent: (handler: (payload: unknown) => void) => () => void
 }
 
 declare global {
   interface Window {
-    myAgent: MyAgentApi
+    shy: ShyApi
   }
 }
 

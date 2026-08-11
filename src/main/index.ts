@@ -3,6 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerCoreIpc, setMainWindow } from './ipc'
+import { ensureShyHomeDirs, resolveShyHome } from './paths'
+import { migrateLegacyUserData } from './migration'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -12,8 +14,15 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    title: 'my-agent',
-    backgroundColor: '#f7f7f4',
+    title: 'shy',
+    backgroundColor: '#f4f4f2',
+    // macOS：隐藏系统标题栏，红绿灯嵌入自绘 header（Codex/ChatGPT 式）
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 18, y: 13 }
+        }
+      : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -45,7 +54,17 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.local.my-agent')
+  // 必须在任何业务读写之前：缓存旧 userData → 切到 ~/.shy → 迁移 → ensure
+  const legacyUserData = app.getPath('userData')
+  const shyHome = resolveShyHome()
+  app.setPath('userData', shyHome)
+  const paths = ensureShyHomeDirs(shyHome)
+  const migration = migrateLegacyUserData(legacyUserData, paths)
+  if (migration.status === 'success') {
+    console.log('[shy] migrated legacy data from', migration.source, migration.files)
+  }
+
+  electronApp.setAppUserModelId('com.local.shy')
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })

@@ -5,12 +5,21 @@ import { promisify } from 'util'
 import { readFile, writeFile, rm, mkdir } from 'fs/promises'
 import { dirname } from 'path'
 import { registerTool } from './registry'
-import { upsertLongMemory, deleteLongMemory, listLongMemory } from '../../memory/db'
+import { upsertLongMemory, deleteLongMemory, listLongMemory, recordFileOp } from '../../memory/db'
 import { writeSkill, listSkills, deleteSkill } from '../../skills/store'
+
+/**
+ * shell-session-side-panel：本文件内置工具中需要打点文件操作到 session_files 表的工具：
+ *   - fs_read   → op='read'
+ *   - fs_write  → op='write'
+ *   - fs_delete → op='delete'
+ * 未来 builtin 添加 fs_edit / fs_copy / fs_move 时继续按本约定扩展。
+ */
 
 const execAsync = promisify(exec)
 
-const SENSITIVE_PATH = /(\.ssh|\.gnupg|AppData\\Roaming\\my-agent\\settings\.json|\/etc\/passwd)/i
+const SENSITIVE_PATH =
+  /(\.ssh|\.gnupg|\.shy[/\\]config[/\\]settings\.json|AppData\\Roaming\\my-agent\\settings\.json|\/etc\/passwd)/i
 
 function isHighRiskOverwrite(path: string): boolean {
   return SENSITIVE_PATH.test(path) || /\.(exe|dll|sys|bat|cmd|ps1|sh)$/i.test(path)
@@ -69,6 +78,7 @@ export function registerBuiltinTools(): void {
           ctx.emit('tool', { name: 'fs_read', path })
           const text = await readFile(path, 'utf8')
           const clipped = text.slice(0, maxChars ?? 50_000)
+          recordFileOp(ctx.sessionId, 'read', path)
           return JSON.stringify({
             ok: true,
             content: clipped,
@@ -93,6 +103,7 @@ export function registerBuiltinTools(): void {
           ctx.emit('tool', { name: 'fs_write', path })
           await mkdir(dirname(path), { recursive: true })
           await writeFile(path, content, 'utf8')
+          recordFileOp(ctx.sessionId, 'write', path)
           return JSON.stringify({ ok: true })
         }
       })
@@ -112,6 +123,7 @@ export function registerBuiltinTools(): void {
           }
           ctx.emit('tool', { name: 'fs_delete', path })
           await rm(path, { recursive: Boolean(recursive), force: true })
+          recordFileOp(ctx.sessionId, 'delete', path)
           return JSON.stringify({ ok: true })
         }
       })

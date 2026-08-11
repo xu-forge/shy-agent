@@ -1,16 +1,15 @@
-# my-agent 产品简报
+# shy 产品简报
 
 > 状态：**部分已确认**（可进入 OpenSpec change；仍有 TBDs）  
-> 更新日期：2026-08-10  
-> 路径：`demo/my-agent`  
+> 更新日期：2026-08-11  
+> 产品名：**shy**；数据根：`~/.shy`（`SHY_HOME` 可覆盖）  
 > 流程：OpenSpec + **superpowers-bridge**（社区 schema）  
-> 本阶段：需求落档与工具链初始化；**仍不实现业务功能代码**
 
 ---
 
 ## 1. 一句话目标
 
-做一个基于 **Electron + React + Vite** 的个人 Agent 客户端（**Windows + macOS**）：LangGraph 编排；OpenAI-compatible 模型（如 Minimax）；分层记忆；可操作电脑的长工作流；支持**交互式模式**与**目标模式**；Skills（`SKILL.md` + 脚本）可加载/CRUD，并允许 Agent 自创建。
+做一个名为 **shy** 的个人 Electron Agent 客户端（**Windows + macOS**）：LangGraph 编排；OpenAI-compatible 模型（如 Minimax）；分层记忆；可操作电脑的长工作流；支持**交互式模式**与**目标模式**；Skills（`SKILL.md` + 脚本）可加载/CRUD，并允许 Agent 自创建。本机数据统一存放在 `~/.shy`。
 
 ---
 

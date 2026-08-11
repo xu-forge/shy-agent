@@ -4,8 +4,9 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { app, clipboard, desktopCapturer, screen } from 'electron'
+import { clipboard, desktopCapturer, screen } from 'electron'
 import { registerTool } from './registry'
+import { getShyPaths } from '../../paths'
 
 const execAsync = promisify(exec)
 
@@ -67,7 +68,7 @@ export function registerComputerTools(): void {
     (ctx) =>
       new DynamicStructuredTool({
         name: 'gui_screenshot',
-        description: '截取主屏幕并保存到 userData/screenshots',
+        description: '截取主屏幕并保存到 ~/.shy/artifacts/screenshots',
         schema: z.object({}),
         func: async () => {
           ctx.emit('tool', { name: 'gui_screenshot' })
@@ -77,7 +78,7 @@ export function registerComputerTools(): void {
           })
           const source = sources[0]
           if (!source) return JSON.stringify({ ok: false, error: '无可用屏幕源' })
-          const dir = join(app.getPath('userData'), 'screenshots')
+          const dir = getShyPaths().screenshotsDir
           await mkdir(dir, { recursive: true })
           const file = join(dir, `shot-${Date.now()}.png`)
           await writeFile(file, source.thumbnail.toPNG())

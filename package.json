@@ -1,5 +1,5 @@
 {
-  "name": "my-agent",
+  "name": "shy",
   "version": "1.0.0",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
@@ -27,6 +27,7 @@
     "@langchain/core": "^1.2.5",
     "@langchain/langgraph": "^1.4.9",
     "@langchain/openai": "^1.5.6",
+    "@xyflow/react": "^12.11.2",
     "better-sqlite3": "^13.0.3",
     "playwright": "^1.62.1",
     "react-markdown": "^10.1.0",

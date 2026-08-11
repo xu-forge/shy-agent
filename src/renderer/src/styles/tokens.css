@@ -1,32 +1,121 @@
+/* ————————————————————————————————————————————————
+   Design tokens — Codex 式现代工具（ChatGPT Work / Codex 参考）
+   柔和圆角 · 琥珀主题色 · 白/浅灰分层 · 自定义 header
+   ———————————————————————————————————————————————— */
 :root {
-  --bg: #f7f7f4;
-  --bg-deep: #efece6;
-  --bg-rail: rgba(255, 255, 255, 0.55);
+  /* surface：主区纯白，侧栏浅灰分层 */
+  --bg: #ffffff;
+  --bg-deep: #f6f6f3;
+  --bg-rail: #f2f2ee;
   --bg-panel: #ffffff;
-  --bg-soft: #f1efe9;
-  --bg-input: #ffffff;
-  --border: rgba(30, 30, 28, 0.1);
-  --border-strong: rgba(30, 30, 28, 0.16);
-  --text: #1c1c1a;
-  --text-secondary: #5c5c57;
-  --text-muted: #8a8a82;
-  --accent: #1f1f1c;
-  --accent-soft: rgba(28, 28, 26, 0.06);
-  --accent-hover: rgba(28, 28, 26, 0.1);
-  --ok: #2f6f4e;
-  --danger: #a33b3b;
-  --danger-soft: rgba(163, 59, 59, 0.08);
-  --tool: #4a5d73;
-  --shadow-sm: 0 1px 2px rgba(28, 28, 26, 0.04);
-  --shadow-md: 0 8px 28px rgba(28, 28, 26, 0.08);
-  --shadow-composer: 0 10px 40px rgba(28, 28, 26, 0.1);
-  --rail-width: 232px;
-  --content-max: 760px;
+  --bg-soft: #f3f3ef;
+  --bg-hover: rgba(20, 20, 18, 0.055);
+  --bg-active: rgba(20, 20, 18, 0.09);
+  --bg-inset: rgba(20, 20, 18, 0.045);
+
+  /* lines */
+  --border: rgba(20, 20, 18, 0.09);
+  --border-strong: rgba(20, 20, 18, 0.16);
+
+  /* text */
+  --text: #1a1a18;
+  --text-secondary: #5a5a55;
+  --text-muted: #8d8d86;
+
+  /* accent：Codex 琥珀 */
+  --accent: #b45309;
+  --accent-strong: #92400e;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(180, 83, 9, 0.1);
+  --accent-hover: rgba(180, 83, 9, 0.17);
+  --accent-glow: rgba(180, 83, 9, 0.38);
+
+  /* semantic */
+  --ok: #227a4e;
+  --ok-soft: rgba(34, 122, 78, 0.1);
+  --warn: #b45309;
+  --warn-soft: rgba(180, 83, 9, 0.1);
+  --danger: #c63c2e;
+  --danger-soft: rgba(198, 60, 46, 0.09);
+  --info: #1a1a18;
+  --tool: #4a5568;
+  --tool-soft: rgba(74, 85, 104, 0.09);
+
+  /* code */
+  --code-bg: #1d1d1a;
+  --code-text: #f2efe7;
+  --code-inline-bg: rgba(20, 20, 18, 0.07);
+
+  /* elevation */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 18, 0.05);
+  --shadow-md: 0 6px 20px rgba(20, 20, 18, 0.09);
+  --shadow-lg: 0 18px 44px rgba(20, 20, 18, 0.16);
+  --shadow-composer: 0 4px 24px rgba(20, 20, 18, 0.1);
+  --focus-ring: 0 0 0 3px rgba(180, 83, 9, 0.22);
+
+  /* geometry：柔和圆角 */
+  --rail-width: 244px;
+  --content-max: 800px;
+  --radius-s: 8px;
   --radius: 10px;
-  --radius-lg: 18px;
-  --font: 'IBM Plex Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, monospace;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* type */
+  --font: 'Inter', 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', 'Cascadia Mono', Consolas, monospace;
+
+  /* motion */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: #141412;
+  --bg-deep: #0f0f0d;
+  --bg-rail: #171715;
+  --bg-panel: #1c1c19;
+  --bg-soft: #23231f;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.1);
+  --bg-inset: rgba(255, 255, 255, 0.04);
+
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.17);
+
+  --text: #ecebe4;
+  --text-secondary: #a7a69c;
+  --text-muted: #6f6e66;
+
+  --accent: #e8a33d;
+  --accent-strong: #f2b75c;
+  --accent-contrast: #1a1408;
+  --accent-soft: rgba(232, 163, 61, 0.13);
+  --accent-hover: rgba(232, 163, 61, 0.22);
+  --accent-glow: rgba(232, 163, 61, 0.45);
+
+  --ok: #4caf7f;
+  --ok-soft: rgba(76, 175, 127, 0.13);
+  --warn: #e8a33d;
+  --warn-soft: rgba(232, 163, 61, 0.13);
+  --danger: #e0755f;
+  --danger-soft: rgba(224, 117, 95, 0.12);
+  --info: #ecebe4;
+  --tool: #93a7bd;
+  --tool-soft: rgba(147, 167, 189, 0.12);
+
+  --code-bg: #0b0b0a;
+  --code-text: #e8e6dd;
+  --code-inline-bg: rgba(255, 255, 255, 0.09);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.36);
+  --shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.5);
+  --shadow-composer: 0 4px 24px rgba(0, 0, 0, 0.45);
+  --focus-ring: 0 0 0 3px rgba(232, 163, 61, 0.28);
+
+  color-scheme: dark;
 }
 
 * {
@@ -38,20 +127,22 @@ body,
 #root {
   margin: 0;
   height: 100%;
+}
+
+body {
   color: var(--text);
   font-family: var(--font);
   font-size: 14.5px;
-  line-height: 1.5;
-  background:
-    radial-gradient(1200px 600px at 20% -10%, rgba(255, 255, 255, 0.9), transparent 55%),
-    radial-gradient(900px 500px at 90% 0%, rgba(232, 228, 218, 0.8), transparent 50%),
-    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
+  line-height: 1.55;
+  background: linear-gradient(0deg, var(--bg-deep) 0%, var(--bg) 320px), var(--bg);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   color: inherit;
 }
@@ -61,5 +152,45 @@ button {
 }
 
 ::selection {
-  background: rgba(28, 28, 26, 0.12);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* 聚焦可见性：2px 朱红环 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 滚动条：细、硬朗 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 0;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
