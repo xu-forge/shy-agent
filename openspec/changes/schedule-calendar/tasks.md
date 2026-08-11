@@ -21,10 +21,10 @@
 
 ## 4. 日历 UI
 
-- [ ] 4.1 侧栏 nav「日历」+ `CalendarView` 月网格、月切换
-- [ ] 4.2 点空新建 / 点任务编辑表单（三动作 + 调度编辑，可复用 WorkflowSchedule 思路）
-- [ ] 4.3 拖拽改日/时 → update IPC + 系列语义说明文案
-- [ ] 4.4 双跑警告条；remind toast/状态条
+- [x] 4.1 侧栏 nav「日历」+ `CalendarView` 月网格、月切换
+- [x] 4.2 点空新建 / 点任务编辑表单（三动作 + 调度编辑，可复用 WorkflowSchedule 思路）
+- [x] 4.3 拖拽改日/时 → update IPC + 系列语义说明文案
+- [x] 4.4 双跑警告条；remind toast/状态条
 
 ## 5. 验收
 

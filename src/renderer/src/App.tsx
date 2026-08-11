@@ -8,6 +8,7 @@ import { SkillsView } from './components/SkillsView'
 import { SettingsPanel } from './components/SettingsPanel'
 import { WorkflowsView } from './components/WorkflowsView'
 import { WorkflowEditor } from './components/WorkflowEditor'
+import { CalendarView } from './components/CalendarView'
 import type { Workflow } from '../../shared/ipc'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
@@ -23,13 +24,20 @@ const NAV_TITLES: Record<NavKey, string> = {
   memory: '长期记忆',
   skills: '技能',
   workflows: '工作流',
+  calendar: '日历',
   settings: '设置'
 }
 
 function readNav(): NavKey {
   try {
     const v = localStorage.getItem(NAV_KEY)
-    return v === 'memory' || v === 'skills' || v === 'workflows' || v === 'settings' ? v : 'chat'
+    return v === 'memory' ||
+      v === 'skills' ||
+      v === 'workflows' ||
+      v === 'calendar' ||
+      v === 'settings'
+      ? v
+      : 'chat'
   } catch {
     return 'chat'
   }
@@ -202,6 +210,7 @@ function App(): React.JSX.Element {
             />
           )
         ) : null}
+        {nav === 'calendar' ? <CalendarView /> : null}
         {nav === 'settings' ? (
           <SettingsPanel
             theme={theme}
