@@ -46,7 +46,10 @@ export async function checkSchedules(now = new Date()): Promise<void> {
     // 避免同一分钟重复触发
     if (lastFired.get(wf.id) === stamp) continue
     lastFired.set(wf.id, stamp)
-    void execute(wf, 'schedule')
+    void execute(wf, 'schedule').catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[shy:schedule] 工作流定时执行失败：${message}`, { workflowId: wf.id })
+    })
   }
 }
 

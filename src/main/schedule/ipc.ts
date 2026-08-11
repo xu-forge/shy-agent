@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import {
   IPC,
   type CreateScheduleTaskInput,
+  type ScheduleConflictWarning,
   type ScheduleOccurrence,
   type ScheduleTask,
   type ScheduleTasksExpandInput,
@@ -41,7 +42,7 @@ const defaultDependencies: ScheduleIpcDependencies = {
 export function registerScheduleIpc(
   dependencies: ScheduleIpcDependencies = defaultDependencies
 ): void {
-  const warningsFor = (tasks: ScheduleTask[]) =>
+  const warningsFor = (tasks: ScheduleTask[]): ScheduleConflictWarning[] =>
     detectWorkflowScheduleConflicts(tasks, dependencies.listWorkflows())
 
   ipcMain.handle(IPC.scheduleTasksList, async () => {
