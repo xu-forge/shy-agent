@@ -12,6 +12,14 @@ import {
   type SessionTaskRecord,
   type SkillSummary,
   type AgentLogFileSummary,
+  type CreateScheduleTaskInput,
+  type ScheduleOccurrence,
+  type ScheduleReminderEvent,
+  type ScheduleTask,
+  type ScheduleTaskSaveResult,
+  type ScheduleTasksExpandInput,
+  type ScheduleTasksListResult,
+  type UpdateScheduleTaskInput,
   type Workflow,
   type WorkflowRun
 } from '../shared/ipc'
@@ -85,6 +93,20 @@ const shy = {
   listWorkflowRuns: (id?: string): Promise<WorkflowRun[]> =>
     ipcRenderer.invoke(IPC.workflowRunsList, id),
   getWorkflowTemplate: (): Promise<Workflow> => ipcRenderer.invoke(IPC.workflowTemplate),
+  scheduleTasksList: (): Promise<ScheduleTasksListResult> =>
+    ipcRenderer.invoke(IPC.scheduleTasksList),
+  scheduleTasksGet: (id: string): Promise<ScheduleTask | null> =>
+    ipcRenderer.invoke(IPC.scheduleTasksGet, id),
+  scheduleTasksCreate: (input: CreateScheduleTaskInput): Promise<ScheduleTaskSaveResult> =>
+    ipcRenderer.invoke(IPC.scheduleTasksCreate, input),
+  scheduleTasksUpdate: (input: {
+    id: string
+    patch: UpdateScheduleTaskInput
+  }): Promise<ScheduleTaskSaveResult> => ipcRenderer.invoke(IPC.scheduleTasksUpdate, input),
+  scheduleTasksDelete: (id: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.scheduleTasksDelete, id),
+  scheduleTasksExpand: (input: ScheduleTasksExpandInput): Promise<ScheduleOccurrence[]> =>
+    ipcRenderer.invoke(IPC.scheduleTasksExpand, input),
   listAgentLogs: (): Promise<AgentLogFileSummary[]> => ipcRenderer.invoke(IPC.logsAgentList),
   readAgentLog: (input: {
     name: string
@@ -99,6 +121,13 @@ const shy = {
     }
     ipcRenderer.on(IPC.events, listener)
     return () => ipcRenderer.removeListener(IPC.events, listener)
+  },
+  onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: ScheduleReminderEvent): void => {
+      handler(payload)
+    }
+    ipcRenderer.on(IPC.scheduleRemind, listener)
+    return () => ipcRenderer.removeListener(IPC.scheduleRemind, listener)
   }
 }
 

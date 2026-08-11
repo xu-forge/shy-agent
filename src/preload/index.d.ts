@@ -3,13 +3,21 @@ import type {
   AgentMode,
   AppPaths,
   ChatRequest,
+  CreateScheduleTaskInput,
   LongMemoryEntry,
   ModelSettings,
+  ScheduleOccurrence,
+  ScheduleReminderEvent,
+  ScheduleTask,
+  ScheduleTaskSaveResult,
+  ScheduleTasksExpandInput,
+  ScheduleTasksListResult,
   SessionDetail,
   SessionFileRecord,
   SessionSummary,
   SessionTaskRecord,
   SkillSummary,
+  UpdateScheduleTaskInput,
   Workflow,
   WorkflowRun
 } from '../shared/ipc'
@@ -62,6 +70,15 @@ export interface ShyApi {
   runWorkflow: (id: string) => Promise<{ ok: boolean; run?: WorkflowRun; error?: string }>
   listWorkflowRuns: (id?: string) => Promise<WorkflowRun[]>
   getWorkflowTemplate: () => Promise<Workflow>
+  scheduleTasksList: () => Promise<ScheduleTasksListResult>
+  scheduleTasksGet: (id: string) => Promise<ScheduleTask | null>
+  scheduleTasksCreate: (input: CreateScheduleTaskInput) => Promise<ScheduleTaskSaveResult>
+  scheduleTasksUpdate: (input: {
+    id: string
+    patch: UpdateScheduleTaskInput
+  }) => Promise<ScheduleTaskSaveResult>
+  scheduleTasksDelete: (id: string) => Promise<{ ok: boolean }>
+  scheduleTasksExpand: (input: ScheduleTasksExpandInput) => Promise<ScheduleOccurrence[]>
   listAgentLogs: () => Promise<AgentLogFileSummary[]>
   readAgentLog: (input: {
     name: string
@@ -70,6 +87,7 @@ export interface ShyApi {
   }) => Promise<{ name: string; content: string; truncated: boolean }>
   revealAgentLogsDir: () => Promise<{ ok: boolean }>
   onEvent: (handler: (payload: unknown) => void) => () => void
+  onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void) => () => void
 }
 
 declare global {

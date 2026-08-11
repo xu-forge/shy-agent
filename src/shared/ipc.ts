@@ -31,6 +31,13 @@ export const IPC = {
   workflowRun: 'shy:workflow-run',
   workflowRunsList: 'shy:workflow-runs-list',
   workflowTemplate: 'shy:workflow-template',
+  scheduleTasksList: 'shy:schedule-tasks-list',
+  scheduleTasksGet: 'shy:schedule-tasks-get',
+  scheduleTasksCreate: 'shy:schedule-tasks-create',
+  scheduleTasksUpdate: 'shy:schedule-tasks-update',
+  scheduleTasksDelete: 'shy:schedule-tasks-delete',
+  scheduleTasksExpand: 'shy:schedule-tasks-expand',
+  scheduleRemind: 'shy:schedule-remind',
   logsAgentList: 'shy:logs-agent-list',
   logsAgentRead: 'shy:logs-agent-read',
   logsAgentReveal: 'shy:logs-agent-reveal',
@@ -253,6 +260,35 @@ export type ScheduleConflictWarning = {
   taskId: string
   workflowId: string
   message: string
+}
+
+export type CreateScheduleTaskInput = Omit<ScheduleTask, 'id' | 'createdAt' | 'updatedAt'>
+
+export type UpdateScheduleTaskInput = Partial<
+  Pick<ScheduleTask, 'title' | 'enabled' | 'schedule' | 'action' | 'payload'>
+>
+
+export type ScheduleTasksListResult = {
+  tasks: ScheduleTask[]
+  warnings: ScheduleConflictWarning[]
+}
+
+export type ScheduleTaskSaveResult = {
+  task: ScheduleTask | null
+  warnings: ScheduleConflictWarning[]
+}
+
+export type ScheduleTasksExpandInput = {
+  rangeStart: string | number
+  rangeEnd: string | number
+}
+
+export type ScheduleReminderEvent = {
+  type: 'schedule_remind'
+  taskId: string
+  title: string
+  message: string
+  at: string
 }
 
 export type Workflow = {

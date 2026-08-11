@@ -29,6 +29,7 @@ import {
 } from './sessions/store'
 import { getShyPaths } from './paths'
 import { listAgentLogFiles, readAgentLogFile, revealAgentLogsDir } from './logs/agent-logs'
+import { registerScheduleIpc } from './schedule/ipc'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -45,6 +46,7 @@ export function registerCoreIpc(): void {
   registerBuiltinTools()
   registerComputerTools()
   registerConfirmIpc()
+  registerScheduleIpc()
 
   const waitConfirm = createConfirmWaiter(() => mainWindow)
 
@@ -205,5 +207,8 @@ export function registerCoreIpc(): void {
   ipcMain.handle(IPC.workflowTemplate, async () => defaultWorkflow('股票每日晨报'))
 
   // 调度器：每次事件发到 renderer
-  startScheduler((event) => emitToRenderer(event))
+  startScheduler(
+    (event) => emitToRenderer(event),
+    (event) => mainWindow?.webContents.send(IPC.scheduleRemind, event)
+  )
 }

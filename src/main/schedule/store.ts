@@ -1,31 +1,12 @@
 import { randomUUID } from 'crypto'
 import type {
-  RemindScheduleTaskPayload,
-  RunSkillScheduleTaskPayload,
-  RunWorkflowScheduleTaskPayload,
+  CreateScheduleTaskInput,
   ScheduleTask,
   ScheduleTaskAction,
+  UpdateScheduleTaskInput,
   WorkflowSchedule
 } from '../../shared/ipc'
 import { getDb } from '../memory/db'
-
-export type CreateScheduleTaskInput = {
-  title: string
-  enabled: boolean
-  schedule: WorkflowSchedule
-} & (
-  | { action: 'run_workflow'; payload: RunWorkflowScheduleTaskPayload }
-  | { action: 'remind'; payload: RemindScheduleTaskPayload }
-  | { action: 'run_skill'; payload: RunSkillScheduleTaskPayload }
-)
-
-export type UpdateScheduleTaskInput = Partial<{
-  title: string
-  enabled: boolean
-  schedule: WorkflowSchedule
-  action: ScheduleTaskAction
-  payload: ScheduleTask['payload']
-}>
 
 export function ensureScheduleTables(): void {
   getDb().exec(`

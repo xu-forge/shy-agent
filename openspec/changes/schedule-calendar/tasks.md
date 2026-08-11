@@ -15,9 +15,9 @@
 
 ## 3. IPC / preload
 
-- [ ] 3.1 `scheduleTasksList` / `Get` / `Create` / `Update` / `Delete` / `Expand`（或 list+expand 合并）
-- [ ] 3.2 提醒事件通道 + preload `window.shy` 暴露
-- [ ] 3.3 返回值含 `warnings`（保存/列表按需）
+- [x] 3.1 `scheduleTasksList` / `Get` / `Create` / `Update` / `Delete` / `Expand`（或 list+expand 合并）
+- [x] 3.2 提醒事件通道 + preload `window.shy` 暴露
+- [x] 3.3 返回值含 `warnings`（保存/列表按需）
 
 ## 4. 日历 UI
 

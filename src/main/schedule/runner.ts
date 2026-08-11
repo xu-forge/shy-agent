@@ -1,14 +1,6 @@
-import type { ScheduleTask } from '../../shared/ipc'
+import type { ScheduleReminderEvent, ScheduleTask } from '../../shared/ipc'
 import { compileCron, cronMatches } from '../workflows/scheduler'
 import { listScheduleTasks } from './store'
-
-export type ScheduleReminderEvent = {
-  type: 'schedule_remind'
-  taskId: string
-  title: string
-  message: string
-  at: string
-}
 
 export type ScheduleEventSink = (event: ScheduleReminderEvent) => void
 export type ScheduleLog = (
