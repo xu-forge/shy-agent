@@ -3,13 +3,15 @@ import type {
   AgentMode,
   ChatMessage,
   GoalChecklistItem,
+  RunStatus,
   SessionDetail,
   SessionSummary
 } from '../../shared/ipc'
 import { getDb } from '../memory/db'
 
 export function ensureSessionTables(): void {
-  getDb().exec(`
+  const db = getDb()
+  db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -30,6 +32,22 @@ export function ensureSessionTables(): void {
       created_at TEXT NOT NULL,
       FOREIGN KEY(session_id) REFERENCES sessions(id)
     );
+  `)
+  const columns = db.prepare(`PRAGMA table_info(sessions)`).all() as { name: string }[]
+  const columnNames = new Set(columns.map((column) => column.name))
+  if (!columnNames.has('run_status')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN run_status TEXT NOT NULL DEFAULT 'idle'`)
+  }
+  if (!columnNames.has('verify_command')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN verify_command TEXT`)
+  }
+  if (!columnNames.has('approved_checks')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN approved_checks TEXT NOT NULL DEFAULT '[]'`)
+  }
+  db.exec(`
+    UPDATE sessions
+    SET run_status = 'paused'
+    WHERE paused = 1 AND (run_status = 'idle' OR run_status IS NULL OR run_status = '')
   `)
 }
 
@@ -52,7 +70,15 @@ export function createSession(
        VALUES (?, ?, ?, NULL, '[]', '', 0, ?, ?)`
     )
     .run(sessionId, finalTitle, mode, t, t)
-  return { id: sessionId, title: finalTitle, mode, createdAt: t, updatedAt: t, paused: false }
+  return {
+    id: sessionId,
+    title: finalTitle,
+    mode,
+    createdAt: t,
+    updatedAt: t,
+    paused: false,
+    runStatus: 'idle'
+  }
 }
 
 export function listSessions(): SessionSummary[] {
@@ -60,6 +86,14 @@ export function listSessions(): SessionSummary[] {
   const rows = getDb()
     .prepare(`SELECT * FROM sessions ORDER BY updated_at DESC`)
     .all() as Record<string, unknown>[]
+  return rows.map(rowToSummary)
+}
+
+export function listGoalSessionsByRunStatus(status: RunStatus): SessionSummary[] {
+  ensureSessionTables()
+  const rows = getDb()
+    .prepare(`SELECT * FROM sessions WHERE mode='goal' AND run_status=? ORDER BY updated_at DESC`)
+    .all(status) as Record<string, unknown>[]
   return rows.map(rowToSummary)
 }
 
@@ -82,7 +116,8 @@ export function getSession(id: string): SessionDetail | null {
       createdAt: String(m.created_at)
     })),
     checklist: JSON.parse(String(row.checklist || '[]')) as GoalChecklistItem[],
-    shortMemory: String(row.short_memory || '')
+    shortMemory: String(row.short_memory || ''),
+    approvedChecks: JSON.parse(String(row.approved_checks || '[]')) as string[]
   }
 }
 
@@ -155,6 +190,9 @@ export function updateSessionRuntime(
     shortMemory?: string
     paused?: boolean
     checkpoint?: string | null
+    verifyCommand?: string | null
+    runStatus?: RunStatus
+    approvedChecks?: string[]
   }
 ): void {
   ensureSessionTables()
@@ -162,17 +200,36 @@ export function updateSessionRuntime(
     | Record<string, unknown>
     | undefined
   if (!cur) return
+  const currentRunStatus = (cur.run_status || 'idle') as RunStatus
+  let runStatus = patch.runStatus ?? currentRunStatus
+  if (patch.runStatus === undefined && patch.paused === true) {
+    runStatus = 'paused'
+  } else if (
+    patch.runStatus === undefined &&
+    patch.paused === false &&
+    currentRunStatus === 'paused'
+  ) {
+    runStatus = 'running'
+  }
   getDb()
     .prepare(
-      `UPDATE sessions SET mode=?, goal=?, checklist=?, short_memory=?, paused=?, checkpoint=?, updated_at=? WHERE id=?`
+      `UPDATE sessions
+       SET mode=?, goal=?, checklist=?, short_memory=?, paused=?, checkpoint=?,
+           verify_command=?, run_status=?, approved_checks=?, updated_at=?
+       WHERE id=?`
     )
     .run(
       patch.mode ?? cur.mode,
       patch.goal === undefined ? cur.goal : patch.goal,
       JSON.stringify(patch.checklist ?? JSON.parse(String(cur.checklist || '[]'))),
       patch.shortMemory ?? cur.short_memory,
-      patch.paused === undefined ? cur.paused : patch.paused ? 1 : 0,
+      runStatus === 'paused' ? 1 : 0,
       patch.checkpoint === undefined ? cur.checkpoint : patch.checkpoint,
+      patch.verifyCommand === undefined ? cur.verify_command : patch.verifyCommand,
+      runStatus,
+      JSON.stringify(
+        patch.approvedChecks ?? JSON.parse(String(cur.approved_checks || '[]'))
+      ),
       now(),
       sessionId
     )
@@ -187,13 +244,16 @@ export function getCheckpoint(sessionId: string): string | null {
 }
 
 function rowToSummary(row: Record<string, unknown>): SessionSummary {
+  const runStatus = (row.run_status || 'idle') as RunStatus
   return {
     id: String(row.id),
     title: String(row.title),
     mode: row.mode === 'goal' ? 'goal' : 'interactive',
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
-    paused: Boolean(row.paused),
-    goal: row.goal ? String(row.goal) : undefined
+    paused: runStatus === 'paused',
+    goal: row.goal ? String(row.goal) : undefined,
+    runStatus,
+    verifyCommand: row.verify_command ? String(row.verify_command) : undefined
   }
 }
