@@ -10,6 +10,7 @@ import { compressWithLlm } from '../memory/compress'
 import { appendMessage, getSession, updateSessionRuntime } from '../sessions/store'
 import { summarizeSessionTitle } from '../sessions/title'
 import type { AgentMode, GoalChecklistItem, TaskSource } from '../../shared/ipc'
+import { runGoalDriver } from './goal-driver'
 
 export type AgentEvent =
   | { type: 'status'; message: string }
@@ -49,6 +50,7 @@ type RunArgs = {
   emit: (event: AgentEvent) => void
   waitConfirm: (action: string, detail: string) => Promise<boolean>
   resume?: boolean
+  verifyCommand?: string
 }
 
 type SessionRuntime = {
@@ -60,6 +62,25 @@ type SessionRuntime = {
 }
 
 const runtimes = new Map<string, SessionRuntime>()
+
+export function getAgentRuntime(sessionId: string): SessionRuntime | undefined {
+  return runtimes.get(sessionId)
+}
+
+export function ensureAgentRuntime(sessionId: string): SessionRuntime {
+  const existing = runtimes.get(sessionId)
+  if (existing) return existing
+  const session = getSession(sessionId)
+  const rt: SessionRuntime = {
+    controller: new AbortController(),
+    paused: false,
+    pauseWaiters: [],
+    goal: session?.goal,
+    checklist: session?.checklist ?? []
+  }
+  runtimes.set(sessionId, rt)
+  return rt
+}
 
 function upsertChecklistItem(
   list: GoalChecklistItem[],
@@ -147,6 +168,18 @@ export async function runAgent(args: RunArgs): Promise<void> {
 
     if (!resume) {
       appendMessage(sessionId, 'user', message)
+    }
+
+    if (mode === 'goal') {
+      await runGoalDriver({
+        sessionId,
+        message,
+        verifyCommand: args.verifyCommand,
+        emit,
+        waitConfirm,
+        resume
+      })
+      return
     }
 
     const llm = new ChatOpenAI({
