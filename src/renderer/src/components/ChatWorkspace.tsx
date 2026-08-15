@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ModeToggle, type ModeKey } from './ModeToggle'
 import { AssistantMessage } from './AssistantMessage'
 import { MarkdownBody } from './MarkdownBody'
@@ -43,6 +43,9 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
   const [messages, setMessages] = useState<Msg[]>([])
   const threadRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
+  const currentSessionIdRef = useRef(sessionId)
+  const loadedSessionIdRef = useRef<string | null>(null)
+  currentSessionIdRef.current = sessionId
 
   const [panelOpen, setPanelOpen] = useState<boolean>(() => {
     try {
@@ -127,12 +130,15 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
     </div>
   )
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let alive = true
+    loadedSessionIdRef.current = null
+    setVerifyCommand('')
     window.shy.getSession(sessionId).then((detail) => {
-      if (!alive || !detail) return
+      if (!alive || currentSessionIdRef.current !== sessionId || !detail) return
+      loadedSessionIdRef.current = sessionId
       setMode(detail.mode)
-      setVerifyCommand(detail.mode === 'goal' ? (detail.verifyCommand ?? '') : '')
+      setVerifyCommand(detail.verifyCommand ?? '')
       setPaused(detail.paused)
       setBusy(false)
       setStatus('')
@@ -254,7 +260,10 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
       sessionId,
       message: text,
       mode,
-      verifyCommand: normalizeVerifyCommand(verifyCommand)
+      verifyCommand:
+        mode === 'goal' && loadedSessionIdRef.current === sessionId
+          ? normalizeVerifyCommand(verifyCommand)
+          : undefined
     })
     onSessionsChanged?.()
   }
@@ -295,10 +304,7 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
       <div className="topbar">
         <ModeToggle
           mode={mode}
-          onChange={(next) => {
-            setMode(next)
-            if (next !== 'goal') setVerifyCommand('')
-          }}
+          onChange={setMode}
         />
         <div className="top-actions">
           {runningCls ? (
