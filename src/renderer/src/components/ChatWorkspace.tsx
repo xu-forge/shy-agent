@@ -4,6 +4,7 @@ import { AssistantMessage } from './AssistantMessage'
 import { MarkdownBody } from './MarkdownBody'
 import { SessionPanel, PANEL_KEY } from './SessionPanel'
 import { timeAgo } from '../lib/time'
+import { normalizeVerifyCommand } from './goalUi'
 
 type Props = {
   notice?: string
@@ -35,6 +36,7 @@ const SUGGESTIONS: { label: string; text: string }[] = [
 export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): React.JSX.Element {
   const [mode, setMode] = useState<ModeKey>('interactive')
   const [draft, setDraft] = useState('')
+  const [verifyCommand, setVerifyCommand] = useState('')
   const [busy, setBusy] = useState(false)
   const [paused, setPaused] = useState(false)
   const [status, setStatus] = useState('')
@@ -80,6 +82,15 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
           }
         }}
       />
+      {mode === 'goal' ? (
+        <input
+          className="verify-command-input"
+          value={verifyCommand}
+          onChange={(e) => setVerifyCommand(e.target.value)}
+          placeholder="总验收命令，例如 npm test"
+          aria-label="总验收命令"
+        />
+      ) : null}
       <div className="composer-bar">
         <span className="hint">Enter 发送 · Shift+Enter 换行</span>
         <div className="composer-actions">
@@ -121,6 +132,7 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
     window.shy.getSession(sessionId).then((detail) => {
       if (!alive || !detail) return
       setMode(detail.mode)
+      setVerifyCommand(detail.mode === 'goal' ? (detail.verifyCommand ?? '') : '')
       setPaused(detail.paused)
       setBusy(false)
       setStatus('')
@@ -238,7 +250,12 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
       ...prev,
       { role: 'user', content: text, createdAt: new Date().toISOString() }
     ])
-    await window.shy.chat({ sessionId, message: text, mode })
+    await window.shy.chat({
+      sessionId,
+      message: text,
+      mode,
+      verifyCommand: normalizeVerifyCommand(verifyCommand)
+    })
     onSessionsChanged?.()
   }
 
@@ -276,7 +293,13 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
   return (
     <div className={`main chat-column${panelOpen ? ' has-panel' : ''}`}>
       <div className="topbar">
-        <ModeToggle mode={mode} onChange={setMode} />
+        <ModeToggle
+          mode={mode}
+          onChange={(next) => {
+            setMode(next)
+            if (next !== 'goal') setVerifyCommand('')
+          }}
+        />
         <div className="top-actions">
           {runningCls ? (
             <div className={`status ${runningCls}`}>

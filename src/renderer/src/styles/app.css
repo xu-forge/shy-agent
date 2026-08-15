@@ -1311,6 +1311,22 @@
   color: var(--text-muted);
 }
 
+.verify-command-input {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 6px 4px;
+}
+
+.verify-command-input::placeholder {
+  color: var(--text-muted);
+}
+
 .composer-bar {
   display: flex;
   align-items: center;
@@ -2048,6 +2064,10 @@
 
 .task-check:hover {
   border-color: var(--accent);
+}
+
+.task-check:disabled {
+  cursor: default;
 }
 
 .task-item.done .task-check {

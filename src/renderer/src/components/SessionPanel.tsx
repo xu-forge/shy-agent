@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SessionFileRecord, SessionTaskRecord } from '../../../shared/ipc'
 import { ConfirmDialog } from './ConfirmDialog'
+import { truncateEvidence } from './goalUi'
 
 type Tab = 'tasks' | 'files'
 
@@ -8,6 +9,11 @@ type Props = {
   sessionId: string
   open: boolean
   onClose: () => void
+}
+
+type PanelTask = Pick<SessionTaskRecord, 'id' | 'title' | 'done' | 'evidence' | 'source'> & {
+  check?: string
+  checklistItem?: boolean
 }
 
 const PANEL_KEY = 'shy.sidePanelOpen'
@@ -18,7 +24,7 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(TAB_KEY) : null
     return saved === 'files' ? 'files' : 'tasks'
   })
-  const [tasks, setTasks] = useState<SessionTaskRecord[]>([])
+  const [tasks, setTasks] = useState<PanelTask[]>([])
   const [files, setFiles] = useState<SessionFileRecord[]>([])
   const [recentTask, setRecentTask] = useState<string | null>(null)
   const [copiedPath, setCopiedPath] = useState<string | null>(null)
@@ -39,9 +45,24 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
   }, [tab])
 
   // 拉取列表（返回数据，由调用方 setState，避免在 effect 中同步 setState）
-  const fetchTasks = useCallback(async (): Promise<SessionTaskRecord[]> => {
+  const fetchTasks = useCallback(async (): Promise<PanelTask[]> => {
     if (!sessionId) return []
-    return window.shy.listSessionTasks(sessionId)
+    const [records, detail] = await Promise.all([
+      window.shy.listSessionTasks(sessionId),
+      window.shy.getSession(sessionId)
+    ])
+    const checklistIds = new Set(detail?.checklist.map((item) => item.id) ?? [])
+    const checklist: PanelTask[] =
+      detail?.checklist.map((item) => ({
+        id: item.id,
+        title: item.title,
+        done: item.done,
+        evidence: item.evidence,
+        check: item.check,
+        source: 'goal',
+        checklistItem: true
+      })) ?? []
+    return [...checklist, ...records.filter((record) => !checklistIds.has(record.id))]
   }, [sessionId])
 
   const fetchFiles = useCallback(async (): Promise<SessionFileRecord[]> => {
@@ -66,7 +87,7 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
   useEffect(() => {
     return window.shy.onEvent((payload) => {
       const ev = payload as { type?: string; sessionId?: string; id?: string; kind?: string }
-      if (ev.type !== 'task' || ev.sessionId !== sessionId) return
+      if ((ev.type !== 'task' && ev.type !== 'goal') || ev.sessionId !== sessionId) return
       void fetchTasks().then(setTasks)
       if (ev.id) {
         setRecentTask(ev.id)
@@ -85,7 +106,7 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
     })
   }, [sessionId, fetchFiles])
 
-  const toggleTask = async (task: SessionTaskRecord): Promise<void> => {
+  const toggleTask = async (task: PanelTask): Promise<void> => {
     await window.shy.updateSessionTask({
       sessionId,
       id: task.id,
@@ -184,8 +205,13 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
                   type="button"
                   className="task-check"
                   aria-pressed={t.done}
-                  aria-label={t.done ? '标记为未完成' : '标记为完成'}
-                  title={t.done ? '标记为未完成' : '标记为完成'}
+                  aria-label={
+                    t.checklistItem ? '由验收命令自动更新' : t.done ? '标记为未完成' : '标记为完成'
+                  }
+                  title={
+                    t.checklistItem ? '由验收命令自动更新' : t.done ? '标记为未完成' : '标记为完成'
+                  }
+                  disabled={t.checklistItem}
                   onClick={() => void toggleTask(t)}
                 >
                   {t.done ? '✓' : ''}
@@ -197,17 +223,28 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
                       {t.source === 'goal' ? '目标' : 'Agent'}
                     </span>
                   </div>
-                  {t.evidence ? <p className="task-evidence">{t.evidence}</p> : null}
+                  {t.check ? (
+                    <p className="task-evidence" title={t.check}>
+                      <code>验收：{t.check}</code>
+                    </p>
+                  ) : null}
+                  {!t.done && t.evidence ? (
+                    <p className="task-evidence" title={t.evidence}>
+                      {truncateEvidence(t.evidence)}
+                    </p>
+                  ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="task-delete"
-                  aria-label="删除任务"
-                  title="删除任务"
-                  onClick={() => setConfirmDelTask({ id: t.id, title: t.title, requestId: t.id })}
-                >
-                  ×
-                </button>
+                {!t.checklistItem ? (
+                  <button
+                    type="button"
+                    className="task-delete"
+                    aria-label="删除任务"
+                    title="删除任务"
+                    onClick={() => setConfirmDelTask({ id: t.id, title: t.title, requestId: t.id })}
+                  >
+                    ×
+                  </button>
+                ) : null}
               </div>
             ))
           )}

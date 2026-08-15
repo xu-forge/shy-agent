@@ -171,6 +171,7 @@ export function registerCoreIpc(): void {
       sessionId: req.sessionId,
       message: req.message,
       mode: req.mode as AgentMode,
+      verifyCommand: req.verifyCommand,
       emit: (event) => {
         emitToRenderer({ sessionId: req.sessionId, ...event })
         if (event.type === 'memory') {
