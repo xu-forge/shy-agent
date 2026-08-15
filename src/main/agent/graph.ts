@@ -64,8 +64,8 @@ export function routeAfterActForGoal(input: {
   round: number
   segmentSteps: number
 }): 'tools' | 'end_segment' | 'end_burst' {
-  if (input.hasToolCalls) return 'tools'
   if (input.segmentSteps > 0 && input.round >= input.segmentSteps) return 'end_segment'
+  if (input.hasToolCalls) return 'tools'
   return 'end_burst'
 }
 
@@ -88,7 +88,7 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-function mapChecklistItem(
+export function mapChecklistItem(
   c: Record<string, unknown>,
   i: number,
   fallback?: GoalChecklistItem
@@ -96,7 +96,7 @@ function mapChecklistItem(
   return {
     id: String(c.id ?? fallback?.id ?? i + 1),
     title: String(c.title ?? fallback?.title ?? `步骤 ${i + 1}`),
-    done: Boolean(c.done),
+    done: false,
     evidence: c.evidence ? String(c.evidence) : fallback?.evidence,
     check: c.check ? String(c.check) : fallback?.check
   }
