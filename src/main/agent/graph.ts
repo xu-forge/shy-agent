@@ -10,7 +10,7 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import type { DynamicStructuredTool } from '@langchain/core/tools'
 import type { AgentMode, GoalChecklistItem } from '../../shared/ipc'
-import { addTokenUsed, asTokenCount, tokensOf } from './token-usage'
+import { addTokenUsed, tokensOf } from './token-usage'
 
 export type GraphEmit = (event: {
   type: string
@@ -59,6 +59,16 @@ const AgentState = Annotation.Root({
 
 export type AgentGraphState = typeof AgentState.State
 
+export function routeAfterActForGoal(input: {
+  hasToolCalls: boolean
+  round: number
+  segmentSteps: number
+}): 'tools' | 'end_segment' | 'end_burst' {
+  if (input.hasToolCalls) return 'tools'
+  if (input.segmentSteps > 0 && input.round >= input.segmentSteps) return 'end_segment'
+  return 'end_burst'
+}
+
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = (fenced?.[1] ?? text).trim()
@@ -76,10 +86,6 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
     }
     return null
   }
-}
-
-function doneCount(checklist: GoalChecklistItem[]): number {
-  return checklist.filter((c) => c.done).length
 }
 
 function mapChecklistItem(
@@ -109,7 +115,7 @@ export function buildAgentGraph(opts: {
   onStagnate?: () => void | Promise<void>
   budget?: Partial<GraphBudget>
 }) {
-  const { llm, tools, emit, skillBlock, memoryBlock, beforeStep, onStagnate } = opts
+  const { llm, tools, emit, skillBlock, memoryBlock, beforeStep } = opts
   const budget: GraphBudget = {
     stagnationRounds: opts.budget?.stagnationRounds ?? 20,
     tokenBudget: opts.budget?.tokenBudget ?? 0,
@@ -212,147 +218,26 @@ export function buildAgentGraph(opts: {
     }
   }
 
-  async function verifyNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
-    await gate()
-    if (state.mode !== 'goal') return { lastAction: 'verify' }
-    emit({ type: 'status', message: '验收清单进度…' })
-    const res = await llm.invoke([
-      new SystemMessage(
-        `根据对话与工具结果，更新验收清单。输出 JSON：
-{"checklist":[{"id":"...","title":"...","done":true/false,"evidence":"可观察证据","check":"..."}],"allDone":true/false,"summary":"..."}
-证据必须是可观察的（文件内容、命令输出、测试结果等），不要空泛声称。只输出 JSON。`
-      ),
-      new HumanMessage(
-        `目标：${state.goal}\n当前清单：${JSON.stringify(state.checklist)}\n最近消息：${state.messages
-          .slice(-8)
-          .map((m) => `${m._getType()}: ${typeof m.content === 'string' ? m.content : ''}`)
-          .join('\n')}`
-      )
-    ])
-    const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
-    const parsed = parseJsonObject(text)
-    let checklist: GoalChecklistItem[] = state.checklist
-    if (Array.isArray(parsed?.checklist)) {
-      checklist = (parsed!.checklist as Array<Record<string, unknown>>).map((c, i) =>
-        mapChecklistItem(c, i, state.checklist[i])
-      )
-    }
-    emit({ type: 'goal', goal: state.goal })
-    for (const c of checklist) {
-      emit({
-        type: 'task',
-        kind: 'add',
-        id: c.id,
-        title: c.title,
-        done: c.done,
-        evidence: c.evidence,
-        source: 'goal'
-      })
-    }
-    const summary = String(parsed?.summary ?? '')
-    if (summary) {
-      emit({
-        type: 'assistant',
-        content: `### 进度\n${checklist
-          .map((c) => `- [${c.done ? 'x' : ' '}] ${c.title}${c.evidence ? ` — ${c.evidence}` : ''}`)
-          .join('\n')}\n\n${summary}`
-      })
-    }
-
-    const done = doneCount(checklist)
-    const prevDone = state.lastDoneCount ?? 0
-    const toolActivity = (state.toolActivityCount ?? 0) > (state.lastVerifyToolActivityCount ?? 0)
-    const hasProgress = done > prevDone
-    const stagnantRounds = hasProgress || toolActivity ? 0 : (state.stagnantRounds ?? 0) + 1
-
-    const tokenUsed = addTokenUsed(state.tokenUsed, tokensOf(res))
-    if (budget.tokenBudget > 0) {
-      emit({
-        type: 'status',
-        message: `token 累计 ${tokenUsed.toLocaleString('zh-CN')} / ${budget.tokenBudget.toLocaleString('zh-CN')}`
-      })
-    } else {
-      emit({
-        type: 'status',
-        message: `token 累计 ${tokenUsed.toLocaleString('zh-CN')}（未设预算上限）`
-      })
-    }
-
-    return {
-      checklist,
-      lastDoneCount: done,
-      stagnantRounds,
-      tokenUsed,
-      lastVerifyToolActivityCount: state.toolActivityCount ?? 0,
-      lastAction: 'verify'
-    }
-  }
-
-  function routeAfterAct(state: AgentGraphState): 'tools' | 'verify' | typeof END {
+  function routeAfterAct(state: AgentGraphState): 'tools' | typeof END {
     const last = state.messages.at(-1)
-    if (
+    const hasToolCalls = Boolean(
       last &&
       'tool_calls' in last &&
       Array.isArray((last as AIMessage).tool_calls) &&
       ((last as AIMessage).tool_calls?.length ?? 0) > 0
-    ) {
-      return 'tools'
-    }
-    return state.mode === 'goal' ? 'verify' : END
-  }
+    )
+    if (state.mode !== 'goal') return hasToolCalls ? 'tools' : END
 
-  function routeAfterVerify(state: AgentGraphState): 'act' | 'await_user' | typeof END {
-    if (state.mode !== 'goal') return END
-    const allDone = state.checklist.length > 0 && state.checklist.every((c) => c.done)
-    if (allDone) {
-      emit({ type: 'assistant', content: '**目标完成**' })
-      return END
-    }
-
-    // token 成本预算（用户可见暂停）：给用户决定是否续跑
-    const used = asTokenCount(state.tokenUsed)
-    if (budget.tokenBudget > 0 && used >= budget.tokenBudget) {
-      emit({
-        type: 'assistant',
-        content: `已触及 token 成本预算：已用 ${used.toLocaleString('zh-CN')} / 上限 ${budget.tokenBudget.toLocaleString('zh-CN')}。进度已保存。\n点「继续」会开启下一段同等预算窗口；也可先到设置里调高上限。`
-      })
-      emit({
-        type: 'status',
-        message: `已触及 token 预算（${used.toLocaleString('zh-CN')} / ${budget.tokenBudget.toLocaleString('zh-CN')}），等待你继续…`
-      })
-      return 'await_user'
-    }
-
-    // 段边界：正常结束本段，service 落盘压缩后自动续段（不是暂停/终止）
-    if (budget.segmentSteps > 0 && (state.round ?? 0) >= budget.segmentSteps) {
+    const route = routeAfterActForGoal({
+      hasToolCalls,
+      round: state.round ?? 0,
+      segmentSteps: budget.segmentSteps
+    })
+    if (route === 'tools') return 'tools'
+    if (route === 'end_segment') {
       emit({ type: 'done', reason: 'segment' })
-      return END
     }
-
-    // 停滞软暂停（不掐断任务）：连续无清单进展且无工具活动
-    if ((state.stagnantRounds ?? 0) >= budget.stagnationRounds) {
-      emit({
-        type: 'assistant',
-        content: `连续 ${budget.stagnationRounds} 轮验收清单无新进展且无工具活动，已暂停以免空转。\n你可以补充约束/线索后点「继续」，或改目标后重新发送。`
-      })
-      emit({ type: 'status', message: '因停滞已暂停，等待你继续…' })
-      return 'await_user'
-    }
-
-    return 'act'
-  }
-
-  async function awaitUserNode(state: AgentGraphState): Promise<Partial<AgentGraphState>> {
-    if (onStagnate) await onStagnate()
-    await gate() // 暂停门闩：恢复后才往下走
-    // 「继续」= 新开一段成本窗口；否则已触顶的 tokenUsed 会立刻再次暂停
-    const resetBudgetWindow =
-      budget.tokenBudget > 0 && asTokenCount(state.tokenUsed) >= budget.tokenBudget
-    return {
-      stagnantRounds: 0,
-      tokenUsed: resetBudgetWindow ? 0 : asTokenCount(state.tokenUsed),
-      lastAction: 'await_user'
-    }
+    return END
   }
 
   const graph = new StateGraph(AgentState)
@@ -376,16 +261,12 @@ export function buildAgentGraph(opts: {
         toolActivityCount
       }
     })
-    .addNode('verify', verifyNode)
-    .addNode('await_user', awaitUserNode)
     .addConditionalEdges(START, (state) =>
       state.mode === 'goal' && !(state.checklist?.length > 0) ? 'plan' : 'act'
     )
     .addEdge('plan', 'act')
     .addConditionalEdges('act', routeAfterAct)
     .addEdge('tools', 'act')
-    .addConditionalEdges('verify', routeAfterVerify)
-    .addEdge('await_user', 'act')
 
   return graph.compile()
 }
