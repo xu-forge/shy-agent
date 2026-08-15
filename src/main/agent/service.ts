@@ -101,7 +101,7 @@ function upsertChecklistItem(
   return [...list, next]
 }
 
-async function waitIfPaused(sessionId: string, emit: (e: AgentEvent) => void): Promise<void> {
+export async function waitIfPaused(sessionId: string, emit: (e: AgentEvent) => void): Promise<void> {
   const rt = runtimes.get(sessionId)
   if (!rt?.paused) return
   emit({ type: 'status', message: '已暂停，等待恢复…' })
@@ -499,7 +499,7 @@ export function cancelAgent(sessionId: string): void {
   rt.pauseWaiters.forEach((r) => r())
   rt.pauseWaiters = []
   rt.controller.abort()
-  updateSessionRuntime(sessionId, { paused: false })
+  updateSessionRuntime(sessionId, { paused: false, runStatus: 'cancelled' })
   runtimes.delete(sessionId)
 }
 

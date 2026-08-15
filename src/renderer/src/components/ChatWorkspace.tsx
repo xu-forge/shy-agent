@@ -140,7 +140,7 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
       setMode(detail.mode)
       setVerifyCommand(detail.verifyCommand ?? '')
       setPaused(detail.paused)
-      setBusy(false)
+      setBusy(detail.runStatus === 'running')
       setStatus('')
       setMessages(
         detail.messages.length

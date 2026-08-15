@@ -7,7 +7,6 @@ describe('runCheckCommand', () => {
     const { result } = await runCheckCommand({
       command: 'npm test',
       approved: new Set(),
-      pinned: true,
       confirm: async () => true,
       execImpl: async () => ({ stdout: long, stderr: 'boom', exitCode: 1 })
     })
@@ -21,7 +20,6 @@ describe('runCheckCommand', () => {
     const { result, approved } = await runCheckCommand({
       command: 'rm -rf /',
       approved: new Set(),
-      pinned: false,
       confirm: async () => false,
       execImpl: async () => {
         throw new Error('should not exec')
@@ -37,11 +35,24 @@ describe('runCheckCommand', () => {
     await runCheckCommand({
       command: 'npm test',
       approved: new Set(['npm test']),
-      pinned: false,
       confirm,
       execImpl: async () => ({ stdout: 'ok', stderr: '', exitCode: 0 })
     })
     expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('超长 stdout 保留尾部特征后缀', async () => {
+    const suffix = 'UNIQUE_TAIL_SENTINEL'
+    const stdout = `${'H'.repeat(EVIDENCE_MAX_CHARS)}${suffix}`
+    const { result } = await runCheckCommand({
+      command: 'npm test',
+      approved: new Set(['npm test']),
+      confirm: async () => true,
+      execImpl: async () => ({ stdout, stderr: '', exitCode: 1 })
+    })
+    expect(result.output.length).toBeLessThanOrEqual(EVIDENCE_MAX_CHARS)
+    expect(result.output).toContain(suffix)
+    expect(result.output.startsWith('…[truncated]…\n')).toBe(true)
   })
 
   it('将 Node exec 的终止信号错误识别为超时并截断输出', async () => {
@@ -49,7 +60,6 @@ describe('runCheckCommand', () => {
     const { result } = await runCheckCommand({
       command: 'npm test',
       approved: new Set(['npm test']),
-      pinned: true,
       confirm: async () => true,
       execImpl: async () => {
         throw {

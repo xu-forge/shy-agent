@@ -64,8 +64,12 @@ export async function runGoalDriver(args: {
     return
   }
 
-  const { ensureAgentRuntime } = await import('./service')
+  const { ensureAgentRuntime, waitIfPaused, getAgentRuntime } = await import('./service')
   const rt = ensureAgentRuntime(sessionId)
+  const persistIfOwner = (patch: GoalDriverPersistPatch): void => {
+    if (getAgentRuntime(sessionId) !== rt) return
+    persist(patch)
+  }
 
   const storedVerify = session.verifyCommand?.trim() ?? ''
   const incomingVerify = args.verifyCommand?.trim() ?? ''
@@ -101,22 +105,39 @@ export async function runGoalDriver(args: {
     checklist = planned.checklist
     rt.goal = goal
     rt.checklist = checklist
-    persist({ goal, checklist })
+    persistIfOwner({ goal, checklist })
     emit({ type: 'goal', goal, checklist })
   }
 
   const gate = assertCanStart({ verifyCommand, checklist })
   if (!gate.ok) {
     emit({ type: 'error', message: gate.reason })
-    persist({ runStatus: 'idle', goal, checklist })
+    persistIfOwner({ runStatus: 'idle', goal, checklist })
     emit({ type: 'done', reason: 'error' })
     return
   }
 
-  persist({ runStatus: 'running', goal, checklist, paused: false })
+  if (verifyCommand && !approved.has(verifyCommand)) {
+    const ok = await waitConfirm('执行验收命令', verifyCommand)
+    if (!ok) {
+      emit({ type: 'error', message: '用户拒绝验收命令' })
+      persistIfOwner({ runStatus: 'idle', goal, checklist, paused: false })
+      emit({ type: 'done', reason: 'error' })
+      return
+    }
+    approved.add(verifyCommand)
+  }
+
+  persistIfOwner({
+    runStatus: 'running',
+    goal,
+    checklist,
+    paused: false,
+    approvedChecks: [...approved]
+  })
 
   const finishStop = (status: 'paused' | 'cancelled'): void => {
-    persist({
+    persistIfOwner({
       runStatus: status,
       paused: status === 'paused',
       goal,
@@ -124,6 +145,7 @@ export async function runGoalDriver(args: {
       approvedChecks: [...approved],
       checkpoint: JSON.stringify({ goal, checklist, round: totalRound })
     })
+    if (getAgentRuntime(sessionId) !== rt) return
     emit({ type: 'done', reason: status })
   }
 
@@ -138,6 +160,12 @@ export async function runGoalDriver(args: {
     const stagnationLimit = settings.stagnationRounds ?? 20
     const tokenBudget = settings.tokenBudget ?? 0
 
+    const gatePauseOrAbort = async (): Promise<void> => {
+      if (rt.controller.signal.aborted) throw new Error('aborted')
+      await waitIfPaused(sessionId, emit)
+      if (rt.controller.signal.aborted) throw new Error('aborted')
+    }
+
     const runCheckRound = async (): Promise<{
       overall?: CheckRunResult
       failures: Array<{ title: string; exitCode: number; evidence: string }>
@@ -146,10 +174,10 @@ export async function runGoalDriver(args: {
       const failures: Array<{ title: string; exitCode: number; evidence: string }> = []
 
       for (const item of checklist.filter((i) => !i.done && i.check?.trim())) {
+        await gatePauseOrAbort()
         const { result, approved: nextApproved } = await runCheck({
           command: item.check!.trim(),
           approved,
-          pinned: false,
           confirm: waitConfirm
         })
         approved = nextApproved
@@ -165,10 +193,10 @@ export async function runGoalDriver(args: {
       let overall: CheckRunResult | undefined
       const itemsAllDone = checklist.length === 0 || checklist.every((item) => item.done)
       if (itemsAllDone && verifyCommand) {
+        await gatePauseOrAbort()
         const { result, approved: nextApproved } = await runCheck({
           command: verifyCommand,
           approved,
-          pinned: true,
           confirm: waitConfirm
         })
         approved = nextApproved
@@ -178,19 +206,22 @@ export async function runGoalDriver(args: {
         }
       }
 
-      persist({
+      persistIfOwner({
         goal,
         checklist,
         approvedChecks: [...approved],
         checkpoint: JSON.stringify({ goal, checklist, round: totalRound })
       })
+      if (getAgentRuntime(sessionId) === rt) {
+        emit({ type: 'goal', goal, checklist })
+      }
 
       return { overall, failures }
     }
 
     const concludeAfterChecks = (overall?: CheckRunResult): boolean => {
       if (!isGoalComplete({ checklist, verifyCommand, overall })) return false
-      persist({
+      persistIfOwner({
         runStatus: 'completed',
         paused: false,
         goal,
@@ -198,7 +229,9 @@ export async function runGoalDriver(args: {
         approvedChecks: [...approved],
         checkpoint: null
       })
-      emit({ type: 'done', reason: 'completed' })
+      if (getAgentRuntime(sessionId) === rt) {
+        emit({ type: 'done', reason: 'completed' })
+      }
       return true
     }
 
@@ -269,7 +302,7 @@ export async function runGoalDriver(args: {
       }
 
       feedback = buildFailureFeedback(failures)
-      persist({
+      persistIfOwner({
         runStatus: 'running',
         paused: false,
         goal,
@@ -284,7 +317,7 @@ export async function runGoalDriver(args: {
       finishStop(stop)
       return
     }
-    persist({
+    persistIfOwner({
       runStatus: 'idle',
       paused: false,
       goal,
@@ -345,6 +378,7 @@ async function defaultRunBurst(opts: {
   input: { goal: string; checklist: GoalChecklistItem[]; feedback?: string }
 }): Promise<{ tokenUsed: number; round: number }> {
   const { sessionId, emit, waitConfirm, signal, input } = opts
+  const { waitIfPaused } = await import('./service')
   const settings = await getSettings()
   if (!settings.apiKey) {
     throw new Error('尚未配置 apiKey，请先在设置中填写 OpenAI-compatible 凭证')
@@ -389,6 +423,7 @@ async function defaultRunBurst(opts: {
     sessionId,
     beforeStep: async () => {
       if (signal.aborted) throw new Error('aborted')
+      await waitIfPaused(sessionId, emit)
     },
     budget: {
       stagnationRounds: settings.stagnationRounds ?? 20,

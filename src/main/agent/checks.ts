@@ -17,8 +17,9 @@ const execAsync = promisify(exec)
 function truncateOutput(stdout: string, stderr: string): string {
   const combined = `${stdout}${stderr}`
   if (combined.length <= EVIDENCE_MAX_CHARS) return combined
-  if (stderr.length >= EVIDENCE_MAX_CHARS) return stderr.slice(0, EVIDENCE_MAX_CHARS)
-  return `${stdout.slice(0, EVIDENCE_MAX_CHARS - stderr.length)}${stderr}`
+  const marker = '…[truncated]…\n'
+  const budget = Math.max(0, EVIDENCE_MAX_CHARS - marker.length)
+  return `${marker}${combined.slice(-budget)}`.slice(0, EVIDENCE_MAX_CHARS)
 }
 
 type ExecError = {
@@ -70,7 +71,6 @@ async function defaultExecImpl(
 export async function runCheckCommand(opts: {
   command: string
   approved: ReadonlySet<string>
-  pinned: boolean
   confirm: (action: string, detail: string) => Promise<boolean>
   execImpl?: (command: string, timeoutMs: number) => Promise<{ stdout: string; stderr: string; exitCode: number }>
 }): Promise<{ result: CheckRunResult; approved: Set<string> }> {

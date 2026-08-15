@@ -161,3 +161,42 @@ describe('runAgent mode routing', () => {
     expect(buildAgentGraph).not.toHaveBeenCalled()
   })
 })
+
+describe('pause / resume waiters', () => {
+  it('pauseAgent 后 waitIfPaused 直到 resumeAgent 才解除，且不启动第二次运行', async () => {
+    const { waitIfPaused, pauseAgent, resumeAgent, ensureAgentRuntime } = await import('./service')
+    const rt = ensureAgentRuntime('sess-1')
+    const emit = vi.fn()
+    pauseAgent('sess-1')
+
+    let resolved = false
+    const waiting = waitIfPaused('sess-1', emit).then(() => {
+      resolved = true
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(resolved).toBe(false)
+    expect(rt.paused).toBe(true)
+    expect(rt.pauseWaiters.length).toBeGreaterThan(0)
+    expect(emit).toHaveBeenCalledWith({ type: 'status', message: '已暂停，等待恢复…' })
+
+    resumeAgent('sess-1', emit, async () => true)
+    await waiting
+
+    expect(resolved).toBe(true)
+    expect(rt.paused).toBe(false)
+    expect(rt.pauseWaiters.length).toBe(0)
+    expect(runGoalDriver).not.toHaveBeenCalled()
+    expect(buildAgentGraph).not.toHaveBeenCalled()
+  })
+
+  it('cancelAgent 立即持久化 cancelled', async () => {
+    const { cancelAgent, ensureAgentRuntime, getAgentRuntime } = await import('./service')
+    ensureAgentRuntime('sess-1')
+    cancelAgent('sess-1')
+    expect(updateSessionRuntime).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ runStatus: 'cancelled' })
+    )
+    expect(getAgentRuntime('sess-1')).toBeUndefined()
+  })
+})
