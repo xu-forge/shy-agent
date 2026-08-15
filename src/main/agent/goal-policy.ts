@@ -41,7 +41,11 @@ export function isGoalComplete(input: {
   overall?: CheckRunResult
 }): boolean {
   const hasOverallCheck = Boolean(input.verifyCommand?.trim())
-  const overallPassed = input.overall?.exitCode === 0
+  const overallPassed =
+    input.overall != null &&
+    input.overall.exitCode === 0 &&
+    !input.overall.denied &&
+    !input.overall.timedOut
 
   if (input.checklist.length === 0) {
     return hasOverallCheck && overallPassed

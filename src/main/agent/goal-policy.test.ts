@@ -73,6 +73,23 @@ describe('goal policy', () => {
     ).toBe(true)
   })
 
+  it('清单为空且 overall exit 0 但 denied 或 timedOut 时目标未完成', () => {
+    expect(
+      isGoalComplete({
+        checklist: [],
+        verifyCommand: 'npm test',
+        overall: result({ exitCode: 0, denied: true })
+      })
+    ).toBe(false)
+    expect(
+      isGoalComplete({
+        checklist: [],
+        verifyCommand: 'npm test',
+        overall: result({ exitCode: 0, timedOut: true })
+      })
+    ).toBe(false)
+  })
+
   it('失败回灌包含标题、退出码、证据和验收命令约束', () => {
     const feedback = buildFailureFeedback([
       { title: '单元测试', exitCode: 1, evidence: 'expected true' }
