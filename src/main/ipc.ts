@@ -24,14 +24,17 @@ import {
   deleteSession,
   ensureSessionTables,
   getSession,
+  listGoalSessionsByRunStatus,
   listSessions,
   updateSessionRuntime
 } from './sessions/store'
 import { getShyPaths } from './paths'
 import { listAgentLogFiles, readAgentLogFile, revealAgentLogsDir } from './logs/agent-logs'
 import { registerScheduleIpc } from './schedule/ipc'
+import { resumeInterruptedGoals } from './agent/boot-resume'
 
 let mainWindow: BrowserWindow | null = null
+const waitConfirm = createConfirmWaiter(() => mainWindow)
 
 export function setMainWindow(win: BrowserWindow | null): void {
   mainWindow = win
@@ -41,14 +44,21 @@ function emitToRenderer(payload: unknown): void {
   mainWindow?.webContents.send(IPC.events, payload)
 }
 
+export function resumeInterruptedGoalSessions(): void {
+  const running = listGoalSessionsByRunStatus('running')
+  resumeInterruptedGoals(running, {
+    pause: (sessionId) => updateSessionRuntime(sessionId, { runStatus: 'paused', paused: true }),
+    resume: (sessionId) =>
+      resumeAgent(sessionId, (event) => emitToRenderer({ sessionId, ...event }), waitConfirm)
+  })
+}
+
 export function registerCoreIpc(): void {
   ensureSessionTables()
   registerBuiltinTools()
   registerComputerTools()
   registerConfirmIpc()
   registerScheduleIpc()
-
-  const waitConfirm = createConfirmWaiter(() => mainWindow)
 
   ipcMain.handle(IPC.ping, async () => 'pong' as const)
   ipcMain.handle(IPC.getPaths, async () => {

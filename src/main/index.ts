@@ -2,9 +2,11 @@ import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { registerCoreIpc, setMainWindow } from './ipc'
+import { registerCoreIpc, resumeInterruptedGoalSessions, setMainWindow } from './ipc'
 import { ensureShyHomeDirs, resolveShyHome } from './paths'
 import { migrateLegacyUserData } from './migration'
+
+let bootResumeAttempted = false
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -39,6 +41,10 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+    if (!bootResumeAttempted) {
+      bootResumeAttempted = true
+      resumeInterruptedGoalSessions()
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
