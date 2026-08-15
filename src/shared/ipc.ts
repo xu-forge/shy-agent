@@ -65,19 +65,23 @@ export type AgentLogFileSummary = {
 
 export type AgentMode = 'interactive' | 'goal'
 
+export type RunStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled'
+
 export type ChatRequest = {
   sessionId: string
   message: string
   mode: AgentMode
+  verifyCommand?: string
 }
 
 export type GoalChecklistItem = {
   id: string
   title: string
   done: boolean
-  evidence?: string
-  /** 可执行验收规则的描述（如“运行 npm test 且全绿”）；本轮仅透传，rules engine 后续执行 */
+  /** 可执行的 shell 验收命令 */
   check?: string
+  evidence?: string
+  lastExitCode?: number
 }
 
 export type LongMemoryEntry = {
@@ -129,12 +133,15 @@ export type SessionSummary = {
   createdAt: string
   paused: boolean
   goal?: string
+  runStatus?: RunStatus
+  verifyCommand?: string
 }
 
 export type SessionDetail = SessionSummary & {
   messages: ChatMessage[]
   checklist: GoalChecklistItem[]
   shortMemory: string
+  approvedChecks?: string[]
 }
 
 /* ────────── session files & tasks（shell-session-side-panel） ────────── */
