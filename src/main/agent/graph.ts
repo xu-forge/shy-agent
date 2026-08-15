@@ -69,6 +69,15 @@ export function routeAfterActForGoal(input: {
   return 'end_burst'
 }
 
+export function routeAtStart(input: {
+  mode: AgentMode
+  checklistLength: number
+}): 'plan' | 'act' {
+  if (input.mode === 'goal') return 'act'
+  if (input.checklistLength === 0) return 'plan'
+  return 'act'
+}
+
 function parseJsonObject(text: string): Record<string, unknown> | null {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = (fenced?.[1] ?? text).trim()
@@ -262,7 +271,10 @@ export function buildAgentGraph(opts: {
       }
     })
     .addConditionalEdges(START, (state) =>
-      state.mode === 'goal' && !(state.checklist?.length > 0) ? 'plan' : 'act'
+      routeAtStart({
+        mode: state.mode,
+        checklistLength: state.checklist?.length ?? 0
+      })
     )
     .addEdge('plan', 'act')
     .addConditionalEdges('act', routeAfterAct)

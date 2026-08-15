@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapChecklistItem, routeAfterActForGoal } from './graph'
+import { mapChecklistItem, routeAfterActForGoal, routeAtStart } from './graph'
 
 describe('routeAfterActForGoal', () => {
   it('routes tool calls to tools while under the segment cap', () => {
@@ -61,5 +61,20 @@ describe('mapChecklistItem', () => {
       done: false,
       check: 'Model check'
     })
+  })
+})
+
+describe('routeAtStart', () => {
+  it('always routes goal mode to act even with an empty checklist', () => {
+    expect(routeAtStart({ mode: 'goal', checklistLength: 0 })).toBe('act')
+    expect(routeAtStart({ mode: 'goal', checklistLength: 3 })).toBe('act')
+  })
+
+  it('routes interactive with an empty checklist to plan', () => {
+    expect(routeAtStart({ mode: 'interactive', checklistLength: 0 })).toBe('plan')
+  })
+
+  it('routes interactive with a checklist to act', () => {
+    expect(routeAtStart({ mode: 'interactive', checklistLength: 1 })).toBe('act')
   })
 })
