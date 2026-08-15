@@ -37,6 +37,11 @@ export function ensureSessionTables(): void {
   const columnNames = new Set(columns.map((column) => column.name))
   if (!columnNames.has('run_status')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN run_status TEXT NOT NULL DEFAULT 'idle'`)
+    db.exec(`
+      UPDATE sessions
+      SET run_status = 'paused'
+      WHERE paused = 1 AND (run_status = 'idle' OR run_status IS NULL OR run_status = '')
+    `)
   }
   if (!columnNames.has('verify_command')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN verify_command TEXT`)
@@ -44,11 +49,6 @@ export function ensureSessionTables(): void {
   if (!columnNames.has('approved_checks')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN approved_checks TEXT NOT NULL DEFAULT '[]'`)
   }
-  db.exec(`
-    UPDATE sessions
-    SET run_status = 'paused'
-    WHERE paused = 1 AND (run_status = 'idle' OR run_status IS NULL OR run_status = '')
-  `)
 }
 
 function now(): string {

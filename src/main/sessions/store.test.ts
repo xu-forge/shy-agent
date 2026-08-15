@@ -29,33 +29,57 @@ describe('sessions runStatus', () => {
     expect(d?.paused).toBe(false)
   })
 
-  it('paused=1 的旧行迁移为 runStatus=paused', async () => {
+  it('从旧表迁移 paused 状态并保留 checkpoint 行为', async () => {
     const { getDb } = await import('../memory/db')
     const store = await import('./store')
-    store.ensureSessionTables()
     const db = getDb()
     db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        goal TEXT,
+        checklist TEXT NOT NULL DEFAULT '[]',
+        short_memory TEXT NOT NULL DEFAULT '',
+        paused INTEGER NOT NULL DEFAULT 0,
+        checkpoint TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       INSERT INTO sessions (id, title, mode, goal, checklist, short_memory, paused, created_at, updated_at)
-      VALUES ('old-p', 'old', 'goal', 'g', '[]', '', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+      VALUES ('old-p', 'old', 'goal', 'g', '[]', '', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+      INSERT INTO sessions (id, title, mode, goal, checklist, short_memory, paused, checkpoint, created_at, updated_at)
+      VALUES ('old-c', 'old', 'goal', 'g', '[]', '', 0, '{"round":1}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
     `)
     store.ensureSessionTables()
-    const d = store.getSession('old-p')
-    expect(d?.runStatus).toBe('paused')
-    expect(d?.paused).toBe(true)
+    expect(store.getSession('old-p')).toMatchObject({ runStatus: 'paused', paused: true })
+    expect(store.getSession('old-c')).toMatchObject({ runStatus: 'idle', paused: false })
+    expect(
+      db.prepare(`SELECT checkpoint FROM sessions WHERE id = 'old-c'`).get()
+    ).toMatchObject({ checkpoint: '{"round":1}' })
   })
 
-  it('未暂停的旧行迁移为 idle，即使有 checkpoint', async () => {
+  it('已存在 run_status 时不重复回填 paused 旧字段', async () => {
     const { getDb } = await import('../memory/db')
     const store = await import('./store')
     store.ensureSessionTables()
     const db = getDb()
     db.exec(`
-      INSERT INTO sessions (id, title, mode, goal, checklist, short_memory, paused, checkpoint, created_at, updated_at)
-      VALUES ('old-c', 'old', 'goal', 'g', '[]', '', 0, '{"round":1}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+      INSERT INTO sessions (
+        id, title, mode, goal, checklist, short_memory, paused, run_status, created_at, updated_at
+      )
+      VALUES (
+        'idle-paused', 'idle', 'goal', 'g', '[]', '', 1, 'idle',
+        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      )
     `)
+
     store.ensureSessionTables()
-    const d = store.getSession('old-c')
-    expect(d?.runStatus).toBe('idle')
+
+    const row = db.prepare(`SELECT run_status FROM sessions WHERE id = 'idle-paused'`).get() as {
+      run_status: string
+    }
+    expect(row.run_status).toBe('idle')
   })
 
   it('更新并读取 runtime 验收字段', async () => {
