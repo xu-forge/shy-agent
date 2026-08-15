@@ -115,10 +115,6 @@ export async function runGoalDriver(args: {
 
   persist({ runStatus: 'running', goal, checklist, paused: false })
 
-  const settings = await getSettings()
-  const stagnationLimit = settings.stagnationRounds ?? 20
-  const tokenBudget = settings.tokenBudget ?? 0
-
   const finishStop = (status: 'paused' | 'cancelled'): void => {
     persist({
       runStatus: status,
@@ -137,147 +133,168 @@ export async function runGoalDriver(args: {
     return null
   }
 
-  const runCheckRound = async (): Promise<{
-    overall?: CheckRunResult
-    failures: Array<{ title: string; exitCode: number; evidence: string }>
-  }> => {
-    const byId: Record<string, CheckRunResult> = {}
-    const failures: Array<{ title: string; exitCode: number; evidence: string }> = []
+  try {
+    const settings = await getSettings()
+    const stagnationLimit = settings.stagnationRounds ?? 20
+    const tokenBudget = settings.tokenBudget ?? 0
 
-    for (const item of checklist.filter((i) => !i.done && i.check?.trim())) {
-      const { result, approved: nextApproved } = await runCheck({
-        command: item.check!.trim(),
-        approved,
-        pinned: false,
-        confirm: waitConfirm
-      })
-      approved = nextApproved
-      byId[item.id] = result
-      if (!isPassed(result)) {
-        failures.push({ title: item.title, exitCode: result.exitCode, evidence: result.output })
+    const runCheckRound = async (): Promise<{
+      overall?: CheckRunResult
+      failures: Array<{ title: string; exitCode: number; evidence: string }>
+    }> => {
+      const byId: Record<string, CheckRunResult> = {}
+      const failures: Array<{ title: string; exitCode: number; evidence: string }> = []
+
+      for (const item of checklist.filter((i) => !i.done && i.check?.trim())) {
+        const { result, approved: nextApproved } = await runCheck({
+          command: item.check!.trim(),
+          approved,
+          pinned: false,
+          confirm: waitConfirm
+        })
+        approved = nextApproved
+        byId[item.id] = result
+        if (!isPassed(result)) {
+          failures.push({ title: item.title, exitCode: result.exitCode, evidence: result.output })
+        }
       }
-    }
 
-    checklist = applyCheckResults(checklist, byId)
-    rt.checklist = checklist
+      checklist = applyCheckResults(checklist, byId)
+      rt.checklist = checklist
 
-    let overall: CheckRunResult | undefined
-    const itemsAllDone = checklist.length === 0 || checklist.every((item) => item.done)
-    if (itemsAllDone && verifyCommand) {
-      const { result, approved: nextApproved } = await runCheck({
-        command: verifyCommand,
-        approved,
-        pinned: true,
-        confirm: waitConfirm
-      })
-      approved = nextApproved
-      overall = result
-      if (!isPassed(result)) {
-        failures.push({ title: '总验收', exitCode: result.exitCode, evidence: result.output })
+      let overall: CheckRunResult | undefined
+      const itemsAllDone = checklist.length === 0 || checklist.every((item) => item.done)
+      if (itemsAllDone && verifyCommand) {
+        const { result, approved: nextApproved } = await runCheck({
+          command: verifyCommand,
+          approved,
+          pinned: true,
+          confirm: waitConfirm
+        })
+        approved = nextApproved
+        overall = result
+        if (!isPassed(result)) {
+          failures.push({ title: '总验收', exitCode: result.exitCode, evidence: result.output })
+        }
       }
+
+      persist({
+        goal,
+        checklist,
+        approvedChecks: [...approved],
+        checkpoint: JSON.stringify({ goal, checklist, round: totalRound })
+      })
+
+      return { overall, failures }
     }
 
-    persist({
-      goal,
-      checklist,
-      approvedChecks: [...approved],
-      checkpoint: JSON.stringify({ goal, checklist, round: totalRound })
-    })
-
-    return { overall, failures }
-  }
-
-  const concludeAfterChecks = (overall?: CheckRunResult): boolean => {
-    if (!isGoalComplete({ checklist, verifyCommand, overall })) return false
-    persist({
-      runStatus: 'completed',
-      paused: false,
-      goal,
-      checklist,
-      approvedChecks: [...approved],
-      checkpoint: null
-    })
-    emit({ type: 'done', reason: 'completed' })
-    return true
-  }
-
-  if (resume && (session.checklist?.length ?? 0) > 0) {
-    const stop = shouldStop()
-    if (stop) {
-      finishStop(stop)
-      return
-    }
-    const { overall, failures } = await runCheckRound()
-    if (concludeAfterChecks(overall)) return
-    if (failures.length) feedback = buildFailureFeedback(failures)
-  }
-
-  while (true) {
-    const stop = shouldStop()
-    if (stop) {
-      finishStop(stop)
-      return
+    const concludeAfterChecks = (overall?: CheckRunResult): boolean => {
+      if (!isGoalComplete({ checklist, verifyCommand, overall })) return false
+      persist({
+        runStatus: 'completed',
+        paused: false,
+        goal,
+        checklist,
+        approvedChecks: [...approved],
+        checkpoint: null
+      })
+      emit({ type: 'done', reason: 'completed' })
+      return true
     }
 
-    let burstResult: { tokenUsed: number; round: number }
-    try {
-      burstResult = await runBurst({ goal, checklist, feedback })
-    } catch (err) {
-      const aborted = shouldStop()
-      if (aborted) {
-        finishStop(aborted)
+    if (resume && (session.checklist?.length ?? 0) > 0) {
+      const stop = shouldStop()
+      if (stop) {
+        finishStop(stop)
         return
       }
-      const messageText = err instanceof Error ? err.message : String(err)
-      emit({ type: 'error', message: messageText })
-      emit({ type: 'done', reason: 'error' })
-      return
+      const { overall, failures } = await runCheckRound()
+      const stopAfterChecks = shouldStop()
+      if (stopAfterChecks) {
+        finishStop(stopAfterChecks)
+        return
+      }
+      if (concludeAfterChecks(overall)) return
+      if (failures.length) feedback = buildFailureFeedback(failures)
     }
 
-    tokenUsed += Number.isFinite(burstResult.tokenUsed) ? Math.max(0, burstResult.tokenUsed) : 0
-    totalRound += Number.isFinite(burstResult.round) ? Math.max(0, burstResult.round) : 0
+    while (true) {
+      const stop = shouldStop()
+      if (stop) {
+        finishStop(stop)
+        return
+      }
 
-    const stopAfterBurst = shouldStop()
-    if (stopAfterBurst) {
-      finishStop(stopAfterBurst)
+      const burstResult = await runBurst({ goal, checklist, feedback })
+
+      tokenUsed += Number.isFinite(burstResult.tokenUsed) ? Math.max(0, burstResult.tokenUsed) : 0
+      totalRound += Number.isFinite(burstResult.round) ? Math.max(0, burstResult.round) : 0
+
+      const stopAfterBurst = shouldStop()
+      if (stopAfterBurst) {
+        finishStop(stopAfterBurst)
+        return
+      }
+
+      const passedBefore = checklist.filter((item) => item.done).length
+      const { overall, failures } = await runCheckRound()
+      const passedAfter = checklist.filter((item) => item.done).length
+      const overallPassed = overall != null && isPassed(overall)
+
+      const stopAfterChecks = shouldStop()
+      if (stopAfterChecks) {
+        finishStop(stopAfterChecks)
+        return
+      }
+
+      if (concludeAfterChecks(overall)) return
+
+      stagnantRounds = nextStagnantRounds({
+        prev: stagnantRounds,
+        passedBefore,
+        passedAfter,
+        overallPassed
+      })
+
+      if (stagnantRounds >= stagnationLimit) {
+        emit({ type: 'status', message: '验收连续无进展，已暂停' })
+        finishStop('paused')
+        return
+      }
+
+      if (tokenBudget > 0 && tokenUsed >= tokenBudget) {
+        emit({ type: 'status', message: '已触及 token 预算' })
+        finishStop('paused')
+        return
+      }
+
+      feedback = buildFailureFeedback(failures)
+      persist({
+        runStatus: 'running',
+        paused: false,
+        goal,
+        checklist,
+        approvedChecks: [...approved],
+        checkpoint: JSON.stringify({ goal, checklist, round: totalRound })
+      })
+    }
+  } catch (err) {
+    const stop = shouldStop()
+    if (stop) {
+      finishStop(stop)
       return
     }
-
-    const passedBefore = checklist.filter((item) => item.done).length
-    const { overall, failures } = await runCheckRound()
-    const passedAfter = checklist.filter((item) => item.done).length
-    const overallPassed = overall != null && isPassed(overall)
-
-    if (concludeAfterChecks(overall)) return
-
-    stagnantRounds = nextStagnantRounds({
-      prev: stagnantRounds,
-      passedBefore,
-      passedAfter,
-      overallPassed
-    })
-
-    if (stagnantRounds >= stagnationLimit) {
-      emit({ type: 'status', message: '验收连续无进展，已暂停' })
-      finishStop('paused')
-      return
-    }
-
-    if (tokenBudget > 0 && tokenUsed >= tokenBudget) {
-      emit({ type: 'status', message: '已触及 token 预算' })
-      finishStop('paused')
-      return
-    }
-
-    feedback = buildFailureFeedback(failures)
     persist({
-      runStatus: 'running',
+      runStatus: 'idle',
       paused: false,
       goal,
       checklist,
       approvedChecks: [...approved],
       checkpoint: JSON.stringify({ goal, checklist, round: totalRound })
     })
+    const messageText = err instanceof Error ? err.message : String(err)
+    emit({ type: 'error', message: messageText })
+    emit({ type: 'done', reason: 'error' })
   }
 }
 

@@ -169,6 +169,60 @@ describe('runGoalDriver', () => {
     expect(patches.at(-1)?.runStatus).toBe('completed')
   })
 
+  it('检查期间暂停时持久化 paused，不写 completed', async () => {
+    const session = store.createSession('goal', 't')
+    const patches: PersistPatch[] = []
+
+    await driver.runGoalDriver({
+      sessionId: session.id,
+      message: '做完 t',
+      emit: () => undefined,
+      waitConfirm: async () => true,
+      persist: (patch) => patches.push(patch),
+      planChecklist: async () => ({
+        goal: 'g',
+        checklist: [{ id: '1', title: 't', check: 'true', done: false }]
+      }),
+      runBurst: async () => ({ tokenUsed: 0, round: 1 }),
+      runCheck: async ({ command }) => {
+        service.pauseAgent(session.id)
+        return {
+          result: passResult(command),
+          approved: new Set([command])
+        }
+      }
+    })
+
+    expect(patches.some((p) => p.runStatus === 'completed')).toBe(false)
+    expect(patches.at(-1)?.runStatus).toBe('paused')
+    expect(patches.at(-1)?.paused).toBe(true)
+  })
+
+  it('burst 抛错时恢复 idle 并发出 error', async () => {
+    const session = store.createSession('goal', 't')
+    const events: AgentEvent[] = []
+    const patches: PersistPatch[] = []
+
+    await driver.runGoalDriver({
+      sessionId: session.id,
+      message: '做完 t',
+      emit: (event) => events.push(event),
+      waitConfirm: async () => true,
+      persist: (patch) => patches.push(patch),
+      planChecklist: async () => ({
+        goal: 'g',
+        checklist: [{ id: '1', title: 't', check: 'true', done: false }]
+      }),
+      runBurst: async () => {
+        throw new Error('burst failed')
+      }
+    })
+
+    expect(patches.at(-1)?.runStatus).toBe('idle')
+    expect(events).toContainEqual({ type: 'error', message: 'burst failed' })
+    expect(events).toContainEqual({ type: 'done', reason: 'error' })
+  })
+
   it('resume 且已有清单时先跑一轮验收再 burst', async () => {
     const session = store.createSession('goal', 't')
     store.updateSessionRuntime(session.id, {
