@@ -69,12 +69,11 @@ export function routeAfterActForGoal(input: {
   return 'end_burst'
 }
 
-export function routeAtStart(input: {
+export function routeAtStart(_input: {
   mode: AgentMode
   checklistLength: number
 }): 'plan' | 'act' {
-  if (input.mode === 'goal') return 'act'
-  if (input.checklistLength === 0) return 'plan'
+  // Goal bursts never re-plan; interactive START was already `act` on this branch.
   return 'act'
 }
 

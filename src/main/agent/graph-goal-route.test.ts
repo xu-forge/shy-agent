@@ -70,11 +70,8 @@ describe('routeAtStart', () => {
     expect(routeAtStart({ mode: 'goal', checklistLength: 3 })).toBe('act')
   })
 
-  it('routes interactive with an empty checklist to plan', () => {
-    expect(routeAtStart({ mode: 'interactive', checklistLength: 0 })).toBe('plan')
-  })
-
-  it('routes interactive with a checklist to act', () => {
+  it('keeps interactive START on act (baseline: never entered plan)', () => {
+    expect(routeAtStart({ mode: 'interactive', checklistLength: 0 })).toBe('act')
     expect(routeAtStart({ mode: 'interactive', checklistLength: 1 })).toBe('act')
   })
 })
