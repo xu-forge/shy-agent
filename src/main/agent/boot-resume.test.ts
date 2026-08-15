@@ -21,7 +21,7 @@ describe('resumeInterruptedGoals', () => {
     expect(pause).toHaveBeenCalledWith('older')
   })
 
-  it('没有运行中会话时不触发回调', () => {
+  it('空列表（paused 等未进入扫描）不自动续', () => {
     const resume = vi.fn()
     const pause = vi.fn()
 

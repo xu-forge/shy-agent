@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -86,12 +86,14 @@ describe('runGoalDriver', () => {
     expect(bursts[1].feedback).toContain('不要修改验收命令')
     expect(bursts[1].checklist[0].done).toBe(false)
     expect(patches.some((p) => p.checklist?.[0]?.done === true)).toBe(false)
+    expect(patches.some((p) => p.checklist?.[0]?.evidence?.includes('FAILTXT'))).toBe(true)
+    expect(patches.some((p) => p.checklist?.[0]?.lastExitCode === 1)).toBe(true)
   })
 
   it('总验收失败：子项 check 0、overall 1 → 不 completed', async () => {
     const session = store.createSession('goal', 't')
     const patches: PersistPatch[] = []
-    let bursts = 0
+    const bursts: Array<{ feedback?: string }> = []
 
     await driver.runGoalDriver({
       sessionId: session.id,
@@ -104,9 +106,9 @@ describe('runGoalDriver', () => {
         goal: 'g',
         checklist: [{ id: '1', title: 't', check: 'item', done: false }]
       }),
-      runBurst: async () => {
-        bursts += 1
-        if (bursts >= 2) {
+      runBurst: async (input) => {
+        bursts.push(input)
+        if (bursts.length >= 2) {
           service.cancelAgent(session.id)
           throw new Error('stop-test')
         }
@@ -119,6 +121,8 @@ describe('runGoalDriver', () => {
     })
 
     expect(patches.some((p) => p.runStatus === 'completed')).toBe(false)
+    expect(bursts[1]?.feedback).toContain('OVERALL_FAIL')
+    expect(bursts[1]?.feedback).toContain('总验收')
   })
 
   it('无检查拒绝开工：不调用 runBurst，并 emit error', async () => {
@@ -281,5 +285,72 @@ describe('runGoalDriver', () => {
     })
 
     expect(patches.some((p) => p.verifyCommand === 'hijack')).toBe(false)
+  })
+
+  it('仅总验收也可完成：空清单且 overall 退出 0', async () => {
+    const session = store.createSession('goal', 't')
+    const patches: PersistPatch[] = []
+
+    await driver.runGoalDriver({
+      sessionId: session.id,
+      message: '做完 t',
+      verifyCommand: 'overall',
+      emit: () => undefined,
+      waitConfirm: async () => true,
+      persist: (patch) => patches.push(patch),
+      planChecklist: async () => ({ goal: 'g', checklist: [] }),
+      runBurst: async () => ({ tokenUsed: 0, round: 1 }),
+      runCheck: async ({ command }) => ({
+        result: passResult(command),
+        approved: new Set([command])
+      })
+    })
+
+    expect(patches.at(-1)?.runStatus).toBe('completed')
+  })
+
+  it('工作段有活动但验收无进展时按停滞上限暂停', async () => {
+    mkdirSync(join(tmpDir, 'config'), { recursive: true })
+    writeFileSync(join(tmpDir, 'config', 'settings.json'), JSON.stringify({ stagnationRounds: 1 }))
+    const session = store.createSession('goal', 't')
+    const patches: PersistPatch[] = []
+
+    await driver.runGoalDriver({
+      sessionId: session.id,
+      message: '做完 t',
+      emit: () => undefined,
+      waitConfirm: async () => true,
+      persist: (patch) => patches.push(patch),
+      planChecklist: async () => ({
+        goal: 'g',
+        checklist: [{ id: '1', title: 't', check: 'false', done: false }]
+      }),
+      runBurst: async () => ({ tokenUsed: 0, round: 1 }),
+      runCheck: async ({ command }) => ({
+        result: failResult(command, 'still failing'),
+        approved: new Set([command])
+      })
+    })
+
+    expect(patches.some((p) => p.runStatus === 'completed')).toBe(false)
+    expect(patches.at(-1)?.runStatus).toBe('paused')
+  })
+})
+
+describe('parsePlanOutput', () => {
+  it('忽略模型给出的 verifyCommand，且不把声称完成写成 done', () => {
+    const planned = driver.parsePlanOutput(
+      JSON.stringify({
+        goal: 'g',
+        verifyCommand: 'hijack',
+        checklist: [{ id: '1', title: 't', done: true, check: 'true' }]
+      }),
+      'fallback'
+    )
+
+    expect(planned).not.toHaveProperty('verifyCommand')
+    expect(planned.goal).toBe('g')
+    expect(planned.checklist[0]?.done).toBe(false)
+    expect(planned.checklist[0]?.check).toBe('true')
   })
 })

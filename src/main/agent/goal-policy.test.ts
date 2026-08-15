@@ -51,6 +51,16 @@ describe('goal policy', () => {
 
     expect(actual[0].done).toBe(false)
     expect(actual[0].evidence).toBe('failure evidence')
+    expect(actual[0].lastExitCode).toBe(1)
+  })
+
+  it('拒绝确认时子项保持未完成', () => {
+    const actual = applyCheckResults([item()], {
+      'item-1': result({ denied: true, exitCode: -1, output: '用户拒绝验收命令' })
+    })
+
+    expect(actual[0].done).toBe(false)
+    expect(actual[0].lastExitCode).toBe(-1)
   })
 
   it('子项全绿但 overall exit 1 时目标未完成', () => {
