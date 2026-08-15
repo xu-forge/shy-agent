@@ -21,16 +21,22 @@ function truncateOutput(stdout: string, stderr: string): string {
   return `${stdout.slice(0, EVIDENCE_MAX_CHARS - stderr.length)}${stderr}`
 }
 
-class ExecTimeoutError extends Error {
-  readonly timedOut = true
-  readonly stdout: string
-  readonly stderr: string
+type ExecError = {
+  code?: string | number | null
+  status?: number
+  killed?: boolean
+  signal?: string | null
+  stdout?: string
+  stderr?: string
+}
 
-  constructor(stdout: string, stderr: string) {
-    super('命令执行超时')
-    this.stdout = stdout
-    this.stderr = stderr
-  }
+export function isExecTimeout(err: unknown): err is ExecError {
+  if (typeof err !== 'object' || err === null) return false
+  const e = err as ExecError
+  return (
+    e.code === 'ETIMEDOUT' ||
+    (e.killed === true && e.code == null && (e.signal === 'SIGTERM' || e.signal === 'SIGKILL'))
+  )
 }
 
 async function defaultExecImpl(
@@ -45,15 +51,8 @@ async function defaultExecImpl(
     })
     return { stdout: stdout ?? '', stderr: stderr ?? '', exitCode: 0 }
   } catch (err) {
-    const e = err as {
-      code?: string | number
-      status?: number
-      stdout?: string
-      stderr?: string
-    }
-    if (e.code === 'ETIMEDOUT') {
-      throw new ExecTimeoutError(e.stdout ?? '', e.stderr ?? '')
-    }
+    if (isExecTimeout(err)) throw err
+    const e = err as ExecError
     const exitCode =
       typeof e.status === 'number'
         ? e.status
@@ -108,12 +107,12 @@ export async function runCheckCommand(opts: {
       approved
     }
   } catch (err) {
-    if (err instanceof ExecTimeoutError) {
+    if (isExecTimeout(err)) {
       return {
         result: {
           command,
           exitCode: -2,
-          output: truncateOutput(err.stdout, err.stderr),
+          output: truncateOutput(err.stdout ?? '', err.stderr ?? ''),
           timedOut: true,
           denied: false
         },

@@ -43,4 +43,29 @@ describe('runCheckCommand', () => {
     })
     expect(confirm).not.toHaveBeenCalled()
   })
+
+  it('将 Node exec 的终止信号错误识别为超时并截断输出', async () => {
+    const stdout = 'x'.repeat(EVIDENCE_MAX_CHARS + 50)
+    const { result } = await runCheckCommand({
+      command: 'npm test',
+      approved: new Set(['npm test']),
+      pinned: true,
+      confirm: async () => true,
+      execImpl: async () => {
+        throw {
+          killed: true,
+          signal: 'SIGTERM',
+          code: null,
+          stdout,
+          stderr: 'timed out'
+        }
+      }
+    })
+
+    expect(result.timedOut).toBe(true)
+    expect(result.exitCode).toBe(-2)
+    expect(result.denied).toBe(false)
+    expect(result.output.length).toBeLessThanOrEqual(EVIDENCE_MAX_CHARS)
+    expect(result.output).toContain('timed out')
+  })
 })
