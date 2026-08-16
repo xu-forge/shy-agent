@@ -123,6 +123,7 @@ export type ChatMessage = {
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   createdAt: string
+  kind?: 'result'
 }
 
 export type SessionSummary = {
@@ -142,6 +143,8 @@ export type SessionDetail = SessionSummary & {
   checklist: GoalChecklistItem[]
   shortMemory: string
   approvedChecks?: string[]
+  resultContent?: string
+  resultReportPath?: string
 }
 
 /* ────────── session files & tasks（shell-session-side-panel） ────────── */

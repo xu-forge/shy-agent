@@ -1,8 +1,11 @@
+import { mkdirSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { ChatOpenAI } from '@langchain/openai'
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages'
 import type { GoalChecklistItem, RunStatus } from '../../shared/ipc'
 import { getSession, updateSessionRuntime, appendMessage } from '../sessions/store'
 import { getSettings } from '../settings/store'
+import { getShyPaths } from '../paths'
 import type { AgentEvent } from './service'
 import type { CheckRunResult } from './checks'
 import { runCheckCommand } from './checks'
@@ -10,15 +13,17 @@ import {
   applyCheckResults,
   assertCanStart,
   buildFailureFeedback,
+  freezeGoal,
   isGoalComplete,
-  nextStagnantRounds
+  nextStagnantRounds,
+  shouldDeliver
 } from './goal-policy'
 import { buildAgentGraph, mapChecklistItem } from './graph'
 import { buildTools, type ToolContext } from './tools/registry'
 
-export const GOAL_PLAN_SYSTEM_PROMPT = `你是目标规划器。根据用户目标输出 JSON：
-{"goal":"...","checklist":[{"id":"1","title":"...","done":false,"check":"可在本机运行的 shell 命令"}]}
-清单 3-8 步，可验证。check 必须是可在本机运行的 shell 命令，不要写描述性句子。只输出 JSON。`
+export const GOAL_PLAN_SYSTEM_PROMPT = `你是步骤规划器。根据用户目标只输出步骤 JSON：
+{"checklist":[{"id":"1","title":"...","done":false,"check":"可在本机运行的 shell 命令"}]}
+清单 3-8 步。check 必须是可在本机运行的 shell 命令；没有可执行检查则省略 check。不要输出 goal 字段。只输出 JSON。`
 
 export type GoalDriverPersistPatch = {
   goal?: string | null
@@ -28,6 +33,8 @@ export type GoalDriverPersistPatch = {
   approvedChecks?: string[]
   paused?: boolean
   checkpoint?: string | null
+  resultContent?: string | null
+  resultReportPath?: string | null
 }
 
 export async function runGoalDriver(args: {
@@ -48,9 +55,16 @@ export async function runGoalDriver(args: {
   }>
   runCheck?: typeof runCheckCommand
   persist?: (patch: GoalDriverPersistPatch) => void
+  deliver?: (input: {
+    goal: string
+    checklist: GoalChecklistItem[]
+  }) => Promise<{ content: string; isReport: boolean }>
 }): Promise<void> {
   const { sessionId, message, emit, waitConfirm, resume } = args
   const runCheck = args.runCheck ?? runCheckCommand
+  const deliverFn =
+    args.deliver ??
+    ((input: { goal: string; checklist: GoalChecklistItem[] }) => defaultDeliver(input))
   const persist =
     args.persist ??
     ((patch: GoalDriverPersistPatch) => {
@@ -78,7 +92,8 @@ export async function runGoalDriver(args: {
   }
   const verifyCommand = storedVerify || incomingVerify
 
-  let goal = session.goal || message
+  let goal = freezeGoal(session.goal, message)
+  persistIfOwner({ goal })
   let checklist: GoalChecklistItem[] = session.checklist ?? []
   let approved = new Set(session.approvedChecks ?? [])
   let stagnantRounds = 0
@@ -99,9 +114,8 @@ export async function runGoalDriver(args: {
       }))
 
   if (checklist.length === 0) {
-    emit({ type: 'status', message: '规划目标与验收清单…' })
+    emit({ type: 'status', message: '规划步骤…' })
     const planned = await planChecklist(goal)
-    goal = planned.goal
     checklist = planned.checklist
     rt.goal = goal
     rt.checklist = checklist
@@ -191,8 +205,8 @@ export async function runGoalDriver(args: {
       rt.checklist = checklist
 
       let overall: CheckRunResult | undefined
-      const itemsAllDone = checklist.length === 0 || checklist.every((item) => item.done)
-      if (itemsAllDone && verifyCommand) {
+      const readyForOverall = shouldDeliver({ checklist, hadWorkSegment: true })
+      if (readyForOverall && verifyCommand) {
         await gatePauseOrAbort()
         const { result, approved: nextApproved } = await runCheck({
           command: verifyCommand,
@@ -219,17 +233,32 @@ export async function runGoalDriver(args: {
       return { overall, failures }
     }
 
-    const concludeAfterChecks = (overall?: CheckRunResult): boolean => {
-      if (!isGoalComplete({ checklist, verifyCommand, overall })) return false
+    const concludeAfterChecks = async (
+      overall: CheckRunResult | undefined,
+      hadWorkSegment: boolean
+    ): Promise<boolean> => {
+      if (!isGoalComplete({ checklist, verifyCommand, overall, hadWorkSegment })) return false
+      const delivered = await deliverFn({ goal, checklist })
+      let reportPath: string | undefined
+      if (delivered.isReport && delivered.content.trim()) {
+        const dir = getShyPaths().reportsDir
+        mkdirSync(dir, { recursive: true })
+        reportPath = join(dir, `${sessionId}-${Date.now()}.md`)
+        writeFileSync(reportPath, delivered.content, 'utf8')
+      }
       persistIfOwner({
         runStatus: 'completed',
         paused: false,
         goal,
         checklist,
         approvedChecks: [...approved],
-        checkpoint: null
+        checkpoint: null,
+        resultContent: delivered.content,
+        resultReportPath: reportPath ?? null
       })
       if (getAgentRuntime(sessionId) === rt) {
+        emit({ type: 'result', content: delivered.content, reportPath })
+        appendMessage(sessionId, 'assistant', delivered.content, 'result')
         emit({ type: 'done', reason: 'completed' })
       }
       return true
@@ -247,7 +276,7 @@ export async function runGoalDriver(args: {
         finishStop(stopAfterChecks)
         return
       }
-      if (concludeAfterChecks(overall)) return
+      if (await concludeAfterChecks(overall, true)) return
       if (failures.length) feedback = buildFailureFeedback(failures)
     }
 
@@ -280,7 +309,7 @@ export async function runGoalDriver(args: {
         return
       }
 
-      if (concludeAfterChecks(overall)) return
+      if (await concludeAfterChecks(overall, true)) return
 
       stagnantRounds = nextStagnantRounds({
         prev: stagnantRounds,
@@ -344,8 +373,49 @@ export function parsePlanOutput(
     ? (parsed!.checklist as Array<Record<string, unknown>>).map((c, i) => mapChecklistItem(c, i))
     : [{ id: '1', title: fallbackGoal.slice(0, 80), done: false }]
   return {
-    goal: String(parsed?.goal ?? fallbackGoal),
+    goal: fallbackGoal,
     checklist
+  }
+}
+
+function assembleFallback(goal: string, checklist: GoalChecklistItem[]): string {
+  const steps = checklist
+    .map((c) => `- ${c.title}${c.evidence ? `\n  ${c.evidence}` : ''}`)
+    .join('\n')
+  return `## 完整结果\n\n目标：${goal}\n\n${steps || '（无步骤产物）'}`
+}
+
+async function defaultDeliver(input: {
+  goal: string
+  checklist: GoalChecklistItem[]
+}): Promise<{ content: string; isReport: boolean }> {
+  const fallback = { content: assembleFallback(input.goal, input.checklist), isReport: false }
+  try {
+    const settings = await getSettings()
+    if (!settings.apiKey) return fallback
+    const llm = new ChatOpenAI({
+      model: settings.model,
+      apiKey: settings.apiKey,
+      configuration: { baseURL: settings.baseURL },
+      temperature: 0.2
+    })
+    const evidence = input.checklist
+      .map((c) => `## ${c.title}\n${c.evidence ?? '（无证据）'}`)
+      .join('\n\n')
+    const res = await llm.invoke([
+      new SystemMessage(
+        `对照总目标汇总各步产物，输出 JSON：{"content":"完整结果 Markdown","isReport":true/false}。
+isReport 在新闻总结、周报、调研等文档型交付时为 true。只输出 JSON。content 必须覆盖目标与各步要点，不要寒暄。`
+      ),
+      new HumanMessage(`总目标：${input.goal}\n\n各步证据：\n${evidence}`)
+    ])
+    const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+    const parsed = parseJsonObject(text)
+    const content = String(parsed?.content ?? '').trim()
+    if (!content) return fallback
+    return { content, isReport: Boolean(parsed?.isReport) }
+  } catch {
+    return fallback
   }
 }
 

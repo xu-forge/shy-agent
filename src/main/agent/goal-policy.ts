@@ -1,20 +1,28 @@
 import type { GoalChecklistItem } from '../../shared/ipc'
 import type { CheckRunResult } from './checks'
 
+export function freezeGoal(existing: string | null | undefined, userMessage: string): string {
+  const frozen = existing?.trim()
+  if (frozen) return frozen
+  return userMessage.trim()
+}
+
+export function stripThink(text: string): string {
+  return text
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, ' ')
+    .replace(/<think\b[^>]*>[\s\S]*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function assertCanStart(input: {
   verifyCommand?: string
   checklist: GoalChecklistItem[]
 }): { ok: true } | { ok: false; reason: string } {
   const hasOverallCheck = Boolean(input.verifyCommand?.trim())
-
   if (input.checklist.length === 0 && !hasOverallCheck) {
-    return { ok: false, reason: '需要补验收命令' }
+    return { ok: false, reason: '需要步骤或总验收命令' }
   }
-
-  if (input.checklist.some((item) => !item.check?.trim())) {
-    return { ok: false, reason: '清单项缺少 check' }
-  }
-
   return { ok: true }
 }
 
@@ -35,23 +43,33 @@ export function applyCheckResults(
   })
 }
 
+export function shouldDeliver(input: {
+  checklist: GoalChecklistItem[]
+  hadWorkSegment: boolean
+}): boolean {
+  const withCheck = input.checklist.filter((item) => item.check?.trim())
+  if (withCheck.length > 0) return withCheck.every((item) => item.done)
+  if (input.checklist.length === 0) return true
+  return input.hadWorkSegment
+}
+
 export function isGoalComplete(input: {
   checklist: GoalChecklistItem[]
   verifyCommand?: string
   overall?: CheckRunResult
+  hadWorkSegment?: boolean
 }): boolean {
+  if (!shouldDeliver({ checklist: input.checklist, hadWorkSegment: input.hadWorkSegment ?? true })) {
+    return false
+  }
   const hasOverallCheck = Boolean(input.verifyCommand?.trim())
-  const overallPassed =
+  if (!hasOverallCheck) return true
+  return (
     input.overall != null &&
     input.overall.exitCode === 0 &&
     !input.overall.denied &&
     !input.overall.timedOut
-
-  if (input.checklist.length === 0) {
-    return hasOverallCheck && overallPassed
-  }
-
-  return input.checklist.every((item) => item.done) && (!hasOverallCheck || overallPassed)
+  )
 }
 
 export function buildFailureFeedback(

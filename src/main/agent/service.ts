@@ -38,6 +38,7 @@ export type AgentEvent =
     }
   | { type: 'task'; kind: 'remove'; id: string }
   | { type: 'error'; message: string }
+  | { type: 'result'; content: string; reportPath?: string }
   | { type: 'done'; reason: string }
   | { type: 'confirm_required'; action: string; detail: string; requestId: string }
   | { type: 'notify'; message: string }
@@ -135,6 +136,11 @@ export async function runAgent(args: RunArgs): Promise<void> {
 
   const ac = new AbortController()
   const session = getSession(sessionId)
+  if (mode === 'goal' && session?.runStatus === 'completed' && !resume) {
+    emitRaw({ type: 'notify', message: '目标已完成，请新开会话继续' })
+    emitRaw({ type: 'done', reason: 'completed' })
+    return
+  }
   const rt: SessionRuntime = {
     controller: ac,
     paused: false,

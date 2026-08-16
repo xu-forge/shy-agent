@@ -100,6 +100,21 @@ describe('sessions runStatus', () => {
     })
   })
 
+  it('写入并读取完整结果字段', async () => {
+    const store = await import('./store')
+    const s = store.createSession('goal', 'result')
+    store.updateSessionRuntime(s.id, {
+      resultContent: '完整结果正文',
+      resultReportPath: '/tmp/report.md'
+    })
+    const d = store.getSession(s.id)
+    expect(d?.resultContent).toBe('完整结果正文')
+    expect(d?.resultReportPath).toBe('/tmp/report.md')
+
+    store.appendMessage(s.id, 'assistant', '完整结果正文', 'result')
+    expect(store.getSession(s.id)?.messages.at(-1)?.kind).toBe('result')
+  })
+
   it('runStatus 与旧 paused 字段双向同步', async () => {
     const store = await import('./store')
     const s = store.createSession('goal', 'pause')

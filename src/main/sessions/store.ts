@@ -49,6 +49,16 @@ export function ensureSessionTables(): void {
   if (!columnNames.has('approved_checks')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN approved_checks TEXT NOT NULL DEFAULT '[]'`)
   }
+  if (!columnNames.has('result_content')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN result_content TEXT`)
+  }
+  if (!columnNames.has('result_report_path')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN result_report_path TEXT`)
+  }
+  const msgCols = db.prepare(`PRAGMA table_info(session_messages)`).all() as { name: string }[]
+  if (!msgCols.some((c) => c.name === 'kind')) {
+    db.exec(`ALTER TABLE session_messages ADD COLUMN kind TEXT`)
+  }
 }
 
 function now(): string {
@@ -113,11 +123,14 @@ export function getSession(id: string): SessionDetail | null {
       id: String(m.id),
       role: m.role as ChatMessage['role'],
       content: String(m.content),
-      createdAt: String(m.created_at)
+      createdAt: String(m.created_at),
+      kind: m.kind === 'result' ? 'result' : undefined
     })),
     checklist: JSON.parse(String(row.checklist || '[]')) as GoalChecklistItem[],
     shortMemory: String(row.short_memory || ''),
-    approvedChecks: JSON.parse(String(row.approved_checks || '[]')) as string[]
+    approvedChecks: JSON.parse(String(row.approved_checks || '[]')) as string[],
+    resultContent: row.result_content ? String(row.result_content) : undefined,
+    resultReportPath: row.result_report_path ? String(row.result_report_path) : undefined
   }
 }
 
@@ -130,20 +143,22 @@ export function deleteSession(id: string): void {
 export function appendMessage(
   sessionId: string,
   role: ChatMessage['role'],
-  content: string
+  content: string,
+  kind?: ChatMessage['kind']
 ): ChatMessage {
   ensureSessionTables()
   const msg: ChatMessage = {
     id: randomUUID(),
     role,
     content,
-    createdAt: now()
+    createdAt: now(),
+    kind
   }
   getDb()
     .prepare(
-      `INSERT INTO session_messages (id, session_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO session_messages (id, session_id, role, content, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(msg.id, sessionId, role, content, msg.createdAt)
+    .run(msg.id, sessionId, role, content, msg.createdAt, kind ?? null)
   getDb()
     .prepare(`UPDATE sessions SET updated_at = ? WHERE id = ?`)
     .run(msg.createdAt, sessionId)
@@ -193,6 +208,8 @@ export function updateSessionRuntime(
     verifyCommand?: string | null
     runStatus?: RunStatus
     approvedChecks?: string[]
+    resultContent?: string | null
+    resultReportPath?: string | null
   }
 ): void {
   ensureSessionTables()
@@ -215,7 +232,8 @@ export function updateSessionRuntime(
     .prepare(
       `UPDATE sessions
        SET mode=?, goal=?, checklist=?, short_memory=?, paused=?, checkpoint=?,
-           verify_command=?, run_status=?, approved_checks=?, updated_at=?
+           verify_command=?, run_status=?, approved_checks=?, result_content=?,
+           result_report_path=?, updated_at=?
        WHERE id=?`
     )
     .run(
@@ -230,6 +248,8 @@ export function updateSessionRuntime(
       JSON.stringify(
         patch.approvedChecks ?? JSON.parse(String(cur.approved_checks || '[]'))
       ),
+      patch.resultContent === undefined ? cur.result_content : patch.resultContent,
+      patch.resultReportPath === undefined ? cur.result_report_path : patch.resultReportPath,
       now(),
       sessionId
     )

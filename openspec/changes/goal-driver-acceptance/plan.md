@@ -1,19 +1,19 @@
-# GoalDriver 可执行验收 Implementation Plan
+# GoalDriver 可执行验收与完整结果 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 shy 目标模式中抽出 GoalDriver：用可执行 check/总验收判定完成，失败回灌下一段，并在应用启动时自动续被中断的 `running` 会话。
+**Goal:** 抽出 GoalDriver：冻结用户原目标、步骤服务于它、可选可执行 check/总验收、收口 deliver 一份完整结果（报告类落盘），完成后硬停，启动时续被中断的 `running`。
 
-**Architecture:** 纯函数模块（`checks.ts`、`goal-policy.ts`、`goal-resume.ts`）先用单测钉死契约；`goal-driver.ts` 编排 plan → 工作图一段 → 跑验收 → 回灌；`graph.ts` 目标路径不再含 verify；`service.ts` 仅交互式走旧循环。开机扫描只续一条最新 `running`。
+**Architecture:** 纯函数（`checks.ts`、`goal-policy.ts`、`goal-resume.ts`）先用单测钉契约；`goal-driver.ts` 编排 冻结 goal → plan 步骤 → 工作图一段 → 跑 check → 回灌或 deliver；`graph.ts` 目标路径不再含 verify；`service.ts` 仅交互式走旧循环。开机只续一条最新 `running`。
 
-**Tech Stack:** Electron main、LangGraph、vitest、better-sqlite3、现有 `shell_exec` 确认闸门。
+**Tech Stack:** Electron main、LangGraph、vitest、better-sqlite3、现有 `shell_exec` 确认闸门、`getShyPaths().reportsDir`。
 
 ## Global Constraints
 
 - 规格与任务以简体中文为主（专有名词可英文）
 - 高危本机操作必须走现有 `waitConfirm`；用户拒绝 = 验收失败
 - 交互式模式行为不变
-- agent 不得改写用户钉死的 `verifyCommand`
+- agent 不得改写用户钉死的 `verifyCommand`；不得改写冻结的 `goal`
 - 验收默认超时 300_000ms；evidence 截断 8192 字符
 - 历史会话迁移：`paused=1` → `runStatus=paused`，其余 → `idle`（不得把旧 checkpoint 当成 running）
 - 测试：`npm test`（vitest run）；类型：`npm run typecheck`
@@ -23,16 +23,18 @@
 
 | 文件 | 职责 |
 |------|------|
-| `src/shared/ipc.ts` | `RunStatus`、清单/会话/ChatRequest 字段 |
+| `src/shared/ipc.ts` | `RunStatus`、清单/会话/ChatRequest、`result` 事件 |
 | `src/main/sessions/store.ts` | 新列、迁移、runtime patch |
+| `src/main/sessions/title.ts` | 去掉 `<think>` |
 | `src/main/agent/checks.ts` | 执行一条验收命令 |
-| `src/main/agent/goal-policy.ts` | 开工条件、完成判定、回灌文本、停滞 |
+| `src/main/agent/goal-policy.ts` | 冻结、开工、是否 deliver、回灌、停滞 |
 | `src/main/agent/goal-resume.ts` | 选择自动续哪条会话 |
-| `src/main/agent/goal-driver.ts` | 目标外循环 |
+| `src/main/agent/goal-driver.ts` | 目标外循环 + deliver |
 | `src/main/agent/graph.ts` | 目标模式只 act/tools |
-| `src/main/agent/service.ts` | 按 mode 分流 |
+| `src/main/agent/service.ts` | 按 mode 分流；错误不 append 成人话 |
 | `src/main/index.ts` / `ipc.ts` | 启动续跑、verifyCommand 入参 |
-| `src/renderer/src/components/ChatWorkspace.tsx` | 总验收输入 |
+| `src/renderer/src/components/ChatWorkspace.tsx` | 完整结果标记、总验收输入、completed 提示 |
+| `src/renderer/src/components/SessionPanel.tsx` | chip「步骤」、check/evidence |
 | `src/main/agent/*.test.ts` | 契约测试 |
 
 ---
@@ -41,14 +43,14 @@
 
 **Files:**
 - Modify: `src/shared/ipc.ts`
-- Test: 无独立测试；下一任务的 store 测试会编译这些类型
+- Test: 无独立测试；store 测试会编译这些类型
 
 **Interfaces:**
-- Produces: `RunStatus`；`GoalChecklistItem.lastExitCode?`；`ChatRequest.verifyCommand?`；`SessionSummary.runStatus?` / `verifyCommand?`；`SessionDetail.approvedChecks`
+- Produces: 如下类型
 
 - [ ] **Step 1: 改类型**
 
-在 `src/shared/ipc.ts` 将 `GoalChecklistItem` 与相邻类型改为：
+在 `src/shared/ipc.ts` 将相邻类型改为：
 
 ```ts
 export type RunStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled'
@@ -64,10 +66,18 @@ export type GoalChecklistItem = {
   id: string
   title: string
   done: boolean
-  /** 可执行的 shell 验收命令 */
+  /** 可执行的 shell 验收命令；缺省则该步不单独判定 */
   check?: string
   evidence?: string
   lastExitCode?: number
+}
+
+export type ChatMessage = {
+  id: string
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  content: string
+  createdAt: string
+  kind?: 'result'
 }
 
 export type SessionSummary = {
@@ -87,22 +97,24 @@ export type SessionDetail = SessionSummary & {
   checklist: GoalChecklistItem[]
   shortMemory: string
   approvedChecks?: string[]
+  resultContent?: string
+  resultReportPath?: string
 }
 ```
 
-删掉 `check` 字段上「本轮仅透传」的注释。
+`AgentEvent`（`service.ts`）增加 `{ type: 'result'; content: string; reportPath?: string }`。本任务若事件类型不在 ipc.ts，在 Task 5 与 Driver 一起加，但 ChatMessage.kind 必须本步就有。
 
 - [ ] **Step 2: 编译共享类型**
 
-Run: `npm run typecheck`
-Expected: 会在 store/renderer 处报错（尚未读新字段）或通过但未使用新字段。若仅 unused 警告可继续；若 `ChatRequest` 解构处无需改则下一步补 store。
+Run: `npm run typecheck`  
+Expected: store/renderer 可能报未使用新字段；不阻塞下一任务。
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add src/shared/ipc.ts
 git commit -m "$(cat <<'EOF'
-feat(goal): 验收命令与 runStatus 共享类型
+feat(goal): 验收、runStatus 与完整结果共享类型
 
 EOF
 )"
@@ -118,111 +130,37 @@ EOF
 
 **Interfaces:**
 - Consumes: `RunStatus`、`GoalChecklistItem`
-- Produces: `updateSessionRuntime` 可写 `verifyCommand` / `runStatus` / `approvedChecks`；`listGoalSessionsByRunStatus(status: RunStatus)`；`rowToSummary` 派生 `paused` 自 `runStatus === 'paused'`
+- Produces: `updateSessionRuntime` 可写 `verifyCommand` / `runStatus` / `approvedChecks` / `resultContent` / `resultReportPath`；`listGoalSessionsByRunStatus`；`paused` 派生自 `runStatus === 'paused'`
 
 - [ ] **Step 1: 写失败测试**
 
-创建 `src/main/sessions/store.test.ts`：
+创建 `src/main/sessions/store.test.ts`（用 `SHY_HOME` 临时目录 + `vi.mock('electron')`，照现有 store 测试风格）：
 
-```ts
-import { mkdtempSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-vi.mock('electron', () => ({
-  app: { getPath: () => process.env.SHY_HOME ?? tmpdir() }
-}))
-
-let tmpDir = ''
-
-beforeEach(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), 'shy-session-store-'))
-  process.env.SHY_HOME = tmpDir
-  vi.resetModules()
-})
-
-afterEach(() => {
-  delete process.env.SHY_HOME
-  rmSync(tmpDir, { recursive: true, force: true })
-})
-
-describe('sessions runStatus', () => {
-  it('新会话默认为 idle，paused 为 false', async () => {
-    const store = await import('./store')
-    const s = store.createSession('goal', 't')
-    const d = store.getSession(s.id)
-    expect(d?.runStatus).toBe('idle')
-    expect(d?.paused).toBe(false)
-  })
-
-  it('paused=1 的旧行迁移为 runStatus=paused', async () => {
-    const { getDb } = await import('../memory/db')
-    const store = await import('./store')
-    store.ensureSessionTables()
-    const db = getDb()
-    db.exec(`
-      INSERT INTO sessions (id, title, mode, goal, checklist, short_memory, paused, created_at, updated_at)
-      VALUES ('old-p', 'old', 'goal', 'g', '[]', '', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
-    `)
-    store.ensureSessionTables()
-    const d = store.getSession('old-p')
-    expect(d?.runStatus).toBe('paused')
-    expect(d?.paused).toBe(true)
-  })
-
-  it('未暂停的旧行迁移为 idle，即使有 checkpoint', async () => {
-    const { getDb } = await import('../memory/db')
-    const store = await import('./store')
-    store.ensureSessionTables()
-    const db = getDb()
-    db.exec(`
-      INSERT INTO sessions (id, title, mode, goal, checklist, short_memory, paused, checkpoint, created_at, updated_at)
-      VALUES ('old-c', 'old', 'goal', 'g', '[]', '', 0, '{"round":1}', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
-    `)
-    store.ensureSessionTables()
-    const d = store.getSession('old-c')
-    expect(d?.runStatus).toBe('idle')
-  })
-})
-```
+- 新会话 `runStatus === 'idle'`、`paused === false`
+- 插入 `paused=1` 旧行后 `ensureSessionTables()` → `runStatus=paused`
+- 未暂停但有 checkpoint 的旧行 → `idle`（不得变成 running）
+- `updateSessionRuntime` 可写 `resultContent` / `resultReportPath`
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `npx vitest run src/main/sessions/store.test.ts`
-Expected: FAIL（`runStatus` undefined 或列不存在）
+Run: `npx vitest run src/main/sessions/store.test.ts`  
+Expected: FAIL
 
 - [ ] **Step 3: 实现列、迁移、patch**
 
-在 `ensureSessionTables` 建表后增加迁移：若无 `run_status` 列则 `ALTER TABLE sessions ADD COLUMN run_status TEXT NOT NULL DEFAULT 'idle'`，同样添加 `verify_command TEXT`、`approved_checks TEXT NOT NULL DEFAULT '[]'`。然后：
+`ensureSessionTables` 之后 ALTER 增加（若不存在）：`run_status`（默认 idle）、`verify_command`、`approved_checks`（默认 `[]`）、`result_content`、`result_report_path`。若本次新加了 `run_status`，立刻 `UPDATE sessions SET run_status='paused' WHERE paused=1`。
 
-```sql
-UPDATE sessions SET run_status = 'paused' WHERE paused = 1 AND (run_status = 'idle' OR run_status IS NULL OR run_status = '');
-```
-
-只在「本列刚加上、尚未被新代码写入 running」时跑一次即可：用 `PRAGMA table_info` 检测新列是否刚添加。更稳妥：若 `run_status` 列是本次 ALTER 新增的，立刻执行 `UPDATE ... paused=1 → paused`，其余保持 default idle。
-
-扩展 `updateSessionRuntime` patch：`verifyCommand?: string | null`、`runStatus?: RunStatus`、`approvedChecks?: string[]`。写 `paused` 时同步：`runStatus==='paused'` 则 `paused=1`，若只传 `paused: true` 则 `run_status='paused'`，若只传 `paused: false` 且当前为 paused 则回到 `running`（恢复路径会再写 running）。
-
-`rowToSummary`：`runStatus` 从列读取；`paused: runStatus === 'paused'`。
-
-增加：
+`updateSessionRuntime` 扩展对应 patch；写 `paused` 时与 `runStatus` 同步。
 
 ```ts
-export function listGoalSessionsByRunStatus(status: RunStatus): SessionSummary[] {
-  ensureSessionTables()
-  const rows = getDb()
-    .prepare(`SELECT * FROM sessions WHERE mode='goal' AND run_status=? ORDER BY updated_at DESC`)
-    .all(status) as Record<string, unknown>[]
-  return rows.map(rowToSummary)
-}
+export function listGoalSessionsByRunStatus(status: RunStatus): SessionSummary[]
 ```
 
-`getSession` 解析 `approved_checks` JSON。
+`getSession` 解析 JSON 列并返回 result 字段。`appendMessage` 可选第四参 `kind?: 'result'` 写入（若表无 kind 列：用 content 前缀不稳，优先给 `session_messages` 加 `kind TEXT`）。
 
 - [ ] **Step 4: 再跑测试**
 
-Run: `npx vitest run src/main/sessions/store.test.ts`
+Run: `npx vitest run src/main/sessions/store.test.ts`  
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -230,7 +168,7 @@ Expected: PASS
 ```bash
 git add src/main/sessions/store.ts src/main/sessions/store.test.ts
 git commit -m "$(cat <<'EOF'
-feat(goal): 会话 runStatus 与验收字段落盘
+feat(goal): 会话 runStatus 与完整结果持久化
 
 EOF
 )"
@@ -245,93 +183,24 @@ EOF
 - Test: `src/main/agent/checks.test.ts`
 
 **Interfaces:**
-- Consumes: `waitConfirm` 形状 `(action: string, detail: string) => Promise<boolean>`
-- Produces:
-
-```ts
-export const CHECK_TIMEOUT_MS = 300_000
-export const EVIDENCE_MAX_CHARS = 8192
-
-export type CheckRunResult = {
-  command: string
-  exitCode: number
-  output: string
-  timedOut: boolean
-  denied: boolean
-}
-
-export async function runCheckCommand(opts: {
-  command: string
-  approved: ReadonlySet<string>
-  pinned: boolean
-  confirm: (action: string, detail: string) => Promise<boolean>
-  execImpl?: (command: string, timeoutMs: number) => Promise<{ stdout: string; stderr: string; exitCode: number }>
-}): Promise<{ result: CheckRunResult; approved: Set<string> }>
-```
+- Produces: `runCheckCommand({ command, cwd?, timeoutMs?, waitConfirm, approved })` → `{ exitCode, stdout, stderr, denied, timedOut }`；超时 300_000；输出合计截断 8192
 
 - [ ] **Step 1: 写失败测试**
 
-```ts
-import { describe, expect, it, vi } from 'vitest'
-import { EVIDENCE_MAX_CHARS, runCheckCommand } from './checks'
-
-describe('runCheckCommand', () => {
-  it('退出码非 0 为失败并截断 output', async () => {
-    const long = 'x'.repeat(EVIDENCE_MAX_CHARS + 50)
-    const { result } = await runCheckCommand({
-      command: 'npm test',
-      approved: new Set(),
-      pinned: true,
-      confirm: async () => true,
-      execImpl: async () => ({ stdout: long, stderr: 'boom', exitCode: 1 })
-    })
-    expect(result.exitCode).toBe(1)
-    expect(result.denied).toBe(false)
-    expect(result.output.length).toBeLessThanOrEqual(EVIDENCE_MAX_CHARS)
-    expect(result.output).toContain('boom')
-  })
-
-  it('用户拒绝确认为失败且不加入 approved', async () => {
-    const { result, approved } = await runCheckCommand({
-      command: 'rm -rf /',
-      approved: new Set(),
-      pinned: false,
-      confirm: async () => false,
-      execImpl: async () => {
-        throw new Error('should not exec')
-      }
-    })
-    expect(result.denied).toBe(true)
-    expect(result.exitCode).not.toBe(0)
-    expect(approved.has('rm -rf /')).toBe(false)
-  })
-
-  it('已批准的命令不再询问', async () => {
-    const confirm = vi.fn(async () => true)
-    await runCheckCommand({
-      command: 'npm test',
-      approved: new Set(['npm test']),
-      pinned: false,
-      confirm,
-      execImpl: async () => ({ stdout: 'ok', stderr: '', exitCode: 0 })
-    })
-    expect(confirm).not.toHaveBeenCalled()
-  })
-})
-```
+注入 `exec`：`exitCode=0` 通过；非 0 失败；`waitConfirm` false → `denied: true` 且不 exec；已在 `approved` 里的命令不再 confirm。
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `npx vitest run src/main/agent/checks.test.ts`
-Expected: FAIL Cannot find module './checks'
+Run: `npx vitest run src/main/agent/checks.test.ts`  
+Expected: FAIL
 
-- [ ] **Step 3: 实现 `checks.ts`**
+- [ ] **Step 3: 最小实现**
 
-逻辑：若 `command` 不在 `approved`：调用 `confirm('执行验收命令', command)`；false 则返回 `denied: true, exitCode: -1, output: '用户拒绝验收命令'`。true 则加入 approved。然后 `execImpl` 或默认 `exec`（timeout `CHECK_TIMEOUT_MS`，shell 与 `builtin.ts` 相同）。把 stdout+stderr 拼起来截断到 `EVIDENCE_MAX_CHARS`。超时：`timedOut: true, exitCode: -2`。默认 `execImpl` 用 `promisify(exec)`，catch 时读 `error.code` / `status`。
+与 `shell_exec` 同一 shell 策略（看现有 tools 实现，复用 spawn，不要新开一套权限模型）。
 
 - [ ] **Step 4: 再跑测试**
 
-Run: `npx vitest run src/main/agent/checks.test.ts`
+Run: `npx vitest run src/main/agent/checks.test.ts`  
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -339,7 +208,7 @@ Expected: PASS
 ```bash
 git add src/main/agent/checks.ts src/main/agent/checks.test.ts
 git commit -m "$(cat <<'EOF'
-feat(goal): 运行时可执行验收命令
+feat(goal): 可执行验收命令
 
 EOF
 )"
@@ -347,110 +216,63 @@ EOF
 
 ---
 
-### Task 4: 开工 / 完成 / 回灌 / 续跑选择（纯函数）
+### Task 4: 纯策略函数
 
 **Files:**
-- Create: `src/main/agent/goal-policy.ts`
-- Create: `src/main/agent/goal-resume.ts`
+- Create: `src/main/agent/goal-policy.ts`、`src/main/agent/goal-resume.ts`
 - Test: `src/main/agent/goal-policy.test.ts`、`src/main/agent/goal-resume.test.ts`
 
 **Interfaces:**
-- Consumes: `GoalChecklistItem`、`CheckRunResult`、`RunStatus`
-- Produces:
 
 ```ts
-export function assertCanStart(input: {
-  verifyCommand?: string
-  checklist: GoalChecklistItem[]
-}): { ok: true } | { ok: false; reason: string }
-
-export function applyCheckResults(
-  checklist: GoalChecklistItem[],
-  byId: Record<string, CheckRunResult>
-): GoalChecklistItem[]
-
-export function isGoalComplete(input: {
-  checklist: GoalChecklistItem[]
-  verifyCommand?: string
-  overall?: CheckRunResult
-}): boolean
-
-export function buildFailureFeedback(
-  failures: Array<{ title: string; exitCode: number; evidence: string }>
-): string
-
-export function nextStagnantRounds(input: {
-  prev: number
-  passedBefore: number
-  passedAfter: number
-  overallPassed: boolean
-}): number
-
-export function selectAutoResume(
-  sessions: Array<{ id: string; updatedAt: string }>
-): { resumeId: string | null; pauseIds: string[] }
+freezeGoal(existing: string | null | undefined, userMessage: string): string
+assertCanStart(input: { checklist: GoalChecklistItem[]; verifyCommand?: string }): { ok: true } | { ok: false; reason: string }
+applyCheckResults(checklist, results: Array<{ id: string; exitCode: number; evidence: string; denied?: boolean }>): GoalChecklistItem[]
+shouldDeliver(input: { checklist: GoalChecklistItem[]; hadWorkSegment: boolean }): boolean
+buildFailureFeedback(failures: Array<{ title: string; exitCode: number; evidence: string }>): string
+nextStagnantRounds(prev, passedBefore, passedAfter, overallPassed: boolean): number
+selectAutoResume(sessions: Array<{ id: string; updatedAt: string }>): { resumeId: string | null; pauseIds: string[] }
+stripThink(text: string): string
 ```
 
-- [ ] **Step 1: 写失败测试（policy）**
+- [ ] **Step 1: 写失败测试**
 
-`goal-policy.test.ts` 必须包含：
+`freezeGoal(null, '用户原话') === '用户原话'`；`freezeGoal('已冻结', 'plan改写') === '已冻结'`。
 
-1. 无 `verifyCommand` 且清单无任何 check → `assertCanStart.ok === false`
-2. 清单有一项缺 check → 拒绝开工
-3. 清单为空但有 `verifyCommand` → 允许开工
-4. `applyCheckResults`：exitCode 1 → `done: false` 且写入 evidence
-5. `isGoalComplete`：子项全绿但 overall exit 1 → false
-6. 清单为空 + overall 0 → true
-7. `buildFailureFeedback` 含 title、exit code、evidence，并含「不要修改验收命令」
-8. `nextStagnantRounds`：passed 未增加且 overall 未过 → prev+1（即使调用方声明有工具活动——函数本身不看工具，Driver 仍要传入「验收无进展」）
+`assertCanStart`：空清单且无 verifyCommand → not ok；非空清单全无 check → ok。
 
-- [ ] **Step 2: 写失败测试（resume）**
+`shouldDeliver`：所有带 check 的项 done（或没有任何带 check 的项且 `hadWorkSegment`）→ true；有带 check 项未 done → false。
 
-```ts
-it('只续 updatedAt 最新的一条，其余进 pauseIds', () => {
-  const r = selectAutoResume([
-    { id: 'a', updatedAt: '2026-08-01T00:00:00.000Z' },
-    { id: 'b', updatedAt: '2026-08-02T00:00:00.000Z' }
-  ])
-  expect(r.resumeId).toBe('b')
-  expect(r.pauseIds).toEqual(['a'])
-})
+`buildFailureFeedback` 含「不要修改验收命令本身」。
 
-it('空列表不续', () => {
-  expect(selectAutoResume([]).resumeId).toBeNull()
-})
-```
+`nextStagnantRounds`：无新通过则 +1；有通过则 0。
 
-- [ ] **Step 3: 跑测试确认失败**
+`selectAutoResume`：两条则 resume 最新，pause 另一条。
 
-Run: `npx vitest run src/main/agent/goal-policy.test.ts src/main/agent/goal-resume.test.ts`
-Expected: FAIL missing modules
+`stripThink('<think>foo</think>标题')` 不含 `<think>`。
 
-- [ ] **Step 4: 实现两文件**
+- [ ] **Step 2: 跑测试确认失败**
 
-`assertCanStart`：trim 后的 `verifyCommand` 非空视为有总验收。清单为空且无总验收 → 失败「需要补验收命令」。清单非空时每一项 `check?.trim()` 必须非空，否则「清单项缺少 check」。
+Run: `npx vitest run src/main/agent/goal-policy.test.ts src/main/agent/goal-resume.test.ts`  
+Expected: FAIL
 
-`applyCheckResults`：按 id 合并，`done = result.exitCode === 0 && !result.denied && !result.timedOut`。
+- [ ] **Step 3: 实现**
 
-`isGoalComplete`：清单为空则要求 `verifyCommand` 存在且 `overall?.exitCode === 0`；否则每一项 `done` 且（若有 verifyCommand）overall 通过。
+`assertCanStart`：**不要**要求每项都有 check。
 
-`buildFailureFeedback` 固定前缀：`验收未通过。请根据下面的命令输出修改，不要修改验收命令本身。`
+`shouldDeliver`：过滤 `check?.trim()` 非空的项，全部 `done` 则为 true；若该集合为空，则 `hadWorkSegment === true` 为 true。
 
-`nextStagnantRounds`：若 `passedAfter > passedBefore || overallPassed` 返回 0，否则 `prev+1`。
+- [ ] **Step 4: 再跑测试**
 
-`selectAutoResume`：按 `updatedAt` 字符串降序，第一条 resume，其余 pauseIds。
-
-- [ ] **Step 5: 再跑测试**
-
-Run: `npx vitest run src/main/agent/goal-policy.test.ts src/main/agent/goal-resume.test.ts`
+Run: `npx vitest run src/main/agent/goal-policy.test.ts src/main/agent/goal-resume.test.ts`  
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/main/agent/goal-policy.ts src/main/agent/goal-policy.test.ts src/main/agent/goal-resume.ts src/main/agent/goal-resume.test.ts
 git commit -m "$(cat <<'EOF'
-feat(goal): 验收判定与开机续跑选择
+feat(goal): 冻结原目标与收口判定
 
 EOF
 )"
@@ -465,45 +287,24 @@ EOF
 - Test: `src/main/agent/graph-goal-route.test.ts`
 
 **Interfaces:**
-- Consumes: 现有 `buildAgentGraph`
-- Produces: 目标模式 `act` 无 tool_calls 时 END（让 Driver 去验收）；`round >= segmentSteps` 时 END 并 `emit({ type: 'done', reason: 'segment' })`；不再进入 `verify` 节点；不再根据 checklist.every(done) 结束；START 在已有 checklist 时直接 act，无 checklist 时仍可 plan（Driver 会先 plan，图侧保留 plan 仅作交互式/防御）
+- Produces: `routeAfterActForGoal({ hasToolCalls, round, segmentSteps }): 'tools' | 'end_segment' | 'end_burst'`
 
 - [ ] **Step 1: 写失败测试**
 
-用最小 fake：不跑真 LLM。若 `buildAgentGraph` 难以单测路由，则抽出：
-
-```ts
-export function routeAfterActForGoal(input: {
-  hasToolCalls: boolean
-  round: number
-  segmentSteps: number
-}): 'tools' | 'end_segment' | 'end_burst'
-```
-
-测试：
-
-- hasToolCalls true → `'tools'`
-- hasToolCalls false → `'end_burst'`
-- round >= segmentSteps → `'end_segment'`（优先于 tools？**规格：达到段上限应结束本段**。若本步已有 tool_calls，仍先 tools 再在下一 round 结束。因此 segment 检查放在 act 结束后、已无 tool_calls 时，或 round 在进入 act 前已达上限则 END。）
-
-钉死：`routeAfterActForGoal`：若 `hasToolCalls` → tools；否则若 `segmentSteps>0 && round>=segmentSteps` → end_segment；否则 end_burst。
+hasToolCalls → `'tools'`；否则 round>=segmentSteps → `'end_segment'`；否则 `'end_burst'`。
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `npx vitest run src/main/agent/graph-goal-route.test.ts`
+Run: `npx vitest run src/main/agent/graph-goal-route.test.ts`  
 Expected: FAIL
 
-- [ ] **Step 3: 抽出路由并改图**
+- [ ] **Step 3: 改图**
 
-`routeAfterAct`：interactive 保持「有 tool → tools 否则 END」。goal 调用 `routeAfterActForGoal`，end_* 都 `return END`，end_segment 时 `emit({ type: 'done', reason: 'segment' })`。
-
-删除 goal 路径上对 `verify` 的边。可保留 `verifyNode` 函数暂时不用，或删除以免误用——**删除** verify 节点注册与 `routeAfterVerify`。预算/停滞从本图移除（改由 Driver）。`await_user` 节点若仅服务于停滞/预算，一并删除。
-
-`actNode` 不得把模型内容写进 `checklist[].done`。
+goal：`act` 无 tool_calls → END（burst 结束给 Driver）；`end_segment` 时 `emit({ type: 'done', reason: 'segment' })`。删除 verify 节点与 `routeAfterVerify`。预算/停滞/`await_user` 从本图移除。`actNode` 不得写 `checklist[].done`。plan 节点可留作防御，但 Driver 有清单时 START→act，且 Driver 传入的 `goal` 不得被 plan 覆盖（目标路径建议直接不跑 plan）。
 
 - [ ] **Step 4: 再跑测试**
 
-Run: `npx vitest run src/main/agent/graph-goal-route.test.ts`
+Run: `npx vitest run src/main/agent/graph-goal-route.test.ts`  
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -519,7 +320,7 @@ EOF
 
 ---
 
-### Task 6: GoalDriver 循环
+### Task 6: GoalDriver 循环与 deliver
 
 **Files:**
 - Create: `src/main/agent/goal-driver.ts`
@@ -527,10 +328,6 @@ EOF
 - Modify: `src/main/agent/service.ts`
 
 **Interfaces:**
-- Consumes: `assertCanStart`、`runCheckCommand`、`applyCheckResults`、`isGoalComplete`、`buildFailureFeedback`、`nextStagnantRounds`、`buildAgentGraph`、`updateSessionRuntime`
-- Produces: `runGoalDriver(args)`；目标模式 `runAgent` 转调它
-
-Driver 伪代码（实现须与此一致）：
 
 ```ts
 export async function runGoalDriver(args: {
@@ -540,58 +337,53 @@ export async function runGoalDriver(args: {
   emit: (event: AgentEvent) => void
   waitConfirm: (action: string, detail: string) => Promise<boolean>
   resume?: boolean
-  planChecklist?: (goal: string) => Promise<{ goal: string; checklist: GoalChecklistItem[] }>
+  planSteps?: (goal: string) => Promise<GoalChecklistItem[]>
   runBurst?: (input: { goal: string; checklist: GoalChecklistItem[]; feedback?: string }) => Promise<{
     tokenUsed: number
     round: number
   }>
   runCheck?: typeof runCheckCommand
+  deliver?: (input: { goal: string; checklist: GoalChecklistItem[] }) => Promise<{
+    content: string
+    isReport: boolean
+  }>
 }): Promise<void>
 ```
 
-单测用注入的 `planChecklist` / `runBurst` / `runCheck`，不碰 LLM。
+单测全部注入，不碰真 LLM。
 
 - [ ] **Step 1: 写失败测试**
 
-`goal-driver.test.ts`：
-
-1. **子项失败回灌**：plan 给出 `{ id:'1', title:'t', check:'false' }`；burst 空操作；runCheck 返回 exit 1 output `FAILTXT`。断言第二次 burst 收到的 `feedback` 包含 `FAILTXT` 与「不要修改验收命令」；checklist[0].done === false。循环用 `maxBursts` 测试钩子或在第二次 burst throw 结束。
-
-2. **总验收失败**：子项 check 0，overall 1 → 不 completed。
-
-3. **无检查拒绝开工**：plan 返回无 check 的项且无 verifyCommand → `runBurst` 不被调用；emit error。
-
-给 Driver 加测试用 `shouldContinue?: () => boolean` 或 burst 计数上限参数 `maxBurstsForTest`：**不要**把测试钩子留在生产 API。改为：`runCheck` 第一次失败，`runBurst` 第二次调用时 `throw new Error('stop-test')`，Driver 将未捕获的测试异常视为 error 结束即可。更好：`runBurst` mock 第二次 resolve 后 Driver 因失败回灌再进循环，用 `let n=0; if (++n>=2) return` 并让 Driver 在 `maxSegments` 仅测试注入……规格无 maxSegments。
-
-用 AbortController：第二次 burst 开头 `controller.abort()`。
-
-Driver 必须在每段开始检查 abort / paused。
-
-4. 完成路径：check 0 且无 overall → `runStatus` 回调 `completed`（通过 `persist` 注入记录最后一次 patch）。
-
-注入 `persist: (patch) => void` 以便断言。
+1. **冻结**：plan 试图返回别的 goal 字符串（若旧 API 返回 `{goal,checklist}`）——Driver 持久化的 goal 仍是 `message`。
+2. **子项失败回灌**：check exit 1，第二次 burst 的 feedback 含失败输出与「不要修改验收命令」；`done===false`。用 AbortController 在第二次 burst 开头 abort。
+3. **总验收失败**：子项 check 0，overall 1 → 不 emit `result`，不 completed。
+4. **空清单无总验收**：不调用 `runBurst`。
+5. **纯报告无 check**：plan 返回无 check 的项 → **会**调用 `runBurst`；burst 结束后 `deliver` 被调用；emit `result`；persist `completed`。
+6. **同花顺回归**：burst 先产出普通 assistant 草稿（由 mock emit）；`shouldDeliver` 仍 false 时不得有 `type:'result'`；收口后恰好一条 `result`，之后 mock 再 emit assistant 也不应被 Driver 在 completed 后转发（completed 后 loop 结束）。
+7. **错误不进对话**：burst throw 或 emit 的 error → persist 路径不 `appendMessage(..., 'assistant', 崩溃文案)`。可在 service 层测：见 Step 3。
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `npx vitest run src/main/agent/goal-driver.test.ts`
+Run: `npx vitest run src/main/agent/goal-driver.test.ts`  
 Expected: FAIL
 
-- [ ] **Step 3: 实现 Driver 并分流 service**
+- [ ] **Step 3: 实现 Driver 并分流**
 
-`runGoalDriver` 步骤：
+1. 读 session；`goal = freezeGoal(session.goal, message)` 并落盘。
+2. `verifyCommand`：仅当现值为空时写入用户值。
+3. 无清单则 `planSteps(goal)`（prompt：只输出步骤 JSON，check 必须是 shell 或省略，**不要输出 goal 字段**；若模型仍输出 goal 则丢弃）。
+4. `assertCanStart`；失败 emit error，`idle`，return。
+5. `runStatus=running`。
+6. loop：abort → paused 或 cancelled；`runBurst`；对 `!done && check` 跑 `runCheckCommand`；`applyCheckResults`；若 `shouldDeliver`：若有 `verifyCommand` 先跑，失败则 feedback 继续；成功则 `deliver` → emit `{type:'result', content, reportPath}` → 若 isReport 写 `join(getShyPaths().reportsDir, `${sessionId}-${Date.now()}.md`)` → persist result 字段 → `completed` return。停滞达阈值 → `paused` return（**不 deliver**）。token 预算达阈值 → `paused`。
+7. `resume: true`：先跑一轮验收，再决定 burst 或 deliver。
 
-1. 读 session；合并 `verifyCommand`（只在空时写入用户值，已有则忽略模型/后续请求篡改——**仅当现值为空才 set**）。
-2. 若无清单：调用 plan（默认实现搬原 `planNode` 的 prompt，但要求 check 为**可执行命令**：「check 必须是可在本机运行的 shell 命令，不要写描述性句子」）。
-3. `assertCanStart`；失败则 emit error，`runStatus=idle`，return。
-4. `runStatus=running`。
-5. loop：abort 则 break（paused 则 `paused`，否则若 cancel `cancelled`）；`runBurst`；对 `!done && check` 的项 `runCheckCommand`；`applyCheckResults`；若子项全 done 且有 verifyCommand 再跑 overall；`isGoalComplete` 则 `completed` return；否则 `stagnantRounds = nextStagnantRounds(...)`，达阈值则 `paused` return；token 预算达阈值则 `paused` return；`buildFailureFeedback` 作为下一段 feedback；落盘。
-6. 续跑（`resume: true` 且已有清单）：**先跑一轮验收**再决定 burst。
+`service.ts`：`mode === 'goal'` 调 `runGoalDriver`。appendMessage：仅 user 输入、assistant 草稿、`result`。`error`/`status`/`notify` 不得当 assistant 写入 messages。删除目标模式对 graph verify 完成的依赖。
 
-`service.ts`：`mode === 'goal'` 调用 `runGoalDriver`，interactive 保持现有 while 循环。删除目标模式里对 graph verify 完成的依赖。
+默认 `deliver`：一次 LLM 调用，系统提示「对照总目标与各步证据输出完整结果 JSON：`{ content, isReport }`。isReport 为新闻总结/周报/调研等文档型交付」。
 
 - [ ] **Step 4: 再跑测试**
 
-Run: `npx vitest run src/main/agent/goal-driver.test.ts src/main/agent/goal-policy.test.ts`
+Run: `npx vitest run src/main/agent/goal-driver.test.ts src/main/agent/goal-policy.test.ts`  
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -599,7 +391,7 @@ Expected: PASS
 ```bash
 git add src/main/agent/goal-driver.ts src/main/agent/goal-driver.test.ts src/main/agent/service.ts
 git commit -m "$(cat <<'EOF'
-feat(goal): GoalDriver 外循环与失败回灌
+feat(goal): GoalDriver 外循环与完整结果交付
 
 EOF
 )"
@@ -615,36 +407,24 @@ EOF
 - Modify: `src/main/index.ts`、`src/main/ipc.ts`
 
 **Interfaces:**
-- Consumes: `listGoalSessionsByRunStatus('running')`、`selectAutoResume`、`resumeAgent`
-- Produces: `export function resumeInterruptedGoals(opts: { resume: (sessionId: string) => void; pause: (sessionId: string) => void }): { resumed: string | null; paused: string[] }`
+- Produces: `resumeInterruptedGoals({ resume, pause })` → `{ resumed, paused }`
 
 - [ ] **Step 1: 写失败测试**
 
-`boot-resume.test.ts` 注入 session 列表而非 sqlite：把 `resumeInterruptedGoals` 写成对数组纯应用 `selectAutoResume` 然后回调。断言两条 running 只 resume 最新，pause 另一条。空列表不调用 resume。
+两条 running 只 resume 最新；空列表不 resume。
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `npx vitest run src/main/agent/boot-resume.test.ts`
+Run: `npx vitest run src/main/agent/boot-resume.test.ts`  
 Expected: FAIL
 
 - [ ] **Step 3: 实现并挂到启动**
 
-`registerCoreIpc()` 末尾不要在无 window 时 resume（确认框需要 window）。在 `createWindow` 且 `ready-to-show` 之后调用：
-
-```ts
-const running = listGoalSessionsByRunStatus('running')
-const { resumeId, pauseIds } = selectAutoResume(running.map(s => ({ id: s.id, updatedAt: s.updatedAt })))
-for (const id of pauseIds) {
-  updateSessionRuntime(id, { runStatus: 'paused', paused: true })
-}
-if (resumeId) resumeAgent(resumeId, emitToRendererBound, waitConfirm)
-```
-
-`waitConfirm` 依赖 `mainWindow`：必须在 `setMainWindow` 之后。把这段放进 `src/main/ipc.ts` 的 `export function resumeInterruptedGoalSessions(): void`，由 `index.ts` 在 `setMainWindow` + show 后调用。
+必须在 `setMainWindow` 且窗口可 show 之后（确认框需要 window）。其余 running 改 `paused`。
 
 - [ ] **Step 4: 再跑测试**
 
-Run: `npx vitest run src/main/agent/boot-resume.test.ts src/main/agent/goal-resume.test.ts`
+Run: `npx vitest run src/main/agent/boot-resume.test.ts src/main/agent/goal-resume.test.ts`  
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -660,42 +440,48 @@ EOF
 
 ---
 
-### Task 8: UI 与 IPC 入参
+### Task 8: UI、标题与 IPC
 
 **Files:**
-- Modify: `src/main/ipc.ts`（agentChat 把 `req.verifyCommand` 传入 `runAgent`/`runGoalDriver`）
-- Modify: `src/main/agent/service.ts` RunArgs 增加 `verifyCommand?: string`
 - Modify: `src/renderer/src/components/ChatWorkspace.tsx`
-- Modify: `src/renderer/src/components/SessionPanel.tsx`（展示 check / evidence）
-- Modify: `src/preload/index.d.ts`（若 ChatRequest 已改则自动覆盖）
+- Modify: `src/renderer/src/components/ChatWorkspace.tsx`
+- Modify: `src/renderer/src/components/SessionPanel.tsx`（任务 / 文件 / **产物** 三 tab）
+- Modify: `src/main/sessions/title.ts`
+- Test: `src/main/sessions/title.test.ts`
+- Modify: `src/main/ipc.ts`、`src/main/agent/service.ts`、`src/preload/index.d.ts`（若需要）
 
 **Interfaces:**
-- Consumes: `ChatRequest.verifyCommand`
-- Produces: 目标模式发送时带上用户输入的总验收命令
+- Consumes: `ChatRequest.verifyCommand`、事件 `result`、`runStatus=completed`
 
-- [ ] **Step 1: 目标输入区增加总验收字段**
+- [ ] **Step 1: 标题清洗测试**
 
-`ChatWorkspace` 增加 `verifyCommand` state；仅 `mode==='goal'` 显示第二个输入（placeholder：`总验收命令，例如 npm test`）。`window.shy.chat({ sessionId, message: text, mode, verifyCommand: verifyCommand.trim() || undefined })`。
+`stripThink` 或 `summarizeSessionTitle`：模型返回 `<think>用户想要...` 时标题不含该标签。优先用用户原话/`goal` 做 fallback。
 
-- [ ] **Step 2: ipc 传入 Driver**
+Run: `npx vitest run src/main/sessions/title.test.ts`  
+Expected: 先 FAIL 再实现 PASS。
 
-`IPC.agentChat` handler：`void runAgent({ ..., verifyCommand: req.verifyCommand })`。
+- [ ] **Step 2: 完整结果 UI**
 
-- [ ] **Step 3: SessionPanel 展示**
+`onEvent`：`type==='result'` 渲染带「完整结果」标记的消息；若有 `reportPath` 显示入口。`completed` 后再发送：若 `runStatus==='completed'`，不要 `runAgent` 续清单，提示「目标已完成，请新开会话」。
 
-清单项若有 `check`，显示命令；若有 `evidence` 且未 done，显示截断证据。
+- [ ] **Step 3: 步骤 chip、产物 tab 与总验收输入**
+
+`SessionPanel`：第三个 tab「产物」。`getSession` 的 `resultContent` / `resultReportPath` 驱动空状态或正文；报告路径走现有 `revealSessionFile`。收到 `type==='result'`（本 session）时：若侧栏收起则展开，并 `setTab('outputs')`（需 ChatWorkspace 把 open 状态抬上来，或 panel 内部听事件后 `onOpen`）。任务 tab：`source==='goal'` 文案「步骤」。有 `check`/`evidence` 则展示。  
+`ChatWorkspace`：goal 模式第二输入 `verifyCommand`。chat 带上该字段。
+
+localStorage tab key 增加 `'outputs'`。文件 tab 行为不变。
 
 - [ ] **Step 4: typecheck**
 
-Run: `npm run typecheck`
+Run: `npm run typecheck`  
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/renderer/src/components/ChatWorkspace.tsx src/renderer/src/components/SessionPanel.tsx src/main/ipc.ts src/main/agent/service.ts src/preload/index.d.ts
+git add src/renderer/src/components/ChatWorkspace.tsx src/renderer/src/components/SessionPanel.tsx src/main/sessions/title.ts src/main/sessions/title.test.ts src/main/ipc.ts src/main/agent/service.ts src/preload/index.d.ts
 git commit -m "$(cat <<'EOF'
-feat(goal): 总验收命令输入与清单证据展示
+feat(goal): 完整结果标记、步骤清单与标题清洗
 
 EOF
 )"
@@ -709,12 +495,12 @@ EOF
 
 - [ ] **Step 1: 跑测试与类型**
 
-Run: `npm test && npm run typecheck`
+Run: `npm test && npm run typecheck`  
 Expected: 全部 PASS
 
-- [ ] **Step 2: 对照 spec 场景**
+- [ ] **Step 2: 对照 spec 走查**
 
-手工核对 `specs/goal-driver/spec.md`：工作图不能自证；子项失败不完成；总验收失败不结束；钉死命令不可改；无检查拒绝开工；缺 check 拒绝开工；仅总验收可完成；失败回灌；拒绝确认=失败；空转停滞；running 续上；paused 不续；多 running 只续一条。缺测补在对应 `*.test.ts`。
+`specs/goal-driver/spec.md`：原目标冻结、步骤非目标、完整结果唯一且最后并钉在产物 tab、报告落盘、completed 硬停、错误不进对话、check 失败回灌、总验收失败不交付、空清单无总验收拒绝、无 check 可开工、停滞先暂停、running 续上。缺测补对应 `*.test.ts`。
 
 - [ ] **Step 3: Commit（若有补测）**
 
@@ -733,5 +519,6 @@ EOF
 
 - 后台 worker / 关窗口后继续跑
 - 改交互式模式
-- agent 改 `verifyCommand`
+- agent 改 `verifyCommand` 或冻结的 `goal`
 - 把旧 checkpoint 会话当成 running 自动续
+- 目标模式改成非聊天壳

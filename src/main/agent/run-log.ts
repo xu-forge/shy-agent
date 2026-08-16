@@ -96,6 +96,9 @@ export function mapAgentEventToLog(
     case 'assistant':
       writer.append('llm_turn', { content: event.content })
       break
+    case 'result':
+      writer.append('llm_turn', { content: event.content, kind: 'result', reportPath: event.reportPath })
+      break
     case 'tool':
       writer.append('tool_call', { name: event.name, detail: event.detail })
       break

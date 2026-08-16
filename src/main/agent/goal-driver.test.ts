@@ -17,6 +17,8 @@ type PersistPatch = {
   runStatus?: RunStatus
   approvedChecks?: string[]
   paused?: boolean
+  resultContent?: string | null
+  resultReportPath?: string | null
 }
 
 type DriverMod = typeof import('./goal-driver')
@@ -125,7 +127,7 @@ describe('runGoalDriver', () => {
     expect(bursts[1]?.feedback).toContain('总验收')
   })
 
-  it('无检查拒绝开工：不调用 runBurst，并 emit error', async () => {
+  it('无步骤且无总验收时拒绝开工：不调用 runBurst，并 emit error', async () => {
     const session = store.createSession('goal', 't')
     const events: AgentEvent[] = []
     const runBurst = vi.fn(async () => ({ tokenUsed: 0, round: 1 }))
@@ -139,7 +141,7 @@ describe('runGoalDriver', () => {
       persist: (patch) => patches.push(patch),
       planChecklist: async () => ({
         goal: 'g',
-        checklist: [{ id: '1', title: 't', done: false }]
+        checklist: []
       }),
       runBurst
     })
@@ -510,6 +512,94 @@ describe('runGoalDriver', () => {
     expect(planChecklist).toHaveBeenCalledOnce()
     expect(service.getAgentRuntime(session.id)).toBe(owner.rt)
   })
+
+  it('冻结用户原话：plan 改写的 goal 不会落盘', async () => {
+    const session = store.createSession('goal', 't')
+    const patches: PersistPatch[] = []
+
+    await driver.runGoalDriver({
+      sessionId: session.id,
+      message: '用户原话',
+      emit: () => undefined,
+      waitConfirm: async () => true,
+      persist: (patch) => patches.push(patch),
+      planChecklist: async () => ({
+        goal: '被改写的总目标',
+        checklist: [{ id: '1', title: '步骤', check: 'true', done: false }]
+      }),
+      runBurst: async () => ({ tokenUsed: 0, round: 1 }),
+      runCheck: async ({ command }) => ({
+        result: passResult(command),
+        approved: new Set([command])
+      }),
+      deliver: async () => ({ content: '定稿', isReport: false })
+    })
+
+    expect(patches.some((p) => p.goal === '被改写的总目标')).toBe(false)
+    expect(patches.some((p) => p.goal === '用户原话')).toBe(true)
+  })
+
+  it('纯报告无 check 可开工并 emit 完整结果', async () => {
+    const session = store.createSession('goal', 't')
+    const events: AgentEvent[] = []
+    const patches: PersistPatch[] = []
+    const runBurst = vi.fn(async () => ({ tokenUsed: 0, round: 1 }))
+
+    await driver.runGoalDriver({
+      sessionId: session.id,
+      message: '写周末总结',
+      emit: (e) => events.push(e),
+      waitConfirm: async () => true,
+      persist: (patch) => patches.push(patch),
+      planChecklist: async () => ({
+        goal: 'ignored',
+        checklist: [{ id: '1', title: '抓新闻', done: false }]
+      }),
+      runBurst,
+      deliver: async () => ({ content: '周末总结正文', isReport: true })
+    })
+
+    expect(runBurst).toHaveBeenCalled()
+    expect(events.some((e) => e.type === 'result' && e.content === '周末总结正文')).toBe(true)
+    expect(events.filter((e) => e.type === 'result')).toHaveLength(1)
+    expect(patches.at(-1)?.runStatus).toBe('completed')
+    expect(patches.at(-1)?.resultContent).toBe('周末总结正文')
+    expect(patches.at(-1)?.resultReportPath).toBeTruthy()
+  })
+
+  it('总验收失败不 emit result', async () => {
+    const session = store.createSession('goal', 't')
+    const events: AgentEvent[] = []
+    const bursts: Array<{ feedback?: string }> = []
+
+    await driver.runGoalDriver({
+      sessionId: session.id,
+      message: '做完 t',
+      verifyCommand: 'overall',
+      emit: (e) => events.push(e),
+      waitConfirm: async () => true,
+      persist: () => undefined,
+      planChecklist: async () => ({
+        goal: 'g',
+        checklist: [{ id: '1', title: 't', check: 'item', done: false }]
+      }),
+      runBurst: async (input) => {
+        bursts.push(input)
+        if (bursts.length >= 2) {
+          service.cancelAgent(session.id)
+          throw new Error('stop-test')
+        }
+        return { tokenUsed: 0, round: 1 }
+      },
+      runCheck: async ({ command }) => ({
+        result: command === 'overall' ? failResult(command, 'OVERALL_FAIL') : passResult(command),
+        approved: new Set([command])
+      }),
+      deliver: async () => ({ content: '不该出现', isReport: false })
+    })
+
+    expect(events.some((e) => e.type === 'result')).toBe(false)
+  })
 })
 
 describe('parsePlanOutput', () => {
@@ -524,7 +614,7 @@ describe('parsePlanOutput', () => {
     )
 
     expect(planned).not.toHaveProperty('verifyCommand')
-    expect(planned.goal).toBe('g')
+    expect(planned.goal).toBe('fallback')
     expect(planned.checklist[0]?.done).toBe(false)
     expect(planned.checklist[0]?.check).toBe('true')
   })

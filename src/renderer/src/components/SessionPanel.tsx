@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SessionFileRecord, SessionTaskRecord } from '../../../shared/ipc'
 import { ConfirmDialog } from './ConfirmDialog'
+import { MarkdownBody } from './MarkdownBody'
 import { truncateEvidence } from './goalUi'
 
-type Tab = 'tasks' | 'files'
+type Tab = 'tasks' | 'files' | 'outputs'
 
 type Props = {
   sessionId: string
   open: boolean
   onClose: () => void
+  onOpen?: () => void
 }
 
 type PanelTask = Pick<SessionTaskRecord, 'id' | 'title' | 'done' | 'evidence' | 'source'> & {
@@ -19,10 +21,11 @@ type PanelTask = Pick<SessionTaskRecord, 'id' | 'title' | 'done' | 'evidence' | 
 const PANEL_KEY = 'shy.sidePanelOpen'
 const TAB_KEY = 'shy.sidePanelTab'
 
-export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Element | null {
+export function SessionPanel({ sessionId, open, onClose, onOpen }: Props): React.JSX.Element | null {
   const [tab, setTab] = useState<Tab>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(TAB_KEY) : null
-    return saved === 'files' ? 'files' : 'tasks'
+    if (saved === 'files' || saved === 'outputs') return saved
+    return 'tasks'
   })
   const [tasks, setTasks] = useState<PanelTask[]>([])
   const [files, setFiles] = useState<SessionFileRecord[]>([])
@@ -34,6 +37,8 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
     requestId: string
   } | null>(null)
   const [hiddenFiles, setHiddenFiles] = useState<Set<string>>(new Set())
+  const [resultContent, setResultContent] = useState('')
+  const [resultReportPath, setResultReportPath] = useState('')
 
   // 持久化 tab
   useEffect(() => {
@@ -70,6 +75,13 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
     return window.shy.listSessionFiles(sessionId)
   }, [sessionId])
 
+  const fetchOutput = useCallback(async (): Promise<void> => {
+    if (!sessionId) return
+    const detail = await window.shy.getSession(sessionId)
+    setResultContent(detail?.resultContent ?? '')
+    setResultReportPath(detail?.resultReportPath ?? '')
+  }, [sessionId])
+
   useEffect(() => {
     let alive = true
     void fetchTasks().then((t) => {
@@ -78,10 +90,11 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
     void fetchFiles().then((f) => {
       if (alive) setFiles(f)
     })
+    void fetchOutput()
     return () => {
       alive = false
     }
-  }, [fetchTasks, fetchFiles])
+  }, [fetchTasks, fetchFiles, fetchOutput])
 
   // 监听 task 事件实时刷新
   useEffect(() => {
@@ -105,6 +118,23 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
       }
     })
   }, [sessionId, fetchFiles])
+
+  useEffect(() => {
+    return window.shy.onEvent((payload) => {
+      const ev = payload as {
+        type?: string
+        sessionId?: string
+        content?: string
+        reportPath?: string
+      }
+      if (ev.sessionId && ev.sessionId !== sessionId) return
+      if (ev.type !== 'result') return
+      setResultContent(ev.content ?? '')
+      setResultReportPath(ev.reportPath ?? '')
+      setTab('outputs')
+      onOpen?.()
+    })
+  }, [sessionId, onOpen])
 
   const toggleTask = async (task: PanelTask): Promise<void> => {
     await window.shy.updateSessionTask({
@@ -164,6 +194,15 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
           >
             文件 {files.length > 0 ? <span className="badge">{files.length}</span> : null}
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'outputs'}
+            className={`seg-btn${tab === 'outputs' ? ' active' : ''}`}
+            onClick={() => setTab('outputs')}
+          >
+            产物 {resultContent ? <span className="badge">1</span> : null}
+          </button>
         </div>
         <button
           type="button"
@@ -220,7 +259,7 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
                   <div className="task-title-row">
                     <span className="task-title">{t.title}</span>
                     <span className={`chip chip-${t.source}`}>
-                      {t.source === 'goal' ? '目标' : 'Agent'}
+                      {t.source === 'goal' ? '步骤' : 'Agent'}
                     </span>
                   </div>
                   {t.check ? (
@@ -315,6 +354,43 @@ export function SessionPanel({ sessionId, open, onClose }: Props): React.JSX.Ele
                   </div>
                 </div>
               ))}
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {tab === 'outputs' ? (
+        <div className="output-pane">
+          {!resultContent ? (
+            <div className="panel-empty">
+              <p className="muted">
+                暂无完整结果。
+                <br />
+                目标模式收口后会出现在这里。
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="output-head">
+                <span className="chip chip-goal">完整结果</span>
+                {resultReportPath ? (
+                  <button
+                    type="button"
+                    className="ghost-btn"
+                    onClick={() => reveal(resultReportPath)}
+                  >
+                    在访达中显示
+                  </button>
+                ) : null}
+              </div>
+              {resultReportPath ? (
+                <p className="task-evidence" title={resultReportPath}>
+                  {resultReportPath}
+                </p>
+              ) : null}
+              <div className="output-body">
+                <MarkdownBody content={resultContent} />
+              </div>
             </>
           )}
         </div>

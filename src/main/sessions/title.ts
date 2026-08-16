@@ -1,6 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai'
 import { HumanMessage, SystemMessage } from '@langchain/core/messages'
 import { getSession, setSessionTitle } from './store'
+import { stripThink } from '../agent/goal-policy'
 
 /** 本地兜底：从首条用户消息抽一句短标题（非简单截断） */
 export function localSummaryTitle(userText: string): string {
@@ -54,7 +55,7 @@ export async function summarizeSessionTitle(
       )
     ])
     const raw = typeof res.content === 'string' ? res.content.trim() : ''
-    const title = raw
+    const title = stripThink(raw)
       .replace(/^["「『]|["」』]$/g, '')
       .replace(/\s+/g, ' ')
       .slice(0, 24)

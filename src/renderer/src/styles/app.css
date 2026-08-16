@@ -1939,6 +1939,26 @@
   border-bottom: 1px solid var(--border);
 }
 
+.output-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px 20px;
+}
+
+.output-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.output-body {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .badge {
   display: inline-block;
   margin-left: 3px;

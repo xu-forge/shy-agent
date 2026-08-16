@@ -1,97 +1,87 @@
-# Design: goal-driver-acceptance
+## Context
 
-目标模式拆成两层：GoalDriver 拥有生命周期与客观验收；LangGraph 只打一段工。交互式模式不走 Driver。
+shy 目标模式已有段式续跑、checkpoint、token 预算、停滞暂停。完成却由同一模型在 `verifyNode` 勾清单决定，清单项在 UI 上被当成多个「目标」，过程消息与交付混在一起。
 
-## 职责
+对照会话 `9388e328`：用户一句话目标被拆成 7 条清单；15:44 已有完整总结，系统因未勾项继续 act，把空档和崩溃当成新对话，直到 15:49 才结束。
 
-**GoalDriver**
+约束：交互式模式不变；高危命令走现有确认闸门；不做关窗口后的 OS 守护；本 change 尚未写代码（0 任务），可直接改完成语义而不另开 change。
 
-- 启动时一次 plan（LLM）：产出清单及每项 `check` 命令
-- 循环：调用工作图一段 → 落盘 → 执行子项 check →（子项全过时）执行 `verifyCommand` → 全过则结束，否则把失败写入下一段输入
-- token 预算、停滞、暂停/取消
-- `runStatus` 与 checkpoint
-- 应用启动时恢复被中断的 `running` 会话
+## Goals / Non-Goals
 
-**工作图（`graph.ts` 收瘦）**
+**Goals**
 
-- 目标模式节点：`act → tools → act…`，达到 `segmentSteps` 正常结束本段
-- 删除作为完成判定的 `verifyNode` / `routeAfterVerify`
-- 不写入 `done` / `evidence` / `lastExitCode`
-- v1 清单的 title/`check` 在 plan 之后冻结；Driver 只更新验收字段
+- GoalDriver 拥有目标生命周期；工作图只打一段工
+- 用户原话冻结为唯一 `goal`；checklist 只是步骤
+- 步骤做完后 `deliver` 一份完整结果（会话最底带标记 + 右侧产物 tab）；报告类再落盘文件
+- 有 `check` / `verifyCommand` 时以退出码为准；模型声称不算完成
+- `completed` 后硬停；运行时错误不进对话当成人话
+- 启动后续被中断的 `running`（只续最新一条）
 
-## 一次目标
+**Non-Goals**
 
-```text
-plan（若磁盘上尚无清单）
-  → 循环：
-      工作图打一段
-      落盘
-      跑未通过子项的 check
-      子项全过且存在 verifyCommand → 跑总验收
-      全过 → runStatus=completed
-      有失败 → 回灌 evidence，下一段
-      预算/停滞 → runStatus=paused（不自动续）
-```
+- 改交互式模式
+- 关窗口后继续跑 / 独立 worker
+- 把目标模式 UI 改成非聊天壳
+- 允许 agent 改写 `verifyCommand`
 
-## 数据
+## Decisions
 
-`GoalChecklistItem`：`id`、`title`、`done`、`check?`（可执行命令）、`evidence?`（最近一次验收输出截断，约 8KB）、`lastExitCode?`。
+### D1. Driver 外循环，图只干活
 
-会话新增：
+选定：独立 `GoalDriver`；`graph.ts` 目标路径仅为 `act → tools`。  
+备选：只加 `deliver` 节点、仍用 verify 勾清单 — 会与可执行验收打架。  
+备选：目标模式改成非聊天运行 — UI 超出范围。
 
-- `verifyCommand`：用户钉死的总验收；agent 不可改
-- `runStatus`：`idle | running | paused | completed | cancelled`
-- `approvedChecks`：本会话已确认过的 check 命令，后续静默执行
+### D2. 完成对象是用户原目标
 
-现有 `paused` 布尔由 `runStatus === 'paused'` 派生，UI 可继续用。
+选定：启动时把用户消息写入 `goal` 并冻结；plan 只产出步骤，不得改写 `goal`。  
+备选：plan 重写「总目标」+ 3–8 条清单当完成条件 — 即现状，同花顺会话已证明会漂。
 
-迁移：`paused=1` → `paused`；其余历史会话 → `idle`。不把旧 checkpoint 当成 `running`，避免本 change 上线后误续历史任务。
+### D3. 草稿可有，交付钉在对话末尾和产物栏
 
-## 完成规则（失败封闭）
+选定：过程可 emit 普通 assistant 草稿；仅 `deliver` 发 `type: 'result'`。同一份 `resultContent` 出现在：(1) 会话最底带「完整结果」标记的消息；(2) 右侧 SessionPanel 新增「产物」tab。报告类再写 `~/.shy/artifacts/reports/`，产物 tab 提供打开入口。deliver 时目标会话自动展开侧栏并切到产物。  
+备选：只留对话底部标记 — 长草稿后仍要滚。  
+备选：整页三栏重做（WorkBuddy 式） — 超出本 change。
 
-1. 子项 `done === true` 当且仅当该项 `check` 退出码为 0。
-2. 没有 `check` 的子项不能完成。
-3. 清单非空时，每一项都必须有非空 `check`，否则视为 plan 失败，`runStatus=idle`，不开工。
-4. 目标完成：清单为空则只认总验收；清单非空则每一项都过，且若有 `verifyCommand` 也必须过。
-5. 清单为空且无 `verifyCommand`：拒绝开工，`runStatus=idle`。
+### D4. 可选 check，缺 check 不拒开工
 
-## 验收执行
+选定：有 `check` 则退出码 0 才勾该步；无 `check` 不单独完成、收口时装进完整结果。拒绝开工仅当步骤为空且无 `verifyCommand`。  
+备选（第一稿）：每项必须有 check 否则拒绝 — 报告类任务无法开工。
 
-- 与 `shell_exec` 同一 shell；默认超时 5 分钟；工作目录为 Electron 主进程 cwd（命令字符串可自行 `cd`）。
-- 顺序：未通过的子项 check → 全部通过后再跑 `verifyCommand`。
-- 用户钉死的总验收：目标启动时确认一次，记入 `approvedChecks`。
-- agent 写入的 `check`：第一次走高危确认；拒绝视为该项失败；通过后记入 `approvedChecks`。
-- 超时、非零退出、启动失败：均为失败。
+### D5. 总验收拦住完整结果
 
-回灌：下一段注入一条消息，说明验收未通过、按输出修改、不要改验收命令；附 title、exit code、evidence。
+选定：若用户钉了 `verifyCommand`，必须退出码 0 才 emit 完整结果并 `completed`；失败当草稿回灌。未钉则完整结果本身即交付。
 
-停滞：连续 N 段（沿用 `stagnationRounds`）没有任何一项新通过、总验收也未通过 → 软暂停。有工具活动但验收零进展仍计停滞。
+### D6. 停滞先暂停再交付
 
-## 开机续跑
+选定：连续 N 段验收零进展 → `paused`；用户点继续后再 `deliver`。不自动交残稿。
 
-`app.whenReady`：IPC 与窗口就绪后，扫描 `mode === 'goal' && runStatus === 'running'`。
+### D7. 错误与崩溃不当对话
 
-- 只自动续 `updated_at` 最新的一条
-- 其余改为 `paused`，原因：启动时已有其它目标在跑
-- 不续 `paused` / `completed` / `cancelled` / `idle`
-- 续跑先跑一轮验收，再决定是否再打工作段
+选定：工具/运行时错误只走 status 与 L2 日志，禁止 `appendMessage` 成 user/assistant 再触发 act。崩溃时磁盘保持 `running` 以便开机续。
 
-崩溃时主进程来不及把状态写成 paused，磁盘上保持 `running`，这正是自动续跑的信号。用户点暂停必须先落盘 `paused`。
+### D8. completed 后再发送
 
-## 错误与边界
+选定：Driver 不再续同一张清单；提示目标已完成（要跟进开新会话）。
 
-- 暂停：当前工作图或验收在闸门口停下，进度已落盘。
-- 取消：结束循环，`cancelled`，checkpoint 保留但不自动续。
-- 预算打满：`paused`，原因 `budget`。
-- 交互式模式：不创建 Driver，行为与现在一致。
+### D9. 产物挂在现有侧栏，不重做三栏
 
-## 测试
+选定：`SessionPanel` 增加第三个 tab「产物」（与任务/文件并列）。任务 tab 在目标模式下 chip 为「步骤」（即任务进程）。文件 tab 仍是工具读写记录，与产物分开：产物是 Driver 交付物，文件是过程痕迹。
 
-不依赖真实 LLM：plan/工作图用假 provider 或直接驱动 Driver 的验收与续跑 API。
+## Risks / Trade-offs
 
-1. 子项 check 非零 → done 仍 false，下一段输入含 evidence
-2. 子项全绿、总验收失败 → 未完成，总验收输出回灌
-3. 无总验收且无任何 check → 拒绝开工
-4. 磁盘 `running` 且无活 runtime → 模拟启动后续上
-5. `paused` 启动后仍暂停
-6. 两个 `running` → 只续最新一条，另一条变 paused
+- [报告误判] 模型把非报告当成报告或反过来 → 完整结果消息始终存在；文件只是附加。可后续加用户勾选，本轮不做。
+- [无 check 的步骤空转] 报告步骤可能永远不「done」 → 收口条件改为「带 check 的步骤全过，或停滞暂停后用户继续」，无 check 项不阻塞。
+- [deliver 本身用 LLM] 汇总仍可能漏步骤产物 → prompt 强制对照 `goal` + 各步 evidence；有 `verifyCommand` 时另有客观闸门。
+- [开机误续历史] 旧 checkpoint 被当成 running → 迁移：历史会话一律 `idle`（`paused=1` 除外）。
+
+## Migration Plan
+
+1. 会话表加 `run_status`、`verify_command`、`approved_checks`、`result_content`、`result_report_path`。
+2. `paused=1` → `run_status=paused`；其余现有行 → `idle`。不把旧 checkpoint 标成 `running`。
+3. 上线后仅新目标会话走 Driver；交互式不变。
+4. 回滚：停用 Driver 分流即可回到旧 `runAgent` 循环（旧 verify 代码删除后不可自动回滚行为，需 git revert）。
+
+## Open Questions
+
+无阻塞项。报告落盘文件名用会话 id + 时间戳即可。

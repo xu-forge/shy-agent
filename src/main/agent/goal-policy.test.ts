@@ -5,8 +5,11 @@ import {
   applyCheckResults,
   assertCanStart,
   buildFailureFeedback,
+  freezeGoal,
   isGoalComplete,
-  nextStagnantRounds
+  nextStagnantRounds,
+  shouldDeliver,
+  stripThink
 } from './goal-policy'
 
 function item(overrides: Partial<GoalChecklistItem> = {}): GoalChecklistItem {
@@ -31,12 +34,23 @@ function result(overrides: Partial<CheckRunResult> = {}): CheckRunResult {
 }
 
 describe('goal policy', () => {
-  it('无 verifyCommand 且清单无任何 check 时拒绝开工', () => {
+  it('freezeGoal 只在空时写入用户原话', () => {
+    expect(freezeGoal(null, '用户原话')).toBe('用户原话')
+    expect(freezeGoal('已冻结', 'plan改写')).toBe('已冻结')
+  })
+
+  it('stripThink 去掉思维链标签', () => {
+    expect(stripThink('<think>foo</think>周末新闻')).toBe('周末新闻')
+    expect(stripThink('<think>用户想要我为这个对话生成一个极短的')).not.toContain('<think>')
+  })
+
+  it('无 verifyCommand 且清单为空时拒绝开工', () => {
     expect(assertCanStart({ checklist: [] }).ok).toBe(false)
   })
 
-  it('清单有一项缺 check 时拒绝开工', () => {
-    expect(assertCanStart({ checklist: [item({ check: '  ' })] }).ok).toBe(false)
+  it('清单有项但全无 check 时允许开工', () => {
+    expect(assertCanStart({ checklist: [item({ check: undefined })] }).ok).toBe(true)
+    expect(assertCanStart({ checklist: [item({ check: '  ' })] }).ok).toBe(true)
   })
 
   it('清单为空但有 verifyCommand 时允许开工', () => {
@@ -120,5 +134,36 @@ describe('goal policy', () => {
         overallPassed: false
       })
     ).toBe(3)
+  })
+
+  it('shouldDeliver：有 check 的项全过才收口；无 check 需已打过工作段', () => {
+    expect(
+      shouldDeliver({
+        checklist: [item({ done: false })],
+        hadWorkSegment: true
+      })
+    ).toBe(false)
+    expect(
+      shouldDeliver({
+        checklist: [item({ done: true })],
+        hadWorkSegment: true
+      })
+    ).toBe(true)
+    expect(
+      shouldDeliver({
+        checklist: [item({ check: undefined, done: false })],
+        hadWorkSegment: false
+      })
+    ).toBe(false)
+    expect(
+      shouldDeliver({
+        checklist: [item({ check: undefined, done: false })],
+        hadWorkSegment: true
+      })
+    ).toBe(true)
+  })
+
+  it('无总验收且带 check 的步骤全过则 isGoalComplete', () => {
+    expect(isGoalComplete({ checklist: [item({ done: true })] })).toBe(true)
   })
 })

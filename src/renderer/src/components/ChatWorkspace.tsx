@@ -12,7 +12,12 @@ type Props = {
   onSessionsChanged?: () => void
 }
 
-type Msg = { role: 'user' | 'assistant' | 'system' | 'tool'; content: string; createdAt?: string }
+type Msg = {
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  content: string
+  createdAt?: string
+  kind?: 'result'
+}
 
 const SUGGESTIONS: { label: string; text: string }[] = [
   {
@@ -147,7 +152,8 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
           ? detail.messages.map((m) => ({
               role: m.role,
               content: m.content,
-              createdAt: m.createdAt
+              createdAt: m.createdAt,
+              kind: m.kind
             }))
           : []
       )
@@ -172,10 +178,26 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
         name?: string
         detail?: unknown
         reason?: string
-        goal?: string
+        reportPath?: string
       }
       if (ev.sessionId && ev.sessionId !== sessionId) return
-      if (ev.type === 'assistant' && ev.content) {
+      if (ev.type === 'result' && ev.content) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: ev.content!,
+            createdAt: new Date().toISOString(),
+            kind: 'result'
+          }
+        ])
+        setPanelOpen(true)
+        try {
+          localStorage.setItem(PANEL_KEY, '1')
+        } catch {
+          /* ignore */
+        }
+      } else if (ev.type === 'assistant' && ev.content) {
         setMessages((prev) => [
           ...prev,
           { role: 'assistant', content: ev.content!, createdAt: new Date().toISOString() }
@@ -375,6 +397,9 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
                             m
                           </span>
                           <span className="msg-name">shy</span>
+                          {m.kind === 'result' ? (
+                            <span className="chip chip-goal">完整结果</span>
+                          ) : null}
                           {m.createdAt ? (
                             <span className="msg-time">{timeAgo(m.createdAt)}</span>
                           ) : null}
@@ -407,7 +432,19 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
             {hasConversation ? <div className="composer-dock">{composerInner()}</div> : null}
           </div>
         </div>
-        <SessionPanel sessionId={sessionId} open={panelOpen} onClose={togglePanel} />
+        <SessionPanel
+          sessionId={sessionId}
+          open={panelOpen}
+          onClose={togglePanel}
+          onOpen={() => {
+            setPanelOpen(true)
+            try {
+              localStorage.setItem(PANEL_KEY, '1')
+            } catch {
+              /* ignore */
+            }
+          }}
+        />
       </div>
     </div>
   )
