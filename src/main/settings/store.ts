@@ -3,6 +3,14 @@ import { dirname } from 'path'
 import type { ModelSettings } from '../../shared/ipc'
 import { getShyPaths } from '../paths'
 
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  const n = Math.floor(value)
+  if (n < min) return min
+  if (n > max) return max
+  return n
+}
+
 const DEFAULTS: ModelSettings = {
   baseURL: 'https://api.openai.com/v1',
   apiKey: '',
@@ -11,7 +19,9 @@ const DEFAULTS: ModelSettings = {
   tokenBudget: 1_000_000_000,
   segmentSteps: 60,
   contextWindow: 1_000_000,
-  compressThreshold: 60
+  compressThreshold: 60,
+  blockedAuditRounds: 3,
+  enableGoalCompleteReport: true
 }
 
 function settingsPath(): string {
@@ -54,7 +64,12 @@ export async function setSettings(next: ModelSettings): Promise<ModelSettings> {
       next.compressThreshold > 0 &&
       next.compressThreshold <= 100
         ? Math.floor(next.compressThreshold)
-        : DEFAULTS.compressThreshold
+        : DEFAULTS.compressThreshold,
+    blockedAuditRounds: clampInt(next.blockedAuditRounds, 1, 10, DEFAULTS.blockedAuditRounds ?? 3),
+    enableGoalCompleteReport:
+      typeof next.enableGoalCompleteReport === 'boolean'
+        ? next.enableGoalCompleteReport
+        : DEFAULTS.enableGoalCompleteReport
   }
   await mkdir(dirname(settingsPath()), { recursive: true })
   await writeFile(settingsPath(), JSON.stringify(merged, null, 2), 'utf8')

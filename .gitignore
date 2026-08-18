@@ -11,3 +11,8 @@ release
 .openclaw-attachments/
 snap.png
 evolution-drafts/
+.opencode
+
+# test coverage
+coverage/
+*.lcov

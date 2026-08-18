@@ -9,40 +9,11 @@ import { listLongMemory, upsertSessionTask, deleteSessionTask } from '../memory/
 import { compressWithLlm } from '../memory/compress'
 import { appendMessage, getSession, updateSessionRuntime } from '../sessions/store'
 import { summarizeSessionTitle } from '../sessions/title'
-import type { AgentMode, GoalChecklistItem, TaskSource } from '../../shared/ipc'
+import type { AgentEvent, AgentMode, GoalChecklistItem, TaskSource } from '../../shared/ipc'
 import { runGoalDriver } from './goal-driver'
 
-export type AgentEvent =
-  | { type: 'status'; message: string }
-  | { type: 'assistant'; content: string }
-  | { type: 'tool'; name: string; detail?: unknown }
-  | { type: 'memory'; action: string; entryId?: string; title?: string }
-  | { type: 'goal'; goal?: string; checklist?: GoalChecklistItem[] }
-  | {
-      type: 'task'
-      kind: 'add'
-      id: string
-      title: string
-      done?: boolean
-      evidence?: string
-      source: TaskSource
-    }
-  | {
-      type: 'task'
-      kind: 'update'
-      id: string
-      title?: string
-      done?: boolean
-      evidence?: string
-      source?: TaskSource
-    }
-  | { type: 'task'; kind: 'remove'; id: string }
-  | { type: 'error'; message: string }
-  | { type: 'result'; content: string; reportPath?: string }
-  | { type: 'done'; reason: string }
-  | { type: 'confirm_required'; action: string; detail: string; requestId: string }
-  | { type: 'notify'; message: string }
-  | { type: 'session'; title?: string }
+// AgentEvent 类型已迁移到 shared/ipc.ts（统一事件 schema + 流式扩展）
+export type { AgentEvent } from '../../shared/ipc'
 
 type RunArgs = {
   sessionId: string
@@ -192,7 +163,8 @@ export async function runAgent(args: RunArgs): Promise<void> {
       model: settings.model,
       apiKey: settings.apiKey,
       configuration: { baseURL: settings.baseURL },
-      temperature: 0.2
+      temperature: 0.2,
+      streaming: true
     })
 
     const matched = await matchSkills(message || session?.goal || '', 3)
@@ -327,7 +299,11 @@ export async function runAgent(args: RunArgs): Promise<void> {
       }
 
       const graph = buildAgentGraph({
-        llm,
+        llm: {
+          baseURL: settings.baseURL,
+          apiKey: settings.apiKey,
+          model: settings.model
+        },
         tools,
         emit: graphEmit,
         skillBlock,

@@ -19,7 +19,11 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ci": "vitest run --coverage --reporter=verbose",
+    "verify": "npm run typecheck && npm run lint && npm run test:coverage"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -29,6 +33,7 @@
     "@langchain/openai": "^1.5.6",
     "@xyflow/react": "^12.11.2",
     "better-sqlite3": "^13.0.3",
+    "openai": "^7.5.0",
     "playwright": "^1.62.1",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
@@ -43,6 +48,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "electron": "^39.2.6",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",

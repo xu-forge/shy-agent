@@ -17,7 +17,9 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
     tokenBudget: 1_000_000_000,
     segmentSteps: 60,
     contextWindow: 1_000_000,
-    compressThreshold: 60
+    compressThreshold: 60,
+    blockedAuditRounds: 3,
+    enableGoalCompleteReport: true
   })
   const [saved, setSaved] = useState(false)
   const [showKey, setShowKey] = useState(false)
@@ -202,6 +204,32 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
           </label>
           <p className="muted">
             你的模型的上下文窗口大小。上下文水位超过 60% 时才压缩短期记忆，避免每段都白白调用压缩。
+          </p>
+          <label>
+            Blocked 审计阈值（轮）
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={form.blockedAuditRounds ?? 3}
+              onChange={(e) =>
+                setForm({ ...form, blockedAuditRounds: Number(e.target.value) || 3 })
+              }
+            />
+          </label>
+          <p className="muted">
+            LLM 在 verify 阶段判定&quot;同一阻塞条件重复&quot;达该轮数后，强制暂停等待用户介入。区别于停滞（机器信号）：blocked 是 LLM 显式判定的语义信号。
+          </p>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.enableGoalCompleteReport ?? true}
+              onChange={(e) => setForm({ ...form, enableGoalCompleteReport: e.target.checked })}
+            />
+            完成时报告 token 用量 / 轮数 / 时长
+          </label>
+          <p className="muted">
+            关闭后 <code>goal_complete</code> 事件不再推给 UI（仅内部日志保留）。
           </p>
         </section>
 

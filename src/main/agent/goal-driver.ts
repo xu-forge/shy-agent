@@ -1,9 +1,8 @@
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { ChatOpenAI } from '@langchain/openai'
-import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage } from '@langchain/core/messages'
 import type { GoalChecklistItem, RunStatus } from '../../shared/ipc'
-import { getSession, updateSessionRuntime, appendMessage } from '../sessions/store'
+import { getSession, updateSessionRuntime, appendMessage, getCheckpoint } from '../sessions/store'
 import { getSettings } from '../settings/store'
 import { getShyPaths } from '../paths'
 import type { AgentEvent } from './service'
@@ -20,6 +19,9 @@ import {
 } from './goal-policy'
 import { buildAgentGraph, mapChecklistItem } from './graph'
 import { buildTools, type ToolContext } from './tools/registry'
+import { buildGoalTools, type GoalSnapshot } from './goal-tools'
+import { runVerifyLLM, applyBlockedAudit, type VerifyLLMResult } from './verify-llm'
+import { invokeChatCompletion, type LLMMessage } from './llm-client'
 
 export const GOAL_PLAN_SYSTEM_PROMPT = `你是步骤规划器。根据用户目标只输出步骤 JSON：
 {"checklist":[{"id":"1","title":"...","done":false,"check":"可在本机运行的 shell 命令"}]}
@@ -71,6 +73,11 @@ export async function runGoalDriver(args: {
       updateSessionRuntime(sessionId, patch)
     })
 
+  // 可变 refs（goal-driver 主循环 + defaultRunBurst 共享）
+  const auditOkRef: { current: boolean } = { current: true }
+  const blockedRoundsRef: { current: number } = { current: 0 }
+  const tokenUsedRef: { current: number } = { current: 0 }
+
   const session = getSession(sessionId)
   if (!session) {
     emit({ type: 'error', message: '会话不存在' })
@@ -110,7 +117,10 @@ export async function runGoalDriver(args: {
         emit,
         waitConfirm,
         signal: rt.controller.signal,
-        input
+        input,
+        auditOkRef,
+        blockedRoundsRef,
+        tokenUsedRef
       }))
 
   if (checklist.length === 0) {
@@ -235,9 +245,25 @@ export async function runGoalDriver(args: {
 
     const concludeAfterChecks = async (
       overall: CheckRunResult | undefined,
-      hadWorkSegment: boolean
+      hadWorkSegment: boolean,
+      auditFailures?: { requirements: string[]; unsatisfied: string[] }
     ): Promise<boolean> => {
-      if (!isGoalComplete({ checklist, verifyCommand, overall, hadWorkSegment })) return false
+      if (
+        !isGoalComplete({
+          checklist,
+          verifyCommand,
+          overall,
+          hadWorkSegment,
+          auditCheck: auditOkRef.current
+            ? { requirements: [], eachSatisfied: true }
+            : { requirements: auditFailures?.requirements ?? [], eachSatisfied: false }
+        })
+      ) {
+        if (auditFailures) {
+          emit({ type: 'status', message: 'completion audit 未通过；继续推进' })
+        }
+        return false
+      }
       const delivered = await deliverFn({ goal, checklist })
       let reportPath: string | undefined
       if (delivered.isReport && delivered.content.trim()) {
@@ -276,7 +302,13 @@ export async function runGoalDriver(args: {
         finishStop(stopAfterChecks)
         return
       }
-      if (await concludeAfterChecks(overall, true)) return
+      // verify LLM：段尾自检 + blocked 判定
+      const blockedAudit = await runVerifyPhase(goal, checklist, auditOkRef, blockedRoundsRef, emit, settings)
+      if (blockedAudit.shouldPause) {
+        finishStop('paused')
+        return
+      }
+      if (await concludeAfterChecks(overall, true, auditOkRef.current ? undefined : { requirements: [], unsatisfied: ['completion audit 未通过'] })) return
       if (failures.length) feedback = buildFailureFeedback(failures)
     }
 
@@ -309,7 +341,18 @@ export async function runGoalDriver(args: {
         return
       }
 
-      if (await concludeAfterChecks(overall, true)) return
+      // verify LLM：段尾自检 + blocked 判定
+      const blockedAudit = await runVerifyPhase(goal, checklist, auditOkRef, blockedRoundsRef, emit, settings)
+      if (blockedAudit.shouldPause) {
+        finishStop('paused')
+        return
+      }
+
+      if (await concludeAfterChecks(
+        overall,
+        true,
+        auditOkRef.current ? undefined : { requirements: [], unsatisfied: ['completion audit 未通过'] }
+      )) return
 
       stagnantRounds = nextStagnantRounds({
         prev: stagnantRounds,
@@ -385,6 +428,39 @@ function assembleFallback(goal: string, checklist: GoalChecklistItem[]): string 
   return `## 完整结果\n\n目标：${goal}\n\n${steps || '（无步骤产物）'}`
 }
 
+async function runVerifyPhase(
+  goal: string,
+  checklist: GoalChecklistItem[],
+  auditOkRef: { current: boolean },
+  blockedRoundsRef: { current: number },
+  emit: (event: AgentEvent) => void,
+  settings: { blockedAuditRounds?: number; enableGoalCompleteReport?: boolean }
+): Promise<{ shouldPause: boolean; result?: VerifyLLMResult }> {
+  const auditRounds = settings.blockedAuditRounds ?? 3
+  const result = await runVerifyLLM({ goal, checklist })
+  if (!result.ok || !result.output) {
+    return { shouldPause: false }
+  }
+  // 写 auditOk
+  auditOkRef.current = result.output.auditCheck.eachSatisfied
+  // 写 blockedRounds + 判定暂停
+  const blockedAudit = applyBlockedAudit({
+    prevBlockedRounds: blockedRoundsRef.current,
+    blocked: result.output.blocked,
+    blockedAuditRounds: auditRounds
+  })
+  blockedRoundsRef.current = blockedAudit.newBlockedRounds
+  if (blockedAudit.shouldPause) {
+    emit({
+      type: 'blocked',
+      rounds: blockedAudit.newBlockedRounds,
+      reason: result.output.blocked.reason ?? 'verify LLM 连续判定同条件重复'
+    })
+    return { shouldPause: true, result }
+  }
+  return { shouldPause: false, result }
+}
+
 async function defaultDeliver(input: {
   goal: string
   checklist: GoalChecklistItem[]
@@ -393,23 +469,21 @@ async function defaultDeliver(input: {
   try {
     const settings = await getSettings()
     if (!settings.apiKey) return fallback
-    const llm = new ChatOpenAI({
-      model: settings.model,
-      apiKey: settings.apiKey,
-      configuration: { baseURL: settings.baseURL },
-      temperature: 0.2
-    })
     const evidence = input.checklist
       .map((c) => `## ${c.title}\n${c.evidence ?? '（无证据）'}`)
       .join('\n\n')
-    const res = await llm.invoke([
-      new SystemMessage(
-        `对照总目标汇总各步产物，输出 JSON：{"content":"完整结果 Markdown","isReport":true/false}。
+    const { content: resContent } = await invokeChatCompletion(
+      { baseURL: settings.baseURL, apiKey: settings.apiKey, model: settings.model },
+      [
+        {
+          role: 'system',
+          content: `对照总目标汇总各步产物，输出 JSON：{"content":"完整结果 Markdown","isReport":true/false}。
 isReport 在新闻总结、周报、调研等文档型交付时为 true。只输出 JSON。content 必须覆盖目标与各步要点，不要寒暄。`
-      ),
-      new HumanMessage(`总目标：${input.goal}\n\n各步证据：\n${evidence}`)
-    ])
-    const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+        },
+        { role: 'user', content: `总目标：${input.goal}\n\n各步证据：\n${evidence}` }
+      ] as LLMMessage[]
+    )
+    const text = resContent
     const parsed = parseJsonObject(text)
     const content = String(parsed?.content ?? '').trim()
     if (!content) return fallback
@@ -427,13 +501,14 @@ async function defaultPlanChecklist(
   if (!settings.apiKey) {
     throw new Error('尚未配置 apiKey，请先在设置中填写 OpenAI-compatible 凭证')
   }
-  const llm = new ChatOpenAI({
-    model: settings.model,
-    apiKey: settings.apiKey,
-    configuration: { baseURL: settings.baseURL },
-    temperature: 0.2
-  })
-  const res = await llm.invoke([new SystemMessage(GOAL_PLAN_SYSTEM_PROMPT), new HumanMessage(goal)])
+  const { content: resContent } = await invokeChatCompletion(
+    { baseURL: settings.baseURL, apiKey: settings.apiKey, model: settings.model },
+    [
+      { role: 'system', content: GOAL_PLAN_SYSTEM_PROMPT },
+      { role: 'user', content: goal }
+    ] as LLMMessage[]
+  )
+  const res = { content: resContent }
   const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
   const planned = parsePlanOutput(text, goal)
   emit({ type: 'status', message: '已生成验收清单' })
@@ -446,6 +521,9 @@ async function defaultRunBurst(opts: {
   waitConfirm: (action: string, detail: string) => Promise<boolean>
   signal: AbortSignal
   input: { goal: string; checklist: GoalChecklistItem[]; feedback?: string }
+  auditOkRef: { current: boolean }
+  blockedRoundsRef: { current: number }
+  tokenUsedRef: { current: number }
 }): Promise<{ tokenUsed: number; round: number }> {
   const { sessionId, emit, waitConfirm, signal, input } = opts
   const { waitIfPaused } = await import('./service')
@@ -454,12 +532,30 @@ async function defaultRunBurst(opts: {
     throw new Error('尚未配置 apiKey，请先在设置中填写 OpenAI-compatible 凭证')
   }
 
-  const llm = new ChatOpenAI({
-    model: settings.model,
-    apiKey: settings.apiKey,
-    configuration: { baseURL: settings.baseURL },
-    temperature: 0.2
-  })
+  // llm 配置传 buildAgentGraph（不再需要 ChatOpenAI 实例）
+  const getSnapshot = (): GoalSnapshot => {
+    const s = getSession(sessionId)
+    const checklist = s?.checklist ?? []
+    const done = checklist.filter((c) => c.done).length
+    const tokenBudget = settings.tokenBudget ?? 0
+    return {
+      goal: s?.goal ?? input.goal,
+      checklist: checklist.map((c) => ({ id: c.id, title: c.title, done: c.done, check: c.check })),
+      runStatus: s?.runStatus ?? 'running',
+      progress: { done, total: checklist.length },
+      budget: {
+        tokenUsed: opts.tokenUsedRef.current,
+        tokenBudget,
+        pct: tokenBudget > 0 ? Math.min(100, Math.round((opts.tokenUsedRef.current / tokenBudget) * 100)) : 0,
+        disabled: tokenBudget <= 0
+      },
+      stagnantRounds: 0,
+      blockedRounds: opts.blockedRoundsRef.current,
+      blockedAuditRounds: settings.blockedAuditRounds ?? 3,
+      paused: s?.paused ?? false,
+      checkpoint: getCheckpoint(sessionId)
+    }
+  }
 
   const ctx: ToolContext = {
     emit: (event, payload) => {
@@ -475,9 +571,22 @@ async function defaultRunBurst(opts: {
     sessionId
   }
 
+  const goalTools = buildGoalTools({
+    sessionId,
+    emit,
+    getSnapshot,
+    auditOkRef: opts.auditOkRef,
+    blockedAuditRounds: settings.blockedAuditRounds ?? 3,
+    enableGoalCompleteReport: settings.enableGoalCompleteReport ?? true
+  })
+
   const graph = buildAgentGraph({
-    llm,
-    tools: buildTools(ctx),
+    llm: {
+      baseURL: settings.baseURL,
+      apiKey: settings.apiKey,
+      model: settings.model
+    },
+    tools: [...buildTools(ctx), ...goalTools],
     emit: (event) => {
       if (event.type === 'status' && event.message) emit({ type: 'status', message: event.message })
       if (event.type === 'assistant' && event.content) {
@@ -498,8 +607,10 @@ async function defaultRunBurst(opts: {
     budget: {
       stagnationRounds: settings.stagnationRounds ?? 20,
       tokenBudget: settings.tokenBudget ?? 0,
-      segmentSteps: settings.segmentSteps ?? 60
-    }
+      segmentSteps: settings.segmentSteps ?? 60,
+      blockedAuditRounds: settings.blockedAuditRounds ?? 3
+    },
+    signal
   })
 
   const fresh = getSession(sessionId)
@@ -522,10 +633,19 @@ async function defaultRunBurst(opts: {
       tokenUsed: 0,
       toolActivityCount: 0,
       lastVerifyToolActivityCount: 0,
-      lastAction: ''
+      lastAction: '',
+      blockedRounds: 0
     },
     { signal, recursionLimit: 100_000 }
   )
+
+  // 把 graph 的累计值同步到 ref（让 get_goal / update_goal 看到最新）
+  if (Number.isFinite(Number(result?.tokenUsed))) {
+    opts.tokenUsedRef.current = Math.max(0, Math.floor(Number(result.tokenUsed)))
+  }
+  if (Number.isFinite(Number(result?.blockedRounds))) {
+    opts.blockedRoundsRef.current = Math.max(0, Math.floor(Number(result.blockedRounds)))
+  }
 
   return {
     tokenUsed: Number.isFinite(Number(result?.tokenUsed))

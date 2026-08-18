@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ModeToggle, type ModeKey } from './ModeToggle'
-import { AssistantMessage } from './AssistantMessage'
 import { MarkdownBody } from './MarkdownBody'
 import { SessionPanel, PANEL_KEY } from './SessionPanel'
 import { timeAgo } from '../lib/time'
 import { normalizeVerifyCommand } from './goalUi'
+import { ReActContent } from './chat/ReActContent'
+import { ToolCallCard } from './chat/ToolCallCard'
 
 type Props = {
   notice?: string
@@ -50,7 +51,10 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const currentSessionIdRef = useRef(sessionId)
   const loadedSessionIdRef = useRef<string | null>(null)
-  currentSessionIdRef.current = sessionId
+  // 同步 sessionId 到 ref（避免 render 中直接写 ref 的反模式）
+  useEffect(() => {
+    currentSessionIdRef.current = sessionId
+  }, [sessionId])
 
   const [panelOpen, setPanelOpen] = useState<boolean>(() => {
     try {
@@ -179,6 +183,9 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
         detail?: unknown
         reason?: string
         reportPath?: string
+        rounds?: number
+        tokenUsed?: number
+        durationMs?: number
       }
       if (ev.sessionId && ev.sessionId !== sessionId) return
       if (ev.type === 'result' && ev.content) {
@@ -197,17 +204,44 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
         } catch {
           /* ignore */
         }
+      } else if (ev.type === 'assistant_delta' && ev.content) {
+        // 流式渲染：把 delta 追加到最后一条 assistant 消息（无 kind=result）
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'assistant' && !last.kind) {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, content: last.content + ev.content! }
+            ]
+          }
+          return [
+            ...prev,
+            { role: 'assistant', content: ev.content!, createdAt: new Date().toISOString() }
+          ]
+        })
       } else if (ev.type === 'assistant' && ev.content) {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: ev.content!, createdAt: new Date().toISOString() }
-        ])
+        // 非流式回退（interactive 模式或工具调用后的最后一条）
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'assistant' && !last.kind) {
+            // 已有流式累积的 assistant 消息：替换为完整版（避免重复）
+            return [...prev.slice(0, -1), { ...last, content: ev.content! }]
+          }
+          return [
+            ...prev,
+            { role: 'assistant', content: ev.content!, createdAt: new Date().toISOString() }
+          ]
+        })
+      } else if (ev.type === 'assistant_done') {
+        // 流式渲染完毕（无 UI 副作用，保留扩展点）
       } else if (ev.type === 'tool') {
         setMessages((prev) => [
           ...prev,
           {
             role: 'tool',
-            content: `${ev.name ?? 'tool'}\n${JSON.stringify(ev.detail ?? {}, null, 2)}`,
+            content: typeof ev.detail === 'string' ? ev.detail : JSON.stringify(ev.detail ?? {}, null, 2),
+            toolName: ev.name,
+            input: (ev as { input?: unknown }).input,
             createdAt: new Date().toISOString()
           }
         ])
@@ -233,6 +267,32 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
         setMessages((prev) => [
           ...prev,
           { role: 'system', content: ev.message!, createdAt: new Date().toISOString() }
+        ])
+      } else if (ev.type === 'blocked') {
+        const rounds = Number(ev.rounds ?? 0)
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: `目标已阻塞：连续 ${rounds} 轮相同阻塞条件（${ev.reason ?? '未指定原因'}）。请检查或调整目标后继续。`,
+            createdAt: new Date().toISOString()
+          }
+        ])
+        setBusy(false)
+        setPaused(true)
+        setStatus('已阻塞')
+      } else if (ev.type === 'goal_complete') {
+        const tokenUsed = Number(ev.tokenUsed ?? 0)
+        const rounds = Number(ev.rounds ?? 0)
+        const durationMs = Number(ev.durationMs ?? 0)
+        const durationMin = (durationMs / 60_000).toFixed(1)
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: `✓ 目标完成 · ${tokenUsed.toLocaleString()} tokens · ${rounds} 轮 · ${durationMin} 分钟`,
+            createdAt: new Date().toISOString()
+          }
         ])
       }
     })
@@ -404,24 +464,11 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
                             <span className="msg-time">{timeAgo(m.createdAt)}</span>
                           ) : null}
                         </div>
-                        <AssistantMessage content={m.content} />
+                        <ReActContent content={m.content} />
                       </>
                     ) : null}
                     {m.role === 'tool' ? (
-                      <>
-                        <div className="msg-head">
-                          <span
-                            className="msg-avatar"
-                            aria-hidden="true"
-                            style={{ background: 'var(--tool)' }}
-                          >
-                            ⚙
-                          </span>
-                          <span className="msg-name">{toolNameOf(m.content)}</span>
-                          <span className="chip chip-tool">工具调用</span>
-                        </div>
-                        <pre>{toolBodyOf(m.content)}</pre>
-                      </>
+                      <ToolCallCard toolName={(m as { toolName?: string }).toolName ?? 'tool'} input={(m as { input?: unknown }).input} content={m.content} />
                     ) : null}
                     {m.role === 'system' ? <div className="msg-pill">{m.content}</div> : null}
                   </div>
@@ -451,12 +498,4 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
 }
 
 /** 工具消息内容格式：`名称\nJSON`，拆出名称与正文 */
-function toolNameOf(content: string): string {
-  const first = content.split('\n')[0]?.trim()
-  return first || '工具'
-}
 
-function toolBodyOf(content: string): string {
-  const nl = content.indexOf('\n')
-  return nl >= 0 ? content.slice(nl + 1) : content
-}

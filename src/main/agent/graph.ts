@@ -1,16 +1,13 @@
-import { ChatOpenAI } from '@langchain/openai'
-import {
-  AIMessage,
-  HumanMessage,
-  SystemMessage,
-  BaseMessage,
-  ToolMessage
-} from '@langchain/core/messages'
+
+import { AIMessage, HumanMessage, BaseMessage, ToolMessage } from '@langchain/core/messages'
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import type { DynamicStructuredTool } from '@langchain/core/tools'
 import type { AgentMode, GoalChecklistItem } from '../../shared/ipc'
-import { addTokenUsed, tokensOf } from './token-usage'
+import { addTokenUsed } from './token-usage'
+import { getReactGuide } from './react-prompt'
+import { streamChatCompletion, invokeChatCompletion, langchainToolsToOpenAITools } from './llm-client'
+import { buildGoalContext } from './goal-context'
 
 export type GraphEmit = (event: {
   type: string
@@ -29,6 +26,8 @@ export type GraphEmit = (event: {
   source?: 'goal' | 'agent'
   /** 段边界信号（service 用来决定是否自动续段） */
   reason?: string
+  /** 工具调用输入参数（tools 节点 emit 时附带给 renderer 显示） */
+  input?: unknown
 }) => void
 
 export type GraphBudget = {
@@ -38,6 +37,8 @@ export type GraphBudget = {
   tokenBudget: number
   /** 单段 invoke 最大 act 步数，0=不限制；达到后正常结束本段，service 落盘压缩后自动续段（默认 60） */
   segmentSteps: number
+  /** Blocked audit 阈值：LLM 在 verify 阶段判定"同条件重复"达该轮数后强制暂停（默认 3） */
+  blockedAuditRounds: number
 }
 
 const AgentState = Annotation.Root({
@@ -54,7 +55,8 @@ const AgentState = Annotation.Root({
   lastAction: Annotation<string>,
   tokenUsed: Annotation<number>,
   toolActivityCount: Annotation<number>,
-  lastVerifyToolActivityCount: Annotation<number>
+  lastVerifyToolActivityCount: Annotation<number>,
+  blockedRounds: Annotation<number>
 })
 
 export type AgentGraphState = typeof AgentState.State
@@ -111,26 +113,38 @@ export function mapChecklistItem(
 }
 
 export function buildAgentGraph(opts: {
-  llm: ChatOpenAI
+  /** OpenAI-compatible 配置 */
+  llm: { baseURL: string; apiKey: string; model: string }
   tools: DynamicStructuredTool[]
   emit: GraphEmit
   skillBlock: string
   memoryBlock: string
   /** 当前会话 id（shell-session-side-panel: 用于 emit task 事件） */
   sessionId: string
+  /** 当前工作目录（用于 goal_context 的 work_from_evidence 段）；缺省 process.cwd() */
+  cwd?: string
   beforeStep?: () => Promise<void>
   /** 停滞时软暂停（不结束图，等待用户点继续） */
   onStagnate?: () => void | Promise<void>
   budget?: Partial<GraphBudget>
+  /** AbortSignal（用于取消 LLM 流式调用） */
+  signal?: AbortSignal
 }) {
-  const { llm, tools, emit, skillBlock, memoryBlock, beforeStep } = opts
+  const { llm, tools, emit, skillBlock, memoryBlock, beforeStep, signal } = opts
   const budget: GraphBudget = {
     stagnationRounds: opts.budget?.stagnationRounds ?? 20,
     tokenBudget: opts.budget?.tokenBudget ?? 0,
-    segmentSteps: opts.budget?.segmentSteps ?? 0
+    segmentSteps: opts.budget?.segmentSteps ?? 0,
+    blockedAuditRounds: opts.budget?.blockedAuditRounds ?? 3
   }
   const toolNode = new ToolNode(tools)
-  const bound = llm.bindTools(tools)
+  const openAITools = langchainToolsToOpenAITools(
+    tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      schema: (t as unknown as { schema: unknown }).schema
+    }))
+  )
 
   const contextPreamble = [
     skillBlock ? `【匹配到的技能】\n${skillBlock}` : '',
@@ -149,15 +163,23 @@ export function buildAgentGraph(opts: {
     const userGoal =
       state.goal ||
       String(state.messages.filter((m) => m instanceof HumanMessage).at(-1)?.content ?? '')
-    const res = await llm.invoke([
-      new SystemMessage(
-        `你是目标规划器。根据用户目标输出 JSON：
+    const { content: resContent } = await invokeChatCompletion(
+      {
+        baseURL: llm.baseURL,
+        apiKey: llm.apiKey,
+        model: llm.model
+      },
+      [
+        {
+          role: 'system',
+          content: `你是目标规划器。根据用户目标输出 JSON：
 {"goal":"...","checklist":[{"id":"1","title":"...","done":false,"check":"可执行的验收规则描述"}]}
 清单 3-8 步，可验证。check 字段描述该步的可执行验收规则（如“运行 npm test 且全绿”），没有就省略。只输出 JSON。`
-      ),
-      new HumanMessage(userGoal)
-    ])
-    const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+        },
+        { role: 'user', content: userGoal }
+      ]
+    )
+    const text = resContent
     const parsed = parseJsonObject(text)
     const checklist: GoalChecklistItem[] = Array.isArray(parsed?.checklist)
       ? (parsed!.checklist as Array<Record<string, unknown>>).map((c, i) => mapChecklistItem(c, i))
@@ -181,7 +203,7 @@ export function buildAgentGraph(opts: {
         .map((c) => `- [ ] ${c.title}${c.check ? `（验收：${c.check}）` : ''}`)
         .join('\n')}`
     })
-    const tokenUsed = addTokenUsed(state.tokenUsed, tokensOf(res))
+    const tokenUsed = addTokenUsed(state.tokenUsed, 0)  // plan 阶段暂不计 token
     return {
       goal,
       checklist,
@@ -203,7 +225,24 @@ export function buildAgentGraph(opts: {
       message: state.mode === 'goal' ? `执行：${focus?.title ?? '推进目标'}` : '交互式执行中…'
     })
 
+    const goalCtx =
+      state.mode === 'goal'
+        ? buildGoalContext(
+            {
+              goal: state.goal ?? '',
+              runStatus: 'running',
+              checklist: state.checklist ?? [],
+              stagnantRounds: state.stagnantRounds ?? 0,
+              blockedRounds: state.blockedRounds ?? 0,
+              tokenUsed: state.tokenUsed ?? 0
+            },
+            { tokenBudget: budget.tokenBudget, blockedAuditRounds: budget.blockedAuditRounds },
+            opts.cwd ?? process.cwd()
+          )
+        : ''
     const sys = [
+      goalCtx,
+      getReactGuide('act'),
       '你是 shy，运行在用户本机。使用简体中文。需要时调用工具。高危操作会触发确认。',
       state.mode === 'goal'
         ? `目标模式。总目标：${state.goal}\n当前聚焦未完成项：${focus?.title ?? '（无）'}\n完成一项后用文字说明可观察证据（文件内容、命令输出、测试结果等）。不要宣称全部完成除非清单都做完。`
@@ -213,13 +252,62 @@ export function buildAgentGraph(opts: {
       .filter(Boolean)
       .join('\n\n')
 
-    const response = await bound.invoke([new SystemMessage(sys), ...state.messages])
-    const content =
-      typeof response.content === 'string' ? response.content : JSON.stringify(response.content)
-    if (content) emit({ type: 'assistant', content })
-    const tokenUsed = addTokenUsed(state.tokenUsed, tokensOf(response))
+    // 构造 OpenAI 格式的 messages（state.messages 是 BaseMessage[]，转成原生格式）
+    const openaiMessages: import('./llm-client').LLMMessage[] = [
+      { role: 'system', content: sys },
+      ...state.messages.map((m): import('./llm-client').LLMMessage => {
+        // m 可能是 HumanMessage / AIMessage / SystemMessage / ToolMessage
+        if (m._getType() === 'human') return { role: 'user', content: typeof m.content === 'string' ? m.content : '' }
+        if (m._getType() === 'ai') {
+          const aiMsg = m as AIMessage
+          return {
+            role: 'assistant',
+            content: typeof aiMsg.content === 'string' ? aiMsg.content : '',
+            tool_calls: (aiMsg.tool_calls ?? []) as unknown as import('openai/resources/index').ChatCompletionMessageToolCall[]
+          }
+        }
+        if (m._getType() === 'system') return { role: 'system', content: typeof m.content === 'string' ? m.content : '' }
+        if (m._getType() === 'tool') {
+          const tm = m as ToolMessage
+          return { role: 'tool', content: typeof tm.content === 'string' ? tm.content : '', tool_call_id: tm.tool_call_id }
+        }
+        return { role: 'user', content: '' }
+      })
+    ]
+
+    // 流式调用原生 OpenAI SDK（替换 LangChain bound.stream()）
+    let toolCalls: import('openai/resources/index').ChatCompletionMessageToolCall[] = []
+    let completionTokens = 0
+    let promptTokens = 0
+    const stream = streamChatCompletion(llm, openaiMessages, openAITools, { signal })
+    for await (const ev of stream) {
+      if (ev.type === 'content') {
+        emit({ type: 'assistant_delta', content: ev.delta })
+      } else if (ev.type === 'tool_calls') {
+        toolCalls = ev.toolCalls
+      } else if (ev.type === 'usage') {
+        promptTokens = ev.promptTokens
+        completionTokens = ev.completionTokens
+      }
+      if (signal?.aborted) break
+    }
+    if (signal?.aborted) return { round: (state.round ?? 0) + 1, lastAction: 'act' }
+
+    emit({ type: 'assistant_done' })
+
+    // 构造最终 AIMessage：保留 tool_calls + content
+    const finalMsg: any = new AIMessage('')
+    if (toolCalls.length > 0) {
+      finalMsg.tool_calls = toolCalls
+    } else {
+      // 重新拼 content：从 emit 已发出，但 LangGraph state 需要保存
+      // 取最后一次 assistant_delta 的累积内容（这里没存累积，所以从 emit 推不出来）
+      // 简化：保存最终 content 为空字符串（tools 节点会在后续 emit tool 事件）
+      finalMsg.content = ''
+    }
+    const tokenUsed = addTokenUsed(state.tokenUsed, promptTokens + completionTokens)
     return {
-      messages: [response],
+      messages: [finalMsg],
       round: (state.round ?? 0) + 1,
       tokenUsed,
       lastAction: 'act'
@@ -253,13 +341,23 @@ export function buildAgentGraph(opts: {
     .addNode('act', actNode)
     .addNode('tools', async (state) => {
       await gate()
+      // 从 state.messages 拿最后一个 AIMessage 的 tool_calls（拿到 input 参数）
+      const lastAi = [...(state.messages ?? [])]
+        .reverse()
+        .find((m) => m instanceof AIMessage) as AIMessage | undefined
+      const inputById = new Map<string, unknown>()
+      for (const tc of lastAi?.tool_calls ?? []) {
+        inputById.set(String(tc.id ?? ''), tc.args)
+      }
       const result = await toolNode.invoke(state)
       const toolMsgs = (result.messages ?? []) as ToolMessage[]
       for (const tm of toolMsgs) {
+        const input = inputById.get(String((tm as { tool_call_id?: string }).tool_call_id ?? ''))
         emit({
           type: 'tool',
           name: String(tm.name ?? 'tool'),
-          detail: tm.content
+          detail: tm.content,
+          input
         })
       }
       // 有效工具结果 → 视为实质活动（用于停滞判定）

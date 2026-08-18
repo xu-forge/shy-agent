@@ -10,6 +10,7 @@ import { WorkflowsView } from './components/WorkflowsView'
 import { WorkflowEditor } from './components/WorkflowEditor'
 import { CalendarView } from './components/CalendarView'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -263,4 +264,10 @@ function App(): React.JSX.Element {
   )
 }
 
-export default App
+export default function AppRoot(): React.JSX.Element {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  )
+}

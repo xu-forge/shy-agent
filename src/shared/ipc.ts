@@ -116,6 +116,10 @@ export type ModelSettings = {
   contextWindow?: number
   /** 上下文水位触发压缩的阈值（百分比，默认 60；超过则压缩短期记忆） */
   compressThreshold?: number
+  /** 目标模式：LLM 在 verify 阶段判定"同条件重复"达该轮数后触发 blocked 暂停（默认 3；范围 1-10） */
+  blockedAuditRounds?: number
+  /** 目标模式：完成时是否通过 goal_complete 事件向 UI 报告 tokenUsed / rounds / duration（默认 true） */
+  enableGoalCompleteReport?: boolean
 }
 
 export type ChatMessage = {
@@ -341,3 +345,52 @@ export type WorkflowRunLog = {
 
 export type WorkflowEvent =
   { type: 'workflow_run'; run: WorkflowRun } | { type: 'workflow_updated'; workflow: Workflow }
+
+
+/* ────────── Agent events (chat → renderer) ────────── */
+
+export type AgentEvent =
+  | { type: 'status'; message: string }
+  | { type: 'assistant'; content: string; sessionId?: string }
+  | { type: 'assistant_delta'; content: string; sessionId?: string }
+  | { type: 'assistant_done'; sessionId?: string }
+  | { type: 'tool'; name: string; detail?: unknown; input?: unknown; sessionId?: string }
+  | { type: 'memory'; action: string; entryId?: string; title?: string; sessionId?: string }
+  | { type: 'goal'; goal?: string; checklist?: GoalChecklistItem[]; sessionId?: string }
+  | {
+      type: 'task'
+      kind: 'add'
+      id: string
+      title: string
+      done?: boolean
+      evidence?: string
+      source: TaskSource
+      sessionId?: string
+    }
+  | {
+      type: 'task'
+      kind: 'update'
+      id: string
+      title?: string
+      done?: boolean
+      evidence?: string
+      source?: TaskSource
+      sessionId?: string
+    }
+  | { type: 'task'; kind: 'remove'; id: string; sessionId?: string }
+  | { type: 'error'; message: string; sessionId?: string }
+  | { type: 'result'; content: string; reportPath?: string; sessionId?: string }
+  | { type: 'done'; reason: string; sessionId?: string }
+  | { type: 'confirm_required'; action: string; detail: string; requestId: string; sessionId?: string }
+  | { type: 'notify'; message: string; sessionId?: string }
+  | { type: 'session'; title?: string; sessionId?: string }
+  | { type: 'blocked'; rounds: number; reason?: string; sessionId?: string }
+  | {
+      type: 'goal_complete'
+      goal: string
+      checklist: GoalChecklistItem[]
+      tokenUsed: number
+      rounds: number
+      durationMs: number
+      sessionId?: string
+    }

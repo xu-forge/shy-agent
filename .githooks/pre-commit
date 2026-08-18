@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# 自动跑 typecheck + lint + test（（只在涉及 src/ 改动时跑；其他改动跳过）
+set -e
+
+# 只对 src/ 改动跑测试
+if git diff --cached --name-only | grep -q '^src/'; then
+  echo "▶ src/ 改动检测到；跑 verify（typecheck + lint + test:coverage）..."
+  npm run verify
+else
+  echo "▶ src/ 未改动；跳过 verify"
+fi
