@@ -6,6 +6,7 @@ import { timeAgo } from '../lib/time'
 import { normalizeVerifyCommand } from './goalUi'
 import { ReActContent } from './chat/ReActContent'
 import { ToolCallCard } from './chat/ToolCallCard'
+import { StatusBar } from './chat/StatusBar'
 
 type Props = {
   notice?: string
@@ -476,7 +477,12 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
               )}
             </div>
 
-            {hasConversation ? <div className="composer-dock">{composerInner()}</div> : null}
+            {hasConversation ? (
+              <>
+                <div className="composer-dock">{composerInner()}</div>
+                <StatusBar sessionId={sessionId} onCancel={() => void onCancel()} />
+              </>
+            ) : null}
           </div>
         </div>
         <SessionPanel

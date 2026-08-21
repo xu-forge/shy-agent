@@ -3481,3 +3481,93 @@
   color: var(--text-muted, #64748b);
   font-style: italic;
 }
+
+/* Status Bar — minimax 风格底部状态条 */
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.02));
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.06));
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  min-height: 28px;
+  flex-shrink: 0;
+}
+
+.status-bar-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.status-bar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted, #94a3b8);
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.status-bar.status-thinking .status-bar-dot,
+.status-bar.status-tool-calling .status-bar-dot {
+  background: var(--accent, #6366f1);
+  animation: status-pulse 1.4s ease-in-out infinite;
+}
+
+.status-bar.status-paused .status-bar-dot { background: #f59e0b; }
+.status-bar.status-errored .status-bar-dot { background: #ef4444; }
+.status-bar.status-done .status-bar-dot { background: #10b981; }
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+
+.status-bar-label {
+  font-weight: 500;
+  color: var(--text, #1e293b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-bar-tool {
+  padding: 1px 6px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent, #6366f1);
+  border-radius: 3px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.status-bar-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  color: var(--text-muted, #64748b);
+  flex-shrink: 0;
+}
+
+.status-bar-cancel {
+  margin-left: 4px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ef4444;
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.status-bar-cancel:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+}
