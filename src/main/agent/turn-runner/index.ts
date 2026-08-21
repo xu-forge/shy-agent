@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'crypto'
 import { streamChatCompletion, type LLMMessage } from '../llm-client'
+import { compactHistory, DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from '../compaction'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import type { DynamicStructuredTool } from '@langchain/core/tools'
 import {
@@ -153,7 +154,7 @@ export async function runTurn(
     const startMs = Date.now()
     const goalBlock = input.goal
       ? `【目标模式】总目标：${input.goal.goal}\n当前聚焦未完成项：${input.goal.checklist.find((c) => !c.done)?.title ?? '（无）'}`
-      : '【交互式模式】与用户协作，逐步推进，勿擅自破坏性操作。'
+      : '【交互式模式】与用户协作,逐步推进,勿擅自破坏性操作。'
     const out = buildContext(
       {
         skillBlock: input.skillBlock,
@@ -208,20 +209,54 @@ export async function runTurn(
     return erroredResult(turnId, stepDurations, tokenUsed, stepsExecuted, err)
   }
 
-  // ── 4. callLLM + 5. handleToolCalls + 6. runTools + 7. appendHistory + 8. decideNext
-  //
-  // 内部循环：一个 LLM 响应可能触发多个 tool call，全部跑完再走 appendHistory
+  // ── Stage 2.4: Context Compaction（4 档压缩,在 step 3 之前） ──
+  // 默认开启,可由 input.compaction.enabled = false 关闭
+  // 默认 contextWindow 128K(model 拿不到时 fallback)
   let history: Array<{
     role: 'user' | 'assistant' | 'tool'
     content: string
     toolCalls?: { id: string; name: string; args: string }[]
     toolCallId?: string
-  }> = input.history.map((m) => ({
-    role: m.role,
-    content: m.content,
-    toolCalls: m.toolCalls ? [...m.toolCalls] : undefined,
-    toolCallId: m.toolCallId
-  }))
+  }>
+  if (input.compaction?.enabled !== false) {
+    const compactionSettings: Partial<CompactionSettings> = {}
+    void compactionSettings // 默认用 DEFAULT_COMPACTION_SETTINGS
+    const compactionStartMs = Date.now()
+    const compactionPlan = compactHistory(
+      input.history.map((m) => ({
+        role: m.role,
+        content: m.content,
+        toolCalls: m.toolCalls ? [...m.toolCalls] : undefined,
+        toolCallId: m.toolCallId
+      })),
+      {
+        contextWindow: input.compaction?.contextWindow ?? 0,
+        maxTokens: input.compaction?.maxTokens
+      }
+    )
+    deps.emit({
+      type: 'compaction:applied',
+      turnId,
+      level: compactionPlan.level,
+      tokensBefore: compactionPlan.tokensBefore,
+      tokensAfter: compactionPlan.tokensAfter,
+      skipped: compactionPlan.skipped
+    })
+    void compactionStartMs
+    history = compactionPlan.history.map((m) => ({
+      role: m.role,
+      content: m.content,
+      toolCalls: m.toolCalls ? [...m.toolCalls] : undefined,
+      toolCallId: m.toolCallId
+    }))
+  } else {
+    history = input.history.map((m) => ({
+      role: m.role,
+      content: m.content,
+      toolCalls: m.toolCalls ? [...m.toolCalls] : undefined,
+      toolCallId: m.toolCallId
+    }))
+  }
   const toolNode = new ToolNode(deps.tools)
 
   let continueLoop = true

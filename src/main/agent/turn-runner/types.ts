@@ -83,6 +83,12 @@ export type TurnInput = {
   signal?: AbortSignal
   /** 预算 */
   budget?: Partial<TurnBudget>
+  /** Stage 2.4: 上下文压缩设置(可选,默认 DEFAULT_COMPACTION_SETTINGS) */
+  compaction?: {
+    enabled?: boolean
+    contextWindow?: number
+    maxTokens?: number
+  }
 }
 
 /** 单步执行结果（用于 observability） */
@@ -93,6 +99,14 @@ export type TurnStepEvent =
   | { type: 'turn:tool_call'; turnId: string; id: string; name: string; input: unknown }
   | { type: 'turn:tool_result'; turnId: string; id: string; output: unknown; error?: string }
   | { type: 'turn:usage'; turnId: string; promptTokens: number; completionTokens: number }
+  | {
+      type: 'compaction:applied'
+      turnId: string
+      level: 'off' | 'light' | 'standard' | 'aggressive'
+      tokensBefore: number
+      tokensAfter: number
+      skipped?: string
+    }
 
 /** Turn 终结结果 */
 export type TurnResult = {
