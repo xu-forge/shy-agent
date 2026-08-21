@@ -207,7 +207,7 @@ describe('selectAggressiveBoundary', () => {
 })
 
 describe('applyAggressive', () => {
-  it('无 apiKey / 走本地 summary', () => {
+  it('无 apiKey / 走本地 summary', async () => {
     const settings: CompactionSettings = {
       ...DEFAULT_COMPACTION_SETTINGS,
       summaryTriggerChars: 200
@@ -219,13 +219,13 @@ describe('applyAggressive', () => {
       { role: 'user', content: 'c'.repeat(60) },
       { role: 'assistant', content: 'd'.repeat(20) }
     ]
-    const out = applyAggressive(msgs, settings)
+    const out = await applyAggressive(msgs, settings)
     expect(out).not.toBeNull()
     expect(out![0]!.content).toContain('[CONTEXT_SUMMARY]')
     expect(out!.length).toBeLessThan(msgs.length)
   })
 
-  it('generateSummary 返回 null → applyAggressive 返回 null', () => {
+  it('generateSummary 返回 null → applyAggressive 返回 null', async () => {
     const settings: CompactionSettings = {
       ...DEFAULT_COMPACTION_SETTINGS,
       summaryTriggerChars: 100
@@ -234,11 +234,11 @@ describe('applyAggressive', () => {
       { role: 'user', content: 'a'.repeat(60) },
       { role: 'assistant', content: 'b'.repeat(60) }
     ]
-    const out = applyAggressive(msgs, settings, () => null)
+    const out = await applyAggressive(msgs, settings, () => Promise.resolve(null))
     expect(out).toBeNull()
   })
 
-  it('generateSummary throw → applyAggressive 返回 null(fail-closed)', () => {
+  it('generateSummary throw → applyAggressive 返回 null(fail-closed)', async () => {
     const settings: CompactionSettings = {
       ...DEFAULT_COMPACTION_SETTINGS,
       summaryTriggerChars: 100
@@ -247,13 +247,13 @@ describe('applyAggressive', () => {
       { role: 'user', content: 'a'.repeat(60) },
       { role: 'assistant', content: 'b'.repeat(60) }
     ]
-    const out = applyAggressive(msgs, settings, () => {
+    const out = await applyAggressive(msgs, settings, () => {
       throw new Error('LLM 401')
     })
     expect(out).toBeNull()
   })
 
-  it('上一个 summary 之后才开始压缩(避免重复压)', () => {
+  it('上一个 summary 之后才开始压缩(避免重复压)', async () => {
     const settings: CompactionSettings = {
       ...DEFAULT_COMPACTION_SETTINGS,
       summaryTriggerChars: 200
@@ -266,7 +266,7 @@ describe('applyAggressive', () => {
       { role: 'user', content: 'c'.repeat(60) },
       { role: 'assistant', content: 'd'.repeat(20) }
     ]
-    const out = applyAggressive(msgs, settings)
+    const out = await applyAggressive(msgs, settings)
     expect(out).not.toBeNull()
     // 第一个必须是 oldSummary(没被覆盖)
     expect(out![0]).toEqual(oldSummary)
@@ -338,14 +338,14 @@ describe('shouldCompact', () => {
 })
 
 describe('applyCompaction', () => {
-  it('off 档直接 skip', () => {
+  it('off 档直接 skip', async () => {
     const msgs: CompactionMessage[] = [{ role: 'user', content: 'hi' }]
-    const plan = applyCompaction(msgs, 'off', DEFAULT_COMPACTION_SETTINGS)
+    const plan = await applyCompaction(msgs, 'off', DEFAULT_COMPACTION_SETTINGS)
     expect(plan.skipped).toBe('disabled')
     expect(plan.history).toEqual(msgs)
   })
 
-  it('aggressive 失败 → fail-closed skip', () => {
+  it('aggressive 失败 → fail-closed skip', async () => {
     const settings: CompactionSettings = {
       ...DEFAULT_COMPACTION_SETTINGS,
       summaryTriggerChars: 100
@@ -354,15 +354,15 @@ describe('applyCompaction', () => {
       { role: 'user', content: 'a'.repeat(60) },
       { role: 'assistant', content: 'b'.repeat(60) }
     ]
-    const plan = applyCompaction(msgs, 'aggressive', settings, () => null)
+    const plan = await applyCompaction(msgs, 'aggressive', settings, () => Promise.resolve(null))
     expect(plan.skipped).toBe('summary_failed')
     expect(plan.history).toEqual(msgs)
   })
 
-  it('light 档实际生效', () => {
+  it('light 档实际生效', async () => {
     const long = 'x'.repeat(DEFAULT_COMPACTION_SETTINGS.trimThresholdChars + 100)
     const msgs: CompactionMessage[] = [{ role: 'tool', content: long, toolCallId: 't1' }]
-    const plan = applyCompaction(msgs, 'light', DEFAULT_COMPACTION_SETTINGS)
+    const plan = await applyCompaction(msgs, 'light', DEFAULT_COMPACTION_SETTINGS)
     expect(plan.skipped).toBeUndefined()
     expect(plan.tokensAfter).toBeLessThan(plan.tokensBefore)
     expect(plan.history[0]!.content).toContain('…[已省略')
@@ -370,18 +370,18 @@ describe('applyCompaction', () => {
 })
 
 describe('compactHistory (one-shot)', () => {
-  it('低于阈值直接 skip', () => {
-    const plan = compactHistory([{ role: 'user', content: 'hi' }], { contextWindow: 128_000 })
+  it('低于阈值直接 skip', async () => {
+    const plan = await compactHistory([{ role: 'user', content: 'hi' }], { contextWindow: 128_000 })
     expect(plan.skipped).toBe('below_threshold')
   })
 
-  it('无 contextWindow 用 fallback', () => {
-    const plan = compactHistory([{ role: 'user', content: 'hi' }], { contextWindow: 0 })
+  it('无 contextWindow 用 fallback', async () => {
+    const plan = await compactHistory([{ role: 'user', content: 'hi' }], { contextWindow: 0 })
     // fallback 128K,hi 不会触发
     expect(plan.skipped).toBe('below_threshold')
   })
 
-  it('压缩生效并返回 plan(多条 tool 触发 light)', () => {
+  it('压缩生效并返回 plan(多条 tool 触发 light)', async () => {
     const settings: CompactionSettings = {
       ...DEFAULT_COMPACTION_SETTINGS,
       trimThresholdChars: 500,
@@ -395,7 +395,7 @@ describe('compactHistory (one-shot)', () => {
     ]
     // contextWindow 2500,trigger 1500
     // 压前 2417,触发;压后 ~137 < 1500,选 light
-    const plan = compactHistory(msgs, { contextWindow: 2500 }, { settings })
+    const plan = await compactHistory(msgs, { contextWindow: 2500 }, { settings })
     expect(plan.skipped).toBeUndefined()
     expect(plan.tokensAfter).toBeLessThan(plan.tokensBefore)
     expect(plan.level).toBe('light')

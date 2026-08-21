@@ -200,6 +200,18 @@ function buildV2Graph(opts: {
         }
       }))
 
+      // Stage 2.5:为本次 turn 创建 LLM summarizer(只在有 apiKey 时)
+      // 失败回退到本地模板(strategy.ts 内部 catch 抛错 → return null → skipped='summary_failed')
+      const { createLlmSummarizer } = await import('./compaction')
+      const llmSummarizer = opts.llm.apiKey
+        ? createLlmSummarizer({
+            baseURL: opts.llm.baseURL,
+            apiKey: opts.llm.apiKey,
+            model: opts.llm.model,
+            signal
+          })
+        : null
+
       const result = await runTurn(
         {
           sessionId: opts.sessionId,
@@ -211,7 +223,12 @@ function buildV2Graph(opts: {
           llm: opts.llm,
           skillBlock: opts.skillBlock,
           memoryBlock: opts.memoryBlock,
-          signal
+          signal,
+          compaction: {
+            enabled: true,
+            contextWindow: opts.contextWindow ?? 0,
+            generateSummary: llmSummarizer ?? undefined
+          }
         },
         {
           emit: (e) => {

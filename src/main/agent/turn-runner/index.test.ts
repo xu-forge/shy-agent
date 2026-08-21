@@ -196,4 +196,113 @@ describe('runTurn 端到端', () => {
     // 这就对了:不开就不 emit
     expect(compactionEvents.length).toBe(0)
   })
+
+  it('Stage 2.5 LLM summarizer 成功:aggressive 档返回的 summary 文本被使用', async () => {
+    callCount = 0
+    seenSystemPrompts.length = 0
+    const events: TurnStepEvent[] = []
+    // 4 条 16K chars → 估算 4*6404=25616 token,contextWindow 5000,trigger 3000 → 触发
+    // light 阈值 8000,16K>8000 → light 压到 4*2K chars = 8K chars = 3200 token > 3000,light 不够
+    // standard K=20 留 4 条 25616 token > 3000,standard 不够
+    // → aggressive
+    // summaryTriggerChars 60000,4*16K=64K chars > 60K,firstKeptIndex 找到 → 调 generateSummary
+    const longHistory: TurnInput['history'] = [
+      { role: 'user', content: 'a'.repeat(16_000) },
+      { role: 'assistant', content: 'b'.repeat(16_000) },
+      { role: 'user', content: 'c'.repeat(16_000) },
+      { role: 'assistant', content: 'd'.repeat(16_000) }
+    ]
+    const tools = buildTools({
+      emit: () => undefined,
+      confirmHighRisk: async () => true,
+      sessionId: 'ses-test'
+    }).filter((t) => t.name === 'runtime_ping')
+
+    // mock LLM summarizer:返回固定文本
+    const llmSummarizer = vi.fn(async () => '【LLM 真总结】用户:压缩测试')
+
+    const result = await runTurn(
+      {
+        ...baseInput,
+        history: longHistory,
+        compaction: {
+          enabled: true,
+          contextWindow: 5000,
+          generateSummary: llmSummarizer
+        }
+      },
+      {
+        emit: (e) => events.push(e),
+        getReactGuide: (mode) => `【${mode}】`,
+        tools,
+        mode: 'act',
+        startTurn: 0
+      }
+    )
+
+    expect(result.status).toBe('done')
+    // LLM summarizer 被调 1 次
+    expect(llmSummarizer).toHaveBeenCalledTimes(1)
+    // compaction:applied 出现 1 次,level=aggressive,skipped=undefined
+    const compactionEvents = events.filter((e) => e.type === 'compaction:applied')
+    expect(compactionEvents.length).toBeGreaterThanOrEqual(1)
+    const last = compactionEvents[compactionEvents.length - 1] as Extract<
+      TurnStepEvent,
+      { type: 'compaction:applied' }
+    >
+    expect(last.level).toBe('aggressive')
+    expect(last.skipped).toBeUndefined()
+    expect(last.tokensAfter).toBeLessThan(last.tokensBefore)
+  })
+
+  it('Stage 2.5 LLM summarizer 失败:走 fail-closed skip(aggressive → skipped)', async () => {
+    callCount = 0
+    seenSystemPrompts.length = 0
+    const events: TurnStepEvent[] = []
+    // 同样用 4 条 16K chars 触发 aggressive
+    const longHistory: TurnInput['history'] = [
+      { role: 'user', content: 'a'.repeat(16_000) },
+      { role: 'assistant', content: 'b'.repeat(16_000) },
+      { role: 'user', content: 'c'.repeat(16_000) },
+      { role: 'assistant', content: 'd'.repeat(16_000) }
+    ]
+    const tools = buildTools({
+      emit: () => undefined,
+      confirmHighRisk: async () => true,
+      sessionId: 'ses-test'
+    }).filter((t) => t.name === 'runtime_ping')
+
+    // LLM summarizer 抛错
+    const llmSummarizer = vi.fn(async () => {
+      throw new Error('LLM 401')
+    })
+
+    await runTurn(
+      {
+        ...baseInput,
+        history: longHistory,
+        compaction: {
+          enabled: true,
+          contextWindow: 5000,
+          generateSummary: llmSummarizer
+        }
+      },
+      {
+        emit: (e) => events.push(e),
+        getReactGuide: (mode) => `【${mode}】`,
+        tools,
+        mode: 'act',
+        startTurn: 0
+      }
+    )
+
+    // LLM summarizer 抛错 → strategy.ts catch → return null → skipped='summary_failed'
+    const compactionEvents = events.filter((e) => e.type === 'compaction:applied')
+    const last = compactionEvents[compactionEvents.length - 1] as Extract<
+      TurnStepEvent,
+      { type: 'compaction:applied' }
+    >
+    expect(last.level).toBe('aggressive')
+    expect(last.skipped).toBe('summary_failed')
+  })
 })

@@ -192,12 +192,16 @@ export function generateLocalSummary(
  * - 用 1 条 summary 消息替换累积段
  *
  * 失败返回 null（caller 走 skip）。
+ *
+ * generateSummary 现在是 async,接受 Promise 返回,这样 LLM 总结可以走 await
  */
-export function applyAggressive(
+export async function applyAggressive(
   messages: ReadonlyArray<CompactionMessage>,
   settings: CompactionSettings,
-  generateSummary?: (compacted: ReadonlyArray<CompactionMessage>) => string | null
-): CompactionMessage[] | null {
+  generateSummary?: (
+    compacted: ReadonlyArray<CompactionMessage>
+  ) => Promise<string | null> | string | null
+): Promise<CompactionMessage[] | null> {
   if (messages.length === 0) return null
   const lastSummaryIdx = findLastSummaryIndex(messages)
   const boundaryStart = lastSummaryIdx >= 0 ? lastSummaryIdx + 1 : 0
@@ -217,7 +221,7 @@ export function applyAggressive(
   let summary: string | null = null
   if (generateSummary) {
     try {
-      summary = generateSummary(compacted)
+      summary = await Promise.resolve(generateSummary(compacted))
     } catch {
       return null
     }
@@ -272,13 +276,17 @@ export function shouldCompact(
 /**
  * 应用压缩计划。
  * 失败返回带 skipped 标记的 plan(调用方决定怎么处理)。
+ *
+ * generateSummary 现在是 async 接口(为了接 LLM 真总结)
  */
-export function applyCompaction(
+export async function applyCompaction(
   messages: ReadonlyArray<CompactionMessage>,
   level: CompactionLevel,
   settings: CompactionSettings,
-  generateSummary?: (compacted: ReadonlyArray<CompactionMessage>) => string | null
-): CompactionPlan {
+  generateSummary?: (
+    compacted: ReadonlyArray<CompactionMessage>
+  ) => Promise<string | null> | string | null
+): Promise<CompactionPlan> {
   const tokensBefore = estimateHistoryTokens(messages)
   if (level === 'off' || messages.length === 0) {
     return {
@@ -298,7 +306,7 @@ export function applyCompaction(
   } else if (level === 'standard') {
     newHistory = applyStandard(messages, settings)
   } else {
-    const agg = applyAggressive(messages, settings, generateSummary)
+    const agg = await applyAggressive(messages, settings, generateSummary)
     if (agg === null) {
       // aggressive 失败(fail-closed skip)
       return {

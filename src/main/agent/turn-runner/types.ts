@@ -88,6 +88,13 @@ export type TurnInput = {
     enabled?: boolean
     contextWindow?: number
     maxTokens?: number
+    /** Stage 2.5: LLM 总结函数(可选,不传走本地模板) */
+    generateSummary?: (messages: ReadonlyArray<{
+      role: 'user' | 'assistant' | 'tool'
+      content: string
+      toolCalls?: ReadonlyArray<{ id: string; name: string; args: string }>
+      toolCallId?: string
+    }>) => Promise<string>
   }
 }
 

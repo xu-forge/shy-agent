@@ -10,20 +10,23 @@
 export * from './types'
 export * from './strategy'
 export * from './token-estimator'
+export { createLlmSummarizer, type SummarizerConfig } from './llm-summarizer'
 
 import type { CompactionMessage, CompactionModelInfo, CompactionPlan, CompactionSettings } from './types'
 import { DEFAULT_COMPACTION_SETTINGS } from './types'
 import { applyCompaction, shouldCompact } from './strategy'
 
 /** 一步式入口:评估 + 应用 */
-export function compactHistory(
+export async function compactHistory(
   messages: ReadonlyArray<CompactionMessage>,
   model: CompactionModelInfo,
   options?: {
     settings?: Partial<CompactionSettings>
-    generateSummary?: (compacted: ReadonlyArray<CompactionMessage>) => string | null
+    generateSummary?: (
+      compacted: ReadonlyArray<CompactionMessage>
+    ) => Promise<string | null> | string | null
   }
-): CompactionPlan {
+): Promise<CompactionPlan> {
   const settings: CompactionSettings = {
     ...DEFAULT_COMPACTION_SETTINGS,
     ...(options?.settings ?? {})

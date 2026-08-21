@@ -222,7 +222,27 @@ export async function runTurn(
     const compactionSettings: Partial<CompactionSettings> = {}
     void compactionSettings // 默认用 DEFAULT_COMPACTION_SETTINGS
     const compactionStartMs = Date.now()
-    const compactionPlan = compactHistory(
+    // Stage 2.5: 如果 caller 传了 generateSummary,转成 sync 版本传进 compactHistory
+    // LLM 失败抛错时 strategy.ts 的 applyAggressive 会 catch,return null,走 fail-closed skip
+    const callerGenerateSummary = input.compaction?.generateSummary
+    const generateSummary = callerGenerateSummary
+      ? async (
+          compacted: ReadonlyArray<{
+            role: 'user' | 'assistant' | 'tool'
+            content: string
+            toolCalls?: ReadonlyArray<{ id: string; name: string; args: string }>
+            toolCallId?: string
+          }>
+        ): Promise<string | null> => {
+          try {
+            return await callerGenerateSummary(compacted)
+          } catch (err) {
+            console.error('[shy:turn-runner] LLM summary failed:', err)
+            return null
+          }
+        }
+      : undefined
+    const compactionPlan = await compactHistory(
       input.history.map((m) => ({
         role: m.role,
         content: m.content,
@@ -232,7 +252,8 @@ export async function runTurn(
       {
         contextWindow: input.compaction?.contextWindow ?? 0,
         maxTokens: input.compaction?.maxTokens
-      }
+      },
+      { generateSummary }
     )
     deps.emit({
       type: 'compaction:applied',
