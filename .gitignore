@@ -16,3 +16,10 @@ evolution-drafts/
 # test coverage
 coverage/
 *.lcov
+
+# test fixtures / temp data
+*.xml
+summary_*.txt
+
+# editor / root index (空 placeholder)
+src/index.ts
