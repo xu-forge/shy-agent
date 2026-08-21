@@ -66,7 +66,7 @@ function summarize(type: string, e: Record<string, unknown>): string {
 
 export function EventLog(): React.JSX.Element {
   const [entries, setEntries] = useState<LogEntry[]>([])
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true) // 默认展开,方便用户首次跑就看到事件流
   const counterRef = useRef(0)
 
   function push(type: string, e: Record<string, unknown>): void {
