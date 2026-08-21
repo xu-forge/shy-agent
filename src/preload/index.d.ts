@@ -17,9 +17,7 @@ import type {
   SessionSummary,
   SessionTaskRecord,
   SkillSummary,
-  UpdateScheduleTaskInput,
-  Workflow,
-  WorkflowRun
+  UpdateScheduleTaskInput
 } from '../shared/ipc'
 
 export interface ShyApi {
@@ -63,13 +61,6 @@ export interface ShyApi {
   }) => Promise<{ ok: boolean; task?: SessionTaskRecord; error?: string }>
   deleteSessionTask: (input: { sessionId: string; id: string }) => Promise<{ ok: boolean }>
   confirmTool: (requestId: string, approved: boolean) => Promise<{ ok: boolean }>
-  listWorkflows: () => Promise<Workflow[]>
-  getWorkflow: (id: string) => Promise<Workflow | null>
-  saveWorkflow: (wf: Workflow) => Promise<Workflow>
-  deleteWorkflow: (id: string) => Promise<{ ok: boolean }>
-  runWorkflow: (id: string) => Promise<{ ok: boolean; run?: WorkflowRun; error?: string }>
-  listWorkflowRuns: (id?: string) => Promise<WorkflowRun[]>
-  getWorkflowTemplate: () => Promise<Workflow>
   scheduleTasksList: () => Promise<ScheduleTasksListResult>
   scheduleTasksGet: (id: string) => Promise<ScheduleTask | null>
   scheduleTasksCreate: (input: CreateScheduleTaskInput) => Promise<ScheduleTaskSaveResult>

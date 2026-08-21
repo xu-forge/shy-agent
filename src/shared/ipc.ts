@@ -24,13 +24,6 @@ export const IPC = {
   sessionTasksList: 'shy:session-tasks-list',
   sessionTasksUpdate: 'shy:session-tasks-update',
   sessionTasksDelete: 'shy:session-tasks-delete',
-  workflowList: 'shy:workflow-list',
-  workflowGet: 'shy:workflow-get',
-  workflowSave: 'shy:workflow-save',
-  workflowDelete: 'shy:workflow-delete',
-  workflowRun: 'shy:workflow-run',
-  workflowRunsList: 'shy:workflow-runs-list',
-  workflowTemplate: 'shy:workflow-template',
   scheduleTasksList: 'shy:schedule-tasks-list',
   scheduleTasksGet: 'shy:schedule-tasks-get',
   scheduleTasksCreate: 'shy:schedule-tasks-create',
@@ -198,26 +191,7 @@ export type TaskEvent =
     }
   | { type: 'task'; sessionId: string; kind: 'remove'; id: string }
 
-/* ────────── workflows（可视化节点工作流引擎） ────────── */
-
-export type WorkflowNodeType =
-  'trigger' | 'fetch' | 'summarize' | 'recommend' | 'write_doc' | 'output'
-
-export type WorkflowNode = {
-  id: string
-  type: WorkflowNodeType
-  label: string
-  x: number
-  y: number
-  /** 节点参数（类型相关，见 engine） */
-  config: Record<string, unknown>
-}
-
-export type WorkflowEdge = {
-  id: string
-  source: string
-  target: string
-}
+/* ────────── schedule（定时任务） ────────── */
 
 /** 可交互式 cron：频率 + 时间 + 星期几，编译成 cron 表达式 */
 export type WorkflowSchedule = {
@@ -231,11 +205,7 @@ export type WorkflowSchedule = {
   cron: string
 }
 
-export type ScheduleTaskAction = 'run_workflow' | 'remind' | 'run_skill'
-
-export type RunWorkflowScheduleTaskPayload = {
-  workflowId: string
-}
+export type ScheduleTaskAction = 'remind' | 'run_skill'
 
 export type RemindScheduleTaskPayload = {
   message: string
@@ -256,7 +226,6 @@ type ScheduleTaskBase = {
 
 export type ScheduleTask = ScheduleTaskBase &
   (
-    | { action: 'run_workflow'; payload: RunWorkflowScheduleTaskPayload }
     | { action: 'remind'; payload: RemindScheduleTaskPayload }
     | { action: 'run_skill'; payload: RunSkillScheduleTaskPayload }
   )
@@ -270,9 +239,8 @@ export type ScheduleOccurrence = {
 
 /** 后续冲突检测任务填充；当前先固定供 IPC/UI 复用的警告结构。 */
 export type ScheduleConflictWarning = {
-  type: 'workflow_schedule_conflict'
+  type: 'schedule_conflict'
   taskId: string
-  workflowId: string
   message: string
 }
 
@@ -304,47 +272,6 @@ export type ScheduleReminderEvent = {
   message: string
   at: string
 }
-
-export type Workflow = {
-  id: string
-  name: string
-  description: string
-  nodes: WorkflowNode[]
-  edges: WorkflowEdge[]
-  schedule: WorkflowSchedule
-  outputConfig: Record<string, unknown>
-  createdAt: string
-  updatedAt: string
-}
-
-export type WorkflowRunStatus = 'running' | 'success' | 'failed' | 'cancelled'
-
-export type WorkflowRun = {
-  id: string
-  workflowId: string
-  workflowName: string
-  status: WorkflowRunStatus
-  trigger: 'manual' | 'schedule' | 'calendar_task'
-  taskId?: string
-  startedAt: string
-  finishedAt?: string
-  /** 逐节点执行日志 */
-  logs: WorkflowRunLog[]
-  /** 最终产物（如落盘的文档路径） */
-  output?: string
-  error?: string
-}
-
-export type WorkflowRunLog = {
-  nodeId: string
-  nodeLabel: string
-  status: 'running' | 'success' | 'failed'
-  message: string
-  at: string
-}
-
-export type WorkflowEvent =
-  { type: 'workflow_run'; run: WorkflowRun } | { type: 'workflow_updated'; workflow: Workflow }
 
 
 /* ────────── Agent events (chat → renderer) ────────── */

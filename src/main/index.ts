@@ -4,7 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerCoreIpc, resumeInterruptedGoalSessions, setMainWindow } from './ipc'
 import { ensureShyHomeDirs, resolveShyHome } from './paths'
-import { migrateLegacyUserData } from './migration'
+import { dropLegacyWorkflowTables, migrateLegacyUserData } from './migration'
 
 let bootResumeAttempted = false
 
@@ -68,6 +68,15 @@ app.whenReady().then(() => {
   const migration = migrateLegacyUserData(legacyUserData, paths)
   if (migration.status === 'success') {
     console.log('[shy] migrated legacy data from', migration.source, migration.files)
+  }
+
+  // 砍掉 workflow 引擎：先备份旧表内容到 ~/.shy/migration-backup/，再 DROP。
+  // 必须在 registerCoreIpc 之前——老 IPC 通道已移除，但旧表若残留会让备份不完整。
+  const dropped = dropLegacyWorkflowTables(paths)
+  if (dropped.status === 'dropped') {
+    console.log(
+      `[shy] dropped legacy workflow tables: ${dropped.workflowCount} workflows, ${dropped.runCount} runs → ${dropped.backupPath}`
+    )
   }
 
   electronApp.setAppUserModelId('com.local.shy')

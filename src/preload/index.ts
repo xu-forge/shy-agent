@@ -19,9 +19,7 @@ import {
   type ScheduleTaskSaveResult,
   type ScheduleTasksExpandInput,
   type ScheduleTasksListResult,
-  type UpdateScheduleTaskInput,
-  type Workflow,
-  type WorkflowRun
+  type UpdateScheduleTaskInput
 } from '../shared/ipc'
 
 const shy = {
@@ -81,18 +79,6 @@ const shy = {
     ipcRenderer.invoke(IPC.sessionTasksDelete, input),
   confirmTool: (requestId: string, approved: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.toolConfirm, requestId, approved),
-  listWorkflows: (): Promise<Workflow[]> => ipcRenderer.invoke(IPC.workflowList),
-  getWorkflow: (id: string): Promise<Workflow | null> => ipcRenderer.invoke(IPC.workflowGet, id),
-  saveWorkflow: (wf: Workflow): Promise<Workflow> => ipcRenderer.invoke(IPC.workflowSave, wf),
-  deleteWorkflow: (id: string): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke(IPC.workflowDelete, id),
-  runWorkflow: (
-    id: string
-  ): Promise<{ ok: boolean; run?: WorkflowRun; error?: string }> =>
-    ipcRenderer.invoke(IPC.workflowRun, id),
-  listWorkflowRuns: (id?: string): Promise<WorkflowRun[]> =>
-    ipcRenderer.invoke(IPC.workflowRunsList, id),
-  getWorkflowTemplate: (): Promise<Workflow> => ipcRenderer.invoke(IPC.workflowTemplate),
   scheduleTasksList: (): Promise<ScheduleTasksListResult> =>
     ipcRenderer.invoke(IPC.scheduleTasksList),
   scheduleTasksGet: (id: string): Promise<ScheduleTask | null> =>

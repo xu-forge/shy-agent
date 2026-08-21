@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import type { ChatCompletionMessageToolCall } from 'openai/resources/index'
 import { accumulateToolCalls, langchainToolsToOpenAITools } from './llm-client'
+
+// OpenAI SDK 7.x 把 ChatCompletionMessageToolCall 改成 union，需要 narrow 到 function 分支。
+type FunctionCallShape = { name: string; arguments?: string; parameters?: unknown }
+type FunctionToolCall = ChatCompletionMessageToolCall & { function: FunctionCallShape }
+const asFunction = (t: ChatCompletionMessageToolCall): FunctionToolCall =>
+  t as unknown as FunctionToolCall
 
 describe('accumulateToolCalls', () => {
   it('空 chunks 返回空数组', () => {
@@ -14,8 +21,8 @@ describe('accumulateToolCalls', () => {
     ])
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('abc')
-    expect(result[0].function.name).toBe('shell')
-    expect(result[0].function.arguments).toBe('{"cmd":"ls"}')
+    expect(asFunction(result[0]).function.name).toBe('shell')
+    expect(asFunction(result[0]).function.arguments).toBe('{"cmd":"ls"}')
   })
 
   it('跨多 chunk 累积 arguments（关键：之前 LangChain AIMessageChunk 没 concat 的 bug）', () => {
@@ -31,7 +38,7 @@ describe('accumulateToolCalls', () => {
       ]}}]}
     ])
     expect(result).toHaveLength(1)
-    expect(result[0].function.arguments).toBe('{"cmd":"ls-la"}')
+    expect(asFunction(result[0]).function.arguments).toBe('{"cmd":"ls-la"}')
   })
 
   it('多个 tool_calls 按 index 并行累积', () => {
@@ -59,10 +66,10 @@ describe('accumulateToolCalls', () => {
     }
     const result = accumulateToolCalls([chunk1, chunk2])
     expect(result).toHaveLength(2)
-    expect(result[0].function.name).toBe('shell')
-    expect(result[0].function.arguments).toBe('start_a_end_a')
-    expect(result[1].function.name).toBe('read')
-    expect(result[1].function.arguments).toBe('start_b_end_b')
+    expect(asFunction(result[0]).function.name).toBe('shell')
+    expect(asFunction(result[0]).function.arguments).toBe('start_a_end_a')
+    expect(asFunction(result[1]).function.name).toBe('read')
+    expect(asFunction(result[1]).function.arguments).toBe('start_b_end_b')
   })
 
   it('缺 id / name 的 chunk 被过滤', () => {
@@ -90,8 +97,10 @@ describe('langchainToolsToOpenAITools', () => {
       schema: { type: 'object', properties: { cmd: { type: 'string' } } }
     }])
     expect(tools[0].type).toBe('function')
-    expect(tools[0].function.name).toBe('shell')
-    expect(tools[0].function.parameters.type).toBe('object')
+    expect(asFunction(tools[0] as unknown as ChatCompletionMessageToolCall).function.name).toBe('shell')
+    expect(
+      (asFunction(tools[0] as unknown as ChatCompletionMessageToolCall).function.parameters as { type: string }).type
+    ).toBe('object')
   })
 
   it('zod shape（v4: type=string/number）', () => {
@@ -105,7 +114,9 @@ describe('langchainToolsToOpenAITools', () => {
         }
       }
     }])
-    const props = (tools[0].function.parameters as { properties: any }).properties
+    const props = (asFunction(tools[0] as unknown as ChatCompletionMessageToolCall).function.parameters as {
+      properties: { [k: string]: { type: string } }
+    }).properties
     expect(props.url.type).toBe('string')
     expect(props.waitMs.type).toBe('number')
   })
@@ -121,7 +132,9 @@ describe('langchainToolsToOpenAITools', () => {
         }
       }
     }])
-    const props = (tools[0].function.parameters as { properties: any }).properties
+    const props = (asFunction(tools[0] as unknown as ChatCompletionMessageToolCall).function.parameters as {
+      properties: { mode: { type: string; enum: string[] } }
+    }).properties
     expect(props.mode.type).toBe('string')
     expect(props.mode.enum).toEqual(['a', 'b', 'c'])
   })
@@ -139,7 +152,9 @@ describe('langchainToolsToOpenAITools', () => {
         }
       }
     }])
-    const props = (tools[0].function.parameters as { properties: any }).properties
+    const props = (asFunction(tools[0] as unknown as ChatCompletionMessageToolCall).function.parameters as {
+      properties: { config: { type: string; properties: { timeout: { type: string } } } }
+    }).properties
     expect(props.config.type).toBe('object')
     expect(props.config.properties.timeout.type).toBe('number')
   })

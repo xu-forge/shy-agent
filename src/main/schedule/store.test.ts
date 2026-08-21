@@ -55,8 +55,8 @@ describe('schedule task store', () => {
     const created = store.createScheduleTask({
       title: '运行日报',
       enabled: true,
-      action: 'run_workflow',
-      payload: { workflowId: 'workflow-1' },
+      action: 'remind',
+      payload: { message: '早间提醒' },
       schedule: dailySchedule
     })
 
@@ -69,8 +69,8 @@ describe('schedule task store', () => {
       id: created.id,
       title: '暂停日报',
       enabled: false,
-      action: 'run_workflow',
-      payload: { workflowId: 'workflow-1' }
+      action: 'remind',
+      payload: { message: '早间提醒' }
     })
     expect(updated?.schedule.enabled).toBe(false)
     expect(updated?.createdAt).toBe(created.createdAt)

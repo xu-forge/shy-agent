@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ScheduleReminderEvent, SessionSummary, Workflow } from '../../shared/ipc'
+import type { ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
 import { Sidebar, type NavKey } from './components/Sidebar'
 import { Header } from './components/Header'
 import { ChatWorkspace } from './components/ChatWorkspace'
 import { MemoryView } from './components/MemoryView'
 import { SkillsView } from './components/SkillsView'
 import { SettingsPanel } from './components/SettingsPanel'
-import { WorkflowsView } from './components/WorkflowsView'
-import { WorkflowEditor } from './components/WorkflowEditor'
 import { CalendarView } from './components/CalendarView'
+import { InspectorPanel } from './components/InspectorPanel'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
@@ -23,7 +22,6 @@ const NAV_TITLES: Record<NavKey, string> = {
   chat: '对话',
   memory: '长期记忆',
   skills: '技能',
-  workflows: '工作流',
   calendar: '日历',
   settings: '设置'
 }
@@ -31,13 +29,7 @@ const NAV_TITLES: Record<NavKey, string> = {
 function readNav(): NavKey {
   try {
     const v = localStorage.getItem(NAV_KEY)
-    return v === 'memory' ||
-      v === 'skills' ||
-      v === 'workflows' ||
-      v === 'calendar' ||
-      v === 'settings'
-      ? v
-      : 'chat'
+    return v === 'memory' || v === 'skills' || v === 'calendar' || v === 'settings' ? v : 'chat'
   } catch {
     return 'chat'
   }
@@ -52,8 +44,6 @@ function App(): React.JSX.Element {
   const [notice, setNotice] = useState('')
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sessionId, setSessionId] = useState('')
-  const [editingWorkflow, setEditingWorkflow] = useState<Workflow | null>(null)
-  const [workflowDirty, setWorkflowDirty] = useState(0)
   const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
 
   // 主题：应用 + 持久化
@@ -196,29 +186,6 @@ function App(): React.JSX.Element {
         ) : null}
         {nav === 'memory' ? <MemoryView /> : null}
         {nav === 'skills' ? <SkillsView /> : null}
-        {nav === 'workflows' ? (
-          editingWorkflow ? (
-            <WorkflowEditor
-              key={workflowDirty}
-              initial={editingWorkflow}
-              onBack={() => setEditingWorkflow(null)}
-              onSaved={() => setWorkflowDirty((d) => d + 1)}
-            />
-          ) : (
-            <WorkflowsView
-              onEdit={(id) => {
-                void window.shy.getWorkflow(id).then((w) => {
-                  if (w) setEditingWorkflow(w)
-                })
-              }}
-              onNew={() => {
-                void window.shy.getWorkflowTemplate().then((w) => {
-                  void window.shy.saveWorkflow(w).then((saved) => setEditingWorkflow(saved))
-                })
-              }}
-            />
-          )
-        ) : null}
         {nav === 'calendar' ? <CalendarView /> : null}
         {nav === 'settings' ? (
           <SettingsPanel
@@ -227,6 +194,8 @@ function App(): React.JSX.Element {
           />
         ) : null}
       </div>
+      {/* minimax 风格右侧 Inspector 面板 — 仅在 chat 视图显示 */}
+      {nav === 'chat' ? <InspectorPanel sessionId={sessionId} /> : null}
       {confirmDialog ? (
         <ConfirmDialog
           {...confirmDialog}

@@ -3,7 +3,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import { timeAgo } from '../lib/time'
 import type { Theme } from '../lib/theme'
 
-export type NavKey = 'chat' | 'memory' | 'skills' | 'workflows' | 'calendar' | 'settings'
+export type NavKey = 'chat' | 'memory' | 'skills' | 'calendar' | 'settings'
 
 type Props = {
   active: NavKey
@@ -46,18 +46,6 @@ const items: { key: NavKey; label: string; icon: React.JSX.Element }[] = [
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M8 7h11M8 12h11M8 17h11" />
         <path d="M5 7h.01M5 12h.01M5 17h.01" />
-      </svg>
-    )
-  },
-  {
-    key: 'workflows',
-    label: '工作流',
-    icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="3" y="3" width="6" height="6" rx="1.5" />
-        <rect x="15" y="15" width="6" height="6" rx="1.5" />
-        <path d="M6 9v4a2 2 0 0 0 2 2h7" />
-        <path d="M15 13l3 3-3 3" />
       </svg>
     )
   },

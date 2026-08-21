@@ -18,6 +18,7 @@ export type ShyPaths = {
   screenshotsDir: string
   cacheDir: string
   migrationFile: string
+  migrationBackupDir: string
 }
 
 /** 数据根：SHY_HOME 优先，否则 ~/.shy */
@@ -47,7 +48,8 @@ export function getShyPaths(home = resolveShyHome()): ShyPaths {
     reportsDir: join(artifactsDir, 'reports'),
     screenshotsDir: join(artifactsDir, 'screenshots'),
     cacheDir: join(home, 'cache'),
-    migrationFile: join(home, 'migration.json')
+    migrationFile: join(home, 'migration.json'),
+    migrationBackupDir: join(home, 'migration-backup')
   }
 }
 
@@ -63,7 +65,8 @@ export function ensureShyHomeDirs(home = resolveShyHome()): ShyPaths {
     paths.logsAppDir,
     paths.reportsDir,
     paths.screenshotsDir,
-    paths.cacheDir
+    paths.cacheDir,
+    paths.migrationBackupDir
   ]
   for (const d of dirs) {
     mkdirSync(d, { recursive: true })

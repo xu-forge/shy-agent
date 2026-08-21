@@ -1,6 +1,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { basename, join } from 'path'
 import { getShyPaths, type ShyPaths } from './paths'
+import { getDb } from './memory/db'
 
 export type MigrationResult = {
   status: 'success' | 'skipped' | 'noop'
@@ -118,4 +119,58 @@ export function migrateLegacyUserData(
   }
   writeFileSync(homePaths.migrationFile, JSON.stringify(markerOk, null, 2), 'utf8')
   return { status: 'success', migratedAt, source: legacyUserData, files }
+}
+
+/**
+ * 砍掉 workflow 引擎后,把 SQLite 里的 workflows / workflow_runs 表整体备份到
+ * `~/.shy/migration-backup/workflows-<ts>.json` 然后 DROP。可重入：已存在备份标记则跳过。
+ */
+export type WorkflowDropResult = {
+  status: 'dropped' | 'skipped' | 'noop'
+  backupPath?: string
+  workflowCount: number
+  runCount: number
+  reason?: string
+}
+
+const WORKFLOW_DROP_MARKER = 'workflow-dropped-v1'
+
+function hasWorkflowTables(): boolean {
+  try {
+    const db = getDb()
+    const row = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('workflows', 'workflow_runs')`)
+      .all() as Array<{ name: string }>
+    return row.length > 0
+  } catch {
+    return false
+  }
+}
+
+export function dropLegacyWorkflowTables(homePaths: ShyPaths = getShyPaths()): WorkflowDropResult {
+  const markerPath = join(homePaths.migrationBackupDir, WORKFLOW_DROP_MARKER + '.json')
+  if (existsSync(markerPath)) {
+    return { status: 'skipped', workflowCount: 0, runCount: 0, reason: 'already_dropped' }
+  }
+  if (!hasWorkflowTables()) {
+    return { status: 'noop', workflowCount: 0, runCount: 0, reason: 'no_workflow_tables' }
+  }
+
+  const db = getDb()
+  const workflows = db.prepare(`SELECT * FROM workflows`).all() as Record<string, unknown>[]
+  const runs = db.prepare(`SELECT * FROM workflow_runs`).all() as Record<string, unknown>[]
+
+  mkdirSync(homePaths.migrationBackupDir, { recursive: true })
+  const ts = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupPath = join(homePaths.migrationBackupDir, `workflows-${ts}.json`)
+  writeFileSync(
+    backupPath,
+    JSON.stringify({ migratedAt: new Date().toISOString(), workflows, runs }, null, 2),
+    'utf8'
+  )
+
+  db.exec(`DROP TABLE IF EXISTS workflow_runs; DROP TABLE IF EXISTS workflows;`)
+  writeFileSync(markerPath, JSON.stringify({ droppedAt: new Date().toISOString(), backupPath }), 'utf8')
+
+  return { status: 'dropped', backupPath, workflowCount: workflows.length, runCount: runs.length }
 }

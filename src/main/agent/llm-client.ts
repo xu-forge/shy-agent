@@ -139,7 +139,7 @@ export function langchainToolsToOpenAITools(tools: LangChainToolLike[]): ChatCom
         parameters = zodShapeToJsonSchema(s.shape as Record<string, unknown>)
       } else if (s.shape && typeof s.shape === 'function') {
         // zod raw schema: { shape: {...}, typeName: 'ZodObject' }
-        parameters = zodShapeToJsonSchema(s.shape as Record<string, unknown>)
+        parameters = zodShapeToJsonSchema((s.shape as () => Record<string, unknown>)())
       }
     }
     return {

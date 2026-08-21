@@ -1,10 +1,9 @@
 import type {
   ScheduleConflictWarning,
   ScheduleOccurrence,
-  ScheduleTask,
-  Workflow
+  ScheduleTask
 } from '../../shared/ipc'
-import { compileCron, cronMatches } from '../workflows/scheduler'
+import { compileCron, cronMatches } from './scheduler'
 
 export function expandOccurrences(
   tasks: ScheduleTask[],
@@ -38,29 +37,14 @@ export function expandOccurrences(
   return occurrences
 }
 
+/**
+ * 后续如需冲突检测（同名任务时间重叠等），加在这里。
+ * 当前保留空实现，使 IPC/UI 调用面不破。
+ */
 export function detectWorkflowScheduleConflicts(
-  tasks: ScheduleTask[],
-  workflows: Workflow[]
+  _tasks: ScheduleTask[]
 ): ScheduleConflictWarning[] {
-  const scheduledWorkflows = new Map(
-    workflows
-      .filter((workflow) => workflow.schedule.enabled)
-      .map((workflow) => [workflow.id, workflow])
-  )
-
-  return tasks.flatMap((task) => {
-    if (task.action !== 'run_workflow') return []
-    const workflow = scheduledWorkflows.get(task.payload.workflowId)
-    if (!workflow) return []
-    return [
-      {
-        type: 'workflow_schedule_conflict',
-        taskId: task.id,
-        workflowId: workflow.id,
-        message: `日历任务“${task.title}”与工作流“${workflow.name}”的定时均已启用，可能重复运行`
-      }
-    ]
-  })
+  return []
 }
 
 function floorToMinute(timestamp: number): number {

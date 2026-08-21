@@ -6,10 +6,8 @@ import {
   type ScheduleOccurrence,
   type ScheduleTask,
   type ScheduleTasksExpandInput,
-  type UpdateScheduleTaskInput,
-  type Workflow
+  type UpdateScheduleTaskInput
 } from '../../shared/ipc'
-import { listWorkflows } from '../workflows/db'
 import { detectWorkflowScheduleConflicts, expandOccurrences } from './expand'
 import {
   createScheduleTask,
@@ -26,7 +24,6 @@ export type ScheduleIpcDependencies = {
   updateTask: (id: string, patch: UpdateScheduleTaskInput) => ScheduleTask | null
   deleteTask: (id: string) => boolean
   expand: (tasks: ScheduleTask[], rangeStart: Date, rangeEnd: Date) => ScheduleOccurrence[]
-  listWorkflows: () => Workflow[]
 }
 
 const defaultDependencies: ScheduleIpcDependencies = {
@@ -35,15 +32,14 @@ const defaultDependencies: ScheduleIpcDependencies = {
   createTask: createScheduleTask,
   updateTask: updateScheduleTask,
   deleteTask: deleteScheduleTask,
-  expand: expandOccurrences,
-  listWorkflows
+  expand: expandOccurrences
 }
 
 export function registerScheduleIpc(
   dependencies: ScheduleIpcDependencies = defaultDependencies
 ): void {
   const warningsFor = (tasks: ScheduleTask[]): ScheduleConflictWarning[] =>
-    detectWorkflowScheduleConflicts(tasks, dependencies.listWorkflows())
+    detectWorkflowScheduleConflicts(tasks)
 
   ipcMain.handle(IPC.scheduleTasksList, async () => {
     const tasks = dependencies.listTasks()

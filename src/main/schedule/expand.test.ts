@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ScheduleTask, Workflow, WorkflowSchedule } from '../../shared/ipc'
+import type { ScheduleTask, WorkflowSchedule } from '../../shared/ipc'
 import { detectWorkflowScheduleConflicts, expandOccurrences } from './expand'
 
 function schedule(patch: Partial<WorkflowSchedule> = {}): WorkflowSchedule {
@@ -25,20 +25,6 @@ function task(patch: Partial<ScheduleTask> & Pick<ScheduleTask, 'id' | 'title'>)
     updatedAt: '2026-08-01T00:00:00.000Z',
     ...patch
   } as ScheduleTask
-}
-
-function workflow(id: string, scheduleEnabled: boolean): Workflow {
-  return {
-    id,
-    name: id,
-    description: '',
-    nodes: [],
-    edges: [],
-    schedule: schedule({ enabled: scheduleEnabled }),
-    outputConfig: {},
-    createdAt: '2026-08-01T00:00:00.000Z',
-    updatedAt: '2026-08-01T00:00:00.000Z'
-  }
 }
 
 describe('expandOccurrences', () => {
@@ -135,51 +121,11 @@ describe('expandOccurrences', () => {
 })
 
 describe('detectWorkflowScheduleConflicts', () => {
-  it('仅为目标工作流自带定时已启用的 run_workflow 任务生成警告', () => {
-    const tasks = [
-      task({
-        id: 'conflict',
-        title: '运行日报',
-        action: 'run_workflow',
-        payload: { workflowId: 'workflow-enabled' }
-      }),
-      task({
-        id: 'workflow-disabled',
-        title: '运行周报',
-        action: 'run_workflow',
-        payload: { workflowId: 'workflow-disabled' }
-      }),
-      task({ id: 'reminder', title: '普通提醒' })
-    ]
-
+  it('workflow 砍掉后永远返回空数组', () => {
     expect(
-      detectWorkflowScheduleConflicts(tasks, [
-        workflow('workflow-enabled', true),
-        workflow('workflow-disabled', false)
+      detectWorkflowScheduleConflicts([
+        task({ id: 'reminder', title: '普通提醒' })
       ])
-    ).toEqual([
-      {
-        type: 'workflow_schedule_conflict',
-        taskId: 'conflict',
-        workflowId: 'workflow-enabled',
-        message: '日历任务“运行日报”与工作流“workflow-enabled”的定时均已启用，可能重复运行'
-      }
-    ])
-  })
-
-  it('目标工作流不存在时不生成警告', () => {
-    expect(
-      detectWorkflowScheduleConflicts(
-        [
-          task({
-            id: 'missing',
-            title: '运行缺失工作流',
-            action: 'run_workflow',
-            payload: { workflowId: 'missing-workflow' }
-          })
-        ],
-        []
-      )
     ).toEqual([])
   })
 })

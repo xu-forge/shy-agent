@@ -7,11 +7,10 @@ import type {
   ScheduleTaskAction,
   SkillSummary,
   UpdateScheduleTaskInput,
-  Workflow,
   WorkflowSchedule
 } from '../../../shared/ipc'
 import { dayKey, groupOccurrencesByDay } from '../lib/calendarOccurrences'
-import { WorkflowScheduleEditor } from './WorkflowScheduleEditor'
+import { ScheduleEditor } from './ScheduleEditor'
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -41,17 +40,15 @@ type FormState = {
   id?: string
   title: string
   action: ScheduleTaskAction
-  workflowId: string
   message: string
   skillId: string
   schedule: WorkflowSchedule
 }
 
-function emptyForm(date: Date, workflows: Workflow[], skills: SkillSummary[]): FormState {
+function emptyForm(date: Date, skills: SkillSummary[]): FormState {
   return {
     title: '',
     action: 'remind',
-    workflowId: workflows[0]?.id ?? '',
     message: '',
     skillId: skills[0]?.id ?? '',
     schedule: defaultSchedule(date)
@@ -63,7 +60,6 @@ function formFromTask(task: ScheduleTask): FormState {
     id: task.id,
     title: task.title,
     action: task.action,
-    workflowId: task.action === 'run_workflow' ? task.payload.workflowId : '',
     message: task.action === 'remind' ? task.payload.message : '',
     skillId: task.action === 'run_skill' ? task.payload.skillId : '',
     schedule: task.schedule
@@ -72,8 +68,6 @@ function formFromTask(task: ScheduleTask): FormState {
 
 function buildTaskFields(form: FormState): Pick<ScheduleTask, 'action' | 'payload'> {
   switch (form.action) {
-    case 'run_workflow':
-      return { action: 'run_workflow', payload: { workflowId: form.workflowId } }
     case 'run_skill':
       return { action: 'run_skill', payload: { skillId: form.skillId } }
     case 'remind':
@@ -84,7 +78,6 @@ function buildTaskFields(form: FormState): Pick<ScheduleTask, 'action' | 'payloa
 
 function canSaveForm(form: FormState): boolean {
   if (!form.title.trim()) return false
-  if (form.action === 'run_workflow') return !!form.workflowId
   if (form.action === 'run_skill') return !!form.skillId
   return form.message.trim().length > 0
 }
@@ -117,7 +110,6 @@ export function CalendarView(): React.JSX.Element {
   const [tasks, setTasks] = useState<ScheduleTask[]>([])
   const [occurrences, setOccurrences] = useState<ScheduleOccurrence[]>([])
   const [warnings, setWarnings] = useState<ScheduleConflictWarning[]>([])
-  const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
@@ -150,7 +142,6 @@ export function CalendarView(): React.JSX.Element {
   }, [year, month])
 
   useEffect(() => {
-    void window.shy.listWorkflows().then(setWorkflows)
     void window.shy.listSkills().then(setSkills)
   }, [])
 
@@ -184,7 +175,7 @@ export function CalendarView(): React.JSX.Element {
   }
 
   const openCreate = (date: Date): void => {
-    setForm(emptyForm(date, workflows, skills))
+    setForm(emptyForm(date, skills))
   }
 
   const openEdit = (taskId: string): void => {
@@ -288,7 +279,7 @@ export function CalendarView(): React.JSX.Element {
             </span>
             <ul>
               {warnings.map((w, i) => (
-                <li key={`${w.taskId}-${w.workflowId}-${i}`}>{w.message}</li>
+                <li key={`${w.taskId}-${i}`}>{w.message}</li>
               ))}
             </ul>
           </div>
@@ -382,7 +373,6 @@ export function CalendarView(): React.JSX.Element {
                 onChange={(e) => setForm({ ...form, action: e.target.value as ScheduleTaskAction })}
               >
                 <option value="remind">提醒</option>
-                <option value="run_workflow">运行工作流</option>
                 <option value="run_skill">运行技能</option>
               </select>
             </label>
@@ -396,26 +386,6 @@ export function CalendarView(): React.JSX.Element {
                   onChange={(e) => setForm({ ...form, message: e.target.value })}
                   placeholder="到点后会在应用中看到该文案"
                 />
-              </label>
-            ) : null}
-
-            {form.action === 'run_workflow' ? (
-              <label>
-                选择工作流
-                <select
-                  value={form.workflowId}
-                  onChange={(e) => setForm({ ...form, workflowId: e.target.value })}
-                >
-                  <option value="">请选择…</option>
-                  {workflows.map((wf) => (
-                    <option key={wf.id} value={wf.id}>
-                      {wf.name}
-                    </option>
-                  ))}
-                </select>
-                {workflows.length === 0 ? (
-                  <p className="calendar-form-hint">还没有工作流，可先去「工作流」创建。</p>
-                ) : null}
               </label>
             ) : null}
 
@@ -442,7 +412,7 @@ export function CalendarView(): React.JSX.Element {
             <div className="section-divider">
               <h3>重复规则</h3>
             </div>
-            <WorkflowScheduleEditor
+            <ScheduleEditor
               schedule={form.schedule}
               onChange={(schedule) => setForm({ ...form, schedule })}
             />

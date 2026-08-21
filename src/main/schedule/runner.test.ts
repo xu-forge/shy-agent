@@ -33,23 +33,23 @@ function task(
 
 describe('checkCalendarTasks', () => {
   it('只执行 enabled 且当前分钟匹配的任务，并优先使用显式 cron', async () => {
-    const runWorkflow = vi.fn().mockResolvedValue(undefined)
+    const emit = vi.fn()
     const now = new Date(2026, 7, 11, 9, 30)
     const tasks = [
-      task('matching', 'run_workflow', { workflowId: 'wf-1' }),
-      task('disabled', 'run_workflow', { workflowId: 'wf-2' }, { enabled: false }),
+      task('matching', 'remind', { message: '提醒 A' }),
+      task('disabled', 'remind', { message: '不应执行' }, { enabled: false }),
       task(
         'cron-authoritative',
-        'run_workflow',
-        { workflowId: 'wf-3' },
+        'remind',
+        { message: 'cron 覆盖' },
         {
           schedule: { ...baseSchedule, time: '10:45', cron: '30 9 * * *' }
         }
       ),
       task(
         'not-matching',
-        'run_workflow',
-        { workflowId: 'wf-4' },
+        'remind',
+        { message: '不命中' },
         {
           schedule: { ...baseSchedule, cron: '31 9 * * *' }
         }
@@ -58,30 +58,32 @@ describe('checkCalendarTasks', () => {
 
     await checkCalendarTasks(now, {
       listTasks: () => tasks,
-      runWorkflow,
-      emit: vi.fn(),
+      emit,
       log: vi.fn()
     })
 
-    expect(runWorkflow).toHaveBeenCalledTimes(2)
-    expect(runWorkflow).toHaveBeenCalledWith('wf-1', 'matching')
-    expect(runWorkflow).toHaveBeenCalledWith('wf-3', 'cron-authoritative')
+    expect(emit).toHaveBeenCalledTimes(2)
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: 'matching', message: '提醒 A' })
+    )
+    expect(emit).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: 'cron-authoritative', message: 'cron 覆盖' })
+    )
   })
 
   it('同一任务在同一分钟只触发一次', async () => {
-    const runWorkflow = vi.fn().mockResolvedValue(undefined)
+    const emit = vi.fn()
     const now = new Date(2026, 7, 11, 9, 30)
     const deps = {
-      listTasks: () => [task('debounced', 'run_workflow', { workflowId: 'wf-1' })],
-      runWorkflow,
-      emit: vi.fn(),
+      listTasks: () => [task('debounced', 'remind', { message: '去重' })],
+      emit,
       log: vi.fn()
     }
 
     await checkCalendarTasks(now, deps)
     await checkCalendarTasks(new Date(now.getTime() + 20_000), deps)
 
-    expect(runWorkflow).toHaveBeenCalledTimes(1)
+    expect(emit).toHaveBeenCalledTimes(1)
   })
 
   it('分发提醒，并对技能执行记录明确的预留日志', async () => {
@@ -94,7 +96,6 @@ describe('checkCalendarTasks', () => {
         task('reminder', 'remind', { message: '喝水' }),
         task('skill', 'run_skill', { skillId: 'daily-summary' })
       ],
-      runWorkflow: vi.fn(),
       emit,
       log
     })

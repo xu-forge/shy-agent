@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { IPC, type ScheduleTask, type Workflow } from '../../shared/ipc'
+import { IPC, type ScheduleTask } from '../../shared/ipc'
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 
@@ -17,8 +17,8 @@ const task: ScheduleTask = {
   id: 'task-1',
   title: '日报',
   enabled: true,
-  action: 'run_workflow',
-  payload: { workflowId: 'workflow-1' },
+  action: 'remind',
+  payload: { message: '提醒' },
   schedule: {
     enabled: true,
     frequency: 'daily',
@@ -32,24 +32,12 @@ const task: ScheduleTask = {
   updatedAt: '2026-08-11T00:00:00.000Z'
 }
 
-const workflow: Workflow = {
-  id: 'workflow-1',
-  name: '日报工作流',
-  description: '',
-  nodes: [],
-  edges: [],
-  schedule: task.schedule,
-  outputConfig: {},
-  createdAt: '',
-  updatedAt: ''
-}
-
 beforeEach(() => {
   handlers.clear()
 })
 
 describe('schedule task IPC', () => {
-  it('注册 CRUD 与范围展开通道，并为列表和保存响应返回冲突警告', async () => {
+  it('注册 CRUD 与范围展开通道，warnings 永远空数组', async () => {
     const listTasks = vi.fn(() => [task])
     const createTask = vi.fn(() => task)
     const updateTask = vi.fn(() => task)
@@ -61,8 +49,7 @@ describe('schedule task IPC', () => {
       createTask,
       updateTask,
       deleteTask: vi.fn(() => true),
-      expand,
-      listWorkflows: vi.fn(() => [workflow])
+      expand
     })
 
     expect([...handlers.keys()]).toEqual(
@@ -77,10 +64,7 @@ describe('schedule task IPC', () => {
     )
 
     const listResult = await handlers.get(IPC.scheduleTasksList)!({})
-    expect(listResult).toMatchObject({
-      tasks: [task],
-      warnings: [{ taskId: 'task-1', workflowId: 'workflow-1' }]
-    })
+    expect(listResult).toMatchObject({ tasks: [task], warnings: [] })
 
     const createInput = {
       title: task.title,
@@ -91,10 +75,7 @@ describe('schedule task IPC', () => {
     }
     const createResult = await handlers.get(IPC.scheduleTasksCreate)!({}, createInput)
     expect(createTask).toHaveBeenCalledWith(createInput)
-    expect(createResult).toMatchObject({
-      task,
-      warnings: [{ taskId: 'task-1', workflowId: 'workflow-1' }]
-    })
+    expect(createResult).toMatchObject({ task, warnings: [] })
 
     const patch = { title: '新日报' }
     const updateResult = await handlers.get(IPC.scheduleTasksUpdate)!({}, {
@@ -102,18 +83,11 @@ describe('schedule task IPC', () => {
       patch
     })
     expect(updateTask).toHaveBeenCalledWith(task.id, patch)
-    expect(updateResult).toMatchObject({
-      task,
-      warnings: [{ taskId: 'task-1', workflowId: 'workflow-1' }]
-    })
+    expect(updateResult).toMatchObject({ task, warnings: [] })
 
     const rangeStart = '2026-08-01T00:00:00.000Z'
     const rangeEnd = Date.parse('2026-08-31T23:59:00.000Z')
     await handlers.get(IPC.scheduleTasksExpand)!({}, { rangeStart, rangeEnd })
-    expect(expand).toHaveBeenCalledWith(
-      [task],
-      new Date(rangeStart),
-      new Date(rangeEnd)
-    )
+    expect(expand).toHaveBeenCalledWith([task], new Date(rangeStart), new Date(rangeEnd))
   })
 })

@@ -7,7 +7,7 @@ describe('groupOccurrencesByDay', () => {
     const occurrences: ScheduleOccurrence[] = [
       { taskId: 'hourly', at: '2026-08-11T10:00:00.000Z', title: '整点提醒', action: 'remind' },
       { taskId: 'hourly', at: '2026-08-11T08:00:00.000Z', title: '整点提醒', action: 'remind' },
-      { taskId: 'daily', at: '2026-08-11T09:00:00.000Z', title: '日报', action: 'run_workflow' }
+      { taskId: 'daily', at: '2026-08-11T09:00:00.000Z', title: '日报', action: 'remind' }
     ]
 
     expect(groupOccurrencesByDay(occurrences).get('2026-08-11')).toEqual([

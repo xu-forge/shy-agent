@@ -3,10 +3,7 @@ import { IPC, type AgentMode, type ChatRequest, type ModelSettings } from '../sh
 import { getSettings, setSettings } from './settings/store'
 import { runAgent, cancelAgent, pauseAgent, resumeAgent } from './agent/service'
 import { createConfirmWaiter, registerConfirmIpc } from './confirm'
-import { deleteWorkflow, getWorkflow, listWorkflows, saveWorkflow, listRuns } from './workflows/db'
-import { startScheduler, runWorkflowNow } from './workflows/manager'
-import { compileCron } from './workflows/scheduler'
-import { defaultWorkflow } from './workflows/engine'
+import { startScheduler } from './schedule/scheduler-loop'
 import { registerBuiltinTools } from './agent/tools/builtin'
 import { registerComputerTools } from './agent/tools/computer'
 import {
@@ -187,39 +184,6 @@ export function registerCoreIpc(): void {
     return { ok: true, started: true }
   })
 
-  // workflows
-  ipcMain.handle(IPC.workflowList, async () => listWorkflows())
-  ipcMain.handle(IPC.workflowGet, async (_e, id: string) => getWorkflow(id))
-  ipcMain.handle(IPC.workflowSave, async (_e, wf) => {
-    // 每次保存都从交互参数重新编译 cron
-    if (wf?.schedule) {
-      wf = { ...wf, schedule: { ...wf.schedule, cron: compileCron(wf.schedule) } }
-    }
-    return saveWorkflow(wf)
-  })
-  ipcMain.handle(IPC.workflowDelete, async (_e, id: string) => {
-    deleteWorkflow(id)
-    return { ok: true }
-  })
-  ipcMain.handle(IPC.workflowRun, async (_e, id: string) => {
-    try {
-      const run = await runWorkflowNow(id, (event) => emitToRenderer(event))
-      return {
-        ok: run.status === 'success',
-        run,
-        error: run.status === 'failed' ? run.error : undefined
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err)
-      return { ok: false, error }
-    }
-  })
-  ipcMain.handle(IPC.workflowRunsList, async (_e, id?: string) => listRuns(id))
-  ipcMain.handle(IPC.workflowTemplate, async () => defaultWorkflow('股票每日晨报'))
-
-  // 调度器：每次事件发到 renderer
-  startScheduler(
-    (event) => emitToRenderer(event),
-    (event) => mainWindow?.webContents.send(IPC.scheduleRemind, event)
-  )
+  // 调度器：每 30s 检查一次 calendar task
+  startScheduler((event) => mainWindow?.webContents.send(IPC.scheduleRemind, event))
 }

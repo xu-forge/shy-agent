@@ -1,5 +1,5 @@
 import type { ScheduleReminderEvent, ScheduleTask } from '../../shared/ipc'
-import { compileCron, cronMatches } from '../workflows/scheduler'
+import { compileCron, cronMatches } from './scheduler'
 import { listScheduleTasks } from './store'
 
 export type ScheduleEventSink = (event: ScheduleReminderEvent) => void
@@ -11,7 +11,6 @@ export type ScheduleLog = (
 
 export type CalendarTaskRunnerDependencies = {
   listTasks: () => ScheduleTask[]
-  runWorkflow: (workflowId: string, taskId: string) => Promise<unknown>
   emit: ScheduleEventSink
   log: ScheduleLog
 }
@@ -25,10 +24,6 @@ export function setScheduleEventSink(emit: ScheduleEventSink | null): void {
 
 const defaultDependencies: CalendarTaskRunnerDependencies = {
   listTasks: listScheduleTasks,
-  runWorkflow: async (workflowId, taskId) => {
-    const { runWorkflowCalendarTask } = await import('../workflows/manager')
-    await runWorkflowCalendarTask(workflowId, taskId)
-  },
   emit: (event) => eventSink?.(event),
   log: (level, message, metadata) => {
     const output = level === 'error' ? console.error : console.info
@@ -46,9 +41,6 @@ async function dispatchTask(
   dependencies: CalendarTaskRunnerDependencies
 ): Promise<void> {
   switch (task.action) {
-    case 'run_workflow':
-      await dependencies.runWorkflow(task.payload.workflowId, task.id)
-      return
     case 'remind':
       dependencies.emit({
         type: 'schedule_remind',
