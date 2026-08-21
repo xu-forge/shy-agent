@@ -78,6 +78,7 @@ export interface ShyApi {
   }) => Promise<{ name: string; content: string; truncated: boolean }>
   revealAgentLogsDir: () => Promise<{ ok: boolean }>
   onEvent: (handler: (payload: unknown) => void) => () => void
+  onEventByType: <T extends { type: string }>(type: T['type'], handler: (event: T) => void) => () => void
   onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void) => () => void
 }
 

@@ -1,7 +1,7 @@
 /**
  * Event-bridge 索引 — 统一导出。
  *
- * Stage 3 事件流最简版：
+ * Stage 3 事件流最简版:
  * - bus.ts: 1-to-N EventBus(纯函数模块,无 IO)
  * - preload-adapter.ts: 跨 IPC 桥(把 main emit 通过 IPC 推到 renderer)
  * - types.ts: 跨进程事件 schema
@@ -12,3 +12,4 @@
  * - 跨进程:preload-adapter 桥接 main process 的 bus → IPC → renderer
  */
 export { EventBus, getDefaultBus, setDefaultBus } from './bus'
+export { bridgeEventBusToIpc, type WindowProvider } from './preload-adapter'

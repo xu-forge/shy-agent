@@ -7,6 +7,7 @@ import { normalizeVerifyCommand } from './goalUi'
 import { ReActContent } from './chat/ReActContent'
 import { ToolCallCard } from './chat/ToolCallCard'
 import { StatusBar } from './chat/StatusBar'
+import { EventLog } from './chat/EventLog'
 
 type Props = {
   notice?: string
@@ -481,6 +482,7 @@ export function ChatWorkspace({ notice, sessionId, onSessionsChanged }: Props): 
               <>
                 <div className="composer-dock">{composerInner()}</div>
                 <StatusBar sessionId={sessionId} onCancel={() => void onCancel()} />
+                <EventLog />
               </>
             ) : null}
           </div>

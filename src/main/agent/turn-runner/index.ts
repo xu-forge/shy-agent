@@ -22,7 +22,7 @@
  */
 import { randomUUID } from 'crypto'
 import { streamChatCompletion, type LLMMessage } from '../llm-client'
-import { compactHistory, DEFAULT_COMPACTION_SETTINGS, type CompactionSettings } from '../compaction'
+import { compactHistory, type CompactionSettings } from '../compaction'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import type { DynamicStructuredTool } from '@langchain/core/tools'
 import {

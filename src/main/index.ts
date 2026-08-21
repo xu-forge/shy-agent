@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { registerCoreIpc, resumeInterruptedGoalSessions, setMainWindow } from './ipc'
 import { ensureShyHomeDirs, resolveShyHome } from './paths'
 import { dropLegacyWorkflowTables, migrateLegacyUserData } from './migration'
+import { bridgeEventBusToIpc, getDefaultBus } from './event-bridge'
 
 let bootResumeAttempted = false
 
@@ -85,6 +86,12 @@ app.whenReady().then(() => {
   })
 
   registerCoreIpc()
+  // Stage 3.2: 把 EventBus 桥接到 IPC,让 main emit 的事件自动推到 renderer
+  // 通过 getMainWindow 闭包动态拿最新 mainWindow(支持重开窗口)
+  bridgeEventBusToIpc(getDefaultBus(), () => {
+    const wins = BrowserWindow.getAllWindows()
+    return wins[0] ?? null
+  })
   createWindow()
 
   app.on('activate', function () {

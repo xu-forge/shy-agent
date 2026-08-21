@@ -32,7 +32,7 @@ import type {
   CompactionPlan,
   CompactionSettings
 } from './types'
-import { estimateHistoryTokens, estimateMessageTokens, estimateTextTokens } from './token-estimator'
+import { estimateHistoryTokens, estimateMessageTokens } from './token-estimator'
 
 /** SUMMARY 标记消息的 role（不参与 LLM 工具调用,仅作锚定） */
 export const SUMMARY_SENTINEL_CONTENT_PREFIX = '[CONTEXT_SUMMARY]'

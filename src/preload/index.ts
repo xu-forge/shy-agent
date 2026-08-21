@@ -108,6 +108,24 @@ const shy = {
     ipcRenderer.on(IPC.events, listener)
     return () => ipcRenderer.removeListener(IPC.events, listener)
   },
+  /**
+   * 按 type 订阅事件(Stage 3.2 — renderer 端按 type 过滤,不用全收再过滤)
+   * 用法:
+   *   const off = window.shy.onEventByType('assistant_delta', (e) => appendToChat(e.content))
+   *   off()
+   */
+  onEventByType: <T extends { type: string }>(
+    type: T['type'],
+    handler: (event: T) => void
+  ): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
+      if (payload && typeof payload === 'object' && (payload as { type?: string }).type === type) {
+        handler(payload as T)
+      }
+    }
+    ipcRenderer.on(IPC.events, listener)
+    return () => ipcRenderer.removeListener(IPC.events, listener)
+  },
   onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: ScheduleReminderEvent): void => {
       handler(payload)
