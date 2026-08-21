@@ -101,6 +101,8 @@ export function buildAgentGraph(opts: {
   onStagnate?: () => void
   budget?: Partial<GraphBudget>
   signal?: AbortSignal
+  /** Stage 2.5: 模型 contextWindow,用于 compaction 触发线计算 */
+  contextWindow?: number
 }): {
   invoke: (state: AgentGraphState, invokeOpts?: { signal?: AbortSignal; recursionLimit?: number }) => Promise<AgentGraphState>
 } {
@@ -129,6 +131,8 @@ function buildV2Graph(opts: {
   onStagnate?: () => void
   budget?: Partial<GraphBudget>
   signal?: AbortSignal
+  /** Stage 2.5: 模型 contextWindow,用于 compaction 触发线计算 */
+  contextWindow?: number
 }) {
   const budget: GraphBudget = {
     stagnationRounds: opts.budget?.stagnationRounds ?? 20,
