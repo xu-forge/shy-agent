@@ -29,6 +29,7 @@ import { getShyPaths } from './paths'
 import { listAgentLogFiles, readAgentLogFile, revealAgentLogsDir } from './logs/agent-logs'
 import { registerScheduleIpc } from './schedule/ipc'
 import { resumeInterruptedGoals } from './agent/boot-resume'
+import { getDefaultBus } from './event-bridge'
 
 let mainWindow: BrowserWindow | null = null
 const waitConfirm = createConfirmWaiter(() => mainWindow)
@@ -37,8 +38,20 @@ export function setMainWindow(win: BrowserWindow | null): void {
   mainWindow = win
 }
 
+/**
+ * Stage 3.2 集成:所有事件走 EventBus,preload-adapter 桥接 → IPC → renderer。
+ * 这样 EventLog (renderer 端 useAgentEvent) 和老 onEvent 监听器都自动收到,无双发。
+ */
 function emitToRenderer(payload: unknown): void {
-  mainWindow?.webContents.send(IPC.events, payload)
+  // payload 通常是 AgentEvent 类型,但 ipc.ts 里有几个老代码可能传混合对象,
+  // 用宽松类型接受,bus 内部有类型守卫(没有 type 字段就被忽略)
+  const event = payload as { type?: string } & Record<string, unknown>
+  if (!event || typeof event.type !== 'string') {
+    // 兼容老 payload(无 type),仍然走老路直接 send
+    mainWindow?.webContents.send(IPC.events, payload)
+    return
+  }
+  getDefaultBus().emitSync(event as Parameters<ReturnType<typeof getDefaultBus>['emitSync']>[0])
 }
 
 export function resumeInterruptedGoalSessions(): void {
