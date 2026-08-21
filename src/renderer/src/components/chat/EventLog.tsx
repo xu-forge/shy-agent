@@ -10,7 +10,7 @@
  * 这是 minimax Inspector 右下角"event stream" 区域的轻量版。
  */
 import { useEffect, useRef, useState } from 'react'
-import { useAgentEvent } from '../../lib/useAgentEvent'
+import type { AgentEvent } from '../../../../shared/ipc'
 
 const MAX_ENTRIES = 30
 
@@ -80,18 +80,18 @@ export function EventLog(): React.JSX.Element {
     setEntries((prev) => [...prev.slice(-(MAX_ENTRIES - 1)), entry])
   }
 
-  // 订阅所有关心的 type
-  useAgentEvent('status', (e) => push('status', e))
-  useAgentEvent('assistant_delta', (e) => push('assistant_delta', e))
-  useAgentEvent('assistant_done', (e) => push('assistant_done', e))
-  useAgentEvent('tool', (e) => push('tool', e))
-  useAgentEvent('task', (e) => push('task', e))
-  useAgentEvent('error', (e) => push('error', e))
-  useAgentEvent('done', (e) => push('done', e))
-  useAgentEvent('notify', (e) => push('notify', e))
-  useAgentEvent('blocked', (e) => push('blocked', e))
-  useAgentEvent('goal_complete', (e) => push('goal_complete', e))
-  useAgentEvent('result', (e) => push('result', e))
+  // 订阅所有关心的 type — 改用单 onEvent + 内部 switch(避免 11 个 listener 触发 MaxListenersExceededWarning)
+  useEffect(() => {
+    if (!window.shy?.onEvent) return
+    const off = window.shy.onEvent((payload: unknown) => {
+      const event = payload as { type?: string } & Record<string, unknown>
+      if (!event?.type) return
+      // 只关心 SUBSCRIBED_TYPES 里的(白名单,过滤掉 confirm_required 等不关心的)
+      if (!SUBSCRIBED_TYPES.includes(event.type as (typeof SUBSCRIBED_TYPES)[number])) return
+      push(event.type, event)
+    })
+    return off
+  }, [])
 
   // Stage 4.3: 防止后续有未订阅的 type(对账 sanity check)
   useEffect(() => {
