@@ -21,7 +21,8 @@ const DEFAULTS: ModelSettings = {
   contextWindow: 1_000_000,
   compressThreshold: 60,
   blockedAuditRounds: 3,
-  enableGoalCompleteReport: true
+  enableGoalCompleteReport: true,
+  autoApproveTools: false
 }
 
 function settingsPath(): string {
@@ -69,7 +70,9 @@ export async function setSettings(next: ModelSettings): Promise<ModelSettings> {
     enableGoalCompleteReport:
       typeof next.enableGoalCompleteReport === 'boolean'
         ? next.enableGoalCompleteReport
-        : DEFAULTS.enableGoalCompleteReport
+        : DEFAULTS.enableGoalCompleteReport,
+    autoApproveTools:
+      typeof next.autoApproveTools === 'boolean' ? next.autoApproveTools : DEFAULTS.autoApproveTools
   }
   await mkdir(dirname(settingsPath()), { recursive: true })
   await writeFile(settingsPath(), JSON.stringify(merged, null, 2), 'utf8')

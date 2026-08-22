@@ -118,6 +118,7 @@ describe('Stage 1+2 集成可行性证明', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-1'
     }).filter((t) => t.name === 'runtime_ping')
 

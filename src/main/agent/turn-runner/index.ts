@@ -23,15 +23,16 @@
 import { randomUUID } from 'crypto'
 import { streamChatCompletion, type LLMMessage } from '../llm-client'
 import { compactHistory, type CompactionSettings } from '../compaction'
-import { ToolNode } from '@langchain/langgraph/prebuilt'
-import type { DynamicStructuredTool } from '@langchain/core/tools'
-import {
-  AIMessage,
-  HumanMessage,
-  SystemMessage,
-  ToolMessage
-} from '@langchain/core/messages'
-import type { TurnInput, TurnResult, TurnStep, TurnStepEvent } from './types'
+import { runToolCalls, type ShyTool } from '../tools/dispatcher'
+import type {
+  TurnInput,
+  TurnResult,
+  TurnStep,
+  TurnStepEvent,
+  TurnHooks,
+  BeforeLlmCallDecision,
+  AfterLlmCallDecision
+} from './types'
 import {
   newTurnId,
   incrementTurn,
@@ -39,8 +40,7 @@ import {
   buildContext,
   handleToolCalls,
   appendHistory,
-  decideNext,
-  emitToolResult
+  decideNext
 } from './lifecycle'
 
 export type { TurnInput, TurnResult, TurnStep, TurnStepEvent } from './types'
@@ -50,12 +50,14 @@ export type RunTurnDeps = {
   emit: (event: TurnStepEvent) => void
   /** ReAct 引导 prompt（由 caller 提供，plan/act/verify 不同） */
   getReactGuide: (mode: 'plan' | 'act' | 'verify') => string
-  /** LangChain DynamicStructuredTool[]（与 TurnInput.tools 同名映射） */
-  tools: DynamicStructuredTool[]
+  /** 自研工具（ShyTool）列表，用于执行 */
+  tools: ShyTool[]
   /** mode（决定 react guide） */
   mode: 'plan' | 'act' | 'verify'
   /** 起始 turn number */
   startTurn: number
+  /** minimax-feature-port：turn hooks（beforeLlmCall/afterLlmCall/beforeToolCall/afterToolCall/onHistoryChanged/onStepEnd） */
+  hooks?: TurnHooks
   /** Stage 2.3 集成:system-reminder service,可选。传 null/undefined 跳过 */
   systemReminder?: {
     buildReminder: (input: {
@@ -88,9 +90,11 @@ export type RunTurnDeps = {
   }
 }
 
-function computeProgress(
-  checklist: ReadonlyArray<{ id: string; title: string; done: boolean }>
-): { done: number; total: number; pct: number } {
+function computeProgress(checklist: ReadonlyArray<{ id: string; title: string; done: boolean }>): {
+  done: number
+  total: number
+  pct: number
+} {
   const total = checklist.length
   const done = checklist.filter((c) => c.done).length
   const pct = total === 0 ? 0 : Math.round((done / total) * 100)
@@ -100,10 +104,7 @@ function computeProgress(
 /**
  * 跑一轮 turn：完整 8 步 + 工具循环（支持多次 tool call）。
  */
-export async function runTurn(
-  input: TurnInput,
-  deps: RunTurnDeps
-): Promise<TurnResult> {
+export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<TurnResult> {
   const turnId = newTurnId()
   const stepDurations: Record<TurnStep, number> = {
     incrementTurn: 0,
@@ -278,13 +279,32 @@ export async function runTurn(
       toolCallId: m.toolCallId
     }))
   }
-  const toolNode = new ToolNode(deps.tools)
 
-  let continueLoop = true
   let loopGuard = 0
   const maxLoops = 8 // 单 turn 最多 8 个 tool call 循环
 
-  while (continueLoop) {
+  // ── hooks: beforeToolCall / afterToolCall（包装工具执行） ──
+  const hooks = deps.hooks ?? {}
+  const hookedTools = deps.tools.map((t) => ({
+    ...t,
+    run: async (args: unknown) => {
+      if (hooks.beforeToolCall?.length) {
+        for (const h of hooks.beforeToolCall) {
+          const d = await h({ turnId, sessionId: input.sessionId, name: t.name, args })
+          if (d?.type === 'skip') {
+            return JSON.stringify({ ok: false, skipped: d.reason })
+          }
+        }
+      }
+      const output = await t.run(args as never)
+      for (const h of hooks.afterToolCall ?? []) {
+        await h({ turnId, sessionId: input.sessionId, name: t.name, args, output })
+      }
+      return output
+    }
+  }))
+
+  while (true) {
     if (input.signal?.aborted) {
       return {
         status: 'cancelled',
@@ -304,6 +324,41 @@ export async function runTurn(
         tokenUsed,
         stepDurations,
         error: `单 turn 超过 ${maxLoops} 个 tool call 循环`
+      }
+    }
+
+    // ── hooks: beforeLlmCall（决策：continue / skip / replaceMessages / abort） ──
+    if (hooks.beforeLlmCall?.length) {
+      let decision: BeforeLlmCallDecision | undefined
+      for (const h of hooks.beforeLlmCall) {
+        const d = await h({
+          turnId,
+          sessionId: input.sessionId,
+          phase: loopGuard === 1 ? 'initial' : 'iteration',
+          messages: history,
+          systemPrompt
+        })
+        if (d !== 'continue') {
+          decision = d
+          break
+        }
+      }
+      if (decision && decision !== 'continue') {
+        if (decision.type === 'skip') {
+          finalContent = decision.reason
+          return { status: 'done', turnId, finalContent, stepsExecuted, tokenUsed, stepDurations }
+        }
+        if (decision.type === 'abort') {
+          return erroredResult(turnId, stepDurations, tokenUsed, stepsExecuted, new Error(decision.reason))
+        }
+        if (decision.type === 'replaceMessages') {
+          history = decision.messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            toolCalls: m.toolCalls ? [...m.toolCalls] : undefined,
+            toolCallId: m.toolCallId
+          }))
+        }
       }
     }
 
@@ -360,7 +415,8 @@ export async function runTurn(
         } else if (ev.type === 'tool_calls') {
           for (const tc of ev.toolCalls) {
             // OpenAI SDK 7.x union 类型：function 字段需要 cast
-            const fn = (tc as unknown as { function?: { name: string; arguments: string } }).function
+            const fn = (tc as unknown as { function?: { name: string; arguments: string } })
+              .function
             if (fn) {
               accToolCalls.push({ id: tc.id, name: fn.name, args: fn.arguments })
             }
@@ -373,16 +429,63 @@ export async function runTurn(
       }
       tokenUsed.prompt += promptTok
       tokenUsed.completion += completionTok
-      deps.emit({ type: 'turn:usage', turnId, promptTokens: promptTok, completionTokens: completionTok })
+      deps.emit({
+        type: 'turn:usage',
+        turnId,
+        promptTokens: promptTok,
+        completionTokens: completionTok
+      })
       stepDurations.callLLM = Date.now() - startMs
       stepsExecuted += 1
-      deps.emit({ type: 'step:end', step: 'callLLM', turnId, stepIndex: 3, durationMs: stepDurations.callLLM, ok: true })
+      deps.emit({
+        type: 'step:end',
+        step: 'callLLM',
+        turnId,
+        stepIndex: 3,
+        durationMs: stepDurations.callLLM,
+        ok: true
+      })
       llmResponse = { content: accContent, toolCalls: accToolCalls }
     } catch (err) {
       return erroredResult(turnId, stepDurations, tokenUsed, stepsExecuted, err)
     }
 
     finalContent = llmResponse.content
+
+    // ── hooks: afterLlmCall（决策：continue / retry / fail） ──
+    if (hooks.afterLlmCall?.length) {
+      let decision: AfterLlmCallDecision | undefined
+      for (const h of hooks.afterLlmCall) {
+        const d = await h({
+          turnId,
+          sessionId: input.sessionId,
+          content: llmResponse.content,
+          toolCalls: llmResponse.toolCalls
+        })
+        if (d !== 'continue') {
+          decision = d
+          break
+        }
+      }
+      if (decision && decision !== 'continue') {
+        if (decision.type === 'fail') {
+          return erroredResult(turnId, stepDurations, tokenUsed, stepsExecuted, new Error(decision.reason))
+        }
+        if (decision.type === 'retry') {
+          // 追加重试提示为 user 消息，重跑本轮 LLM（不带工具执行）
+          history = [
+            ...history,
+            {
+              role: 'assistant' as const,
+              content: llmResponse.content,
+              toolCalls: llmResponse.toolCalls
+            },
+            { role: 'user' as const, content: decision.prompt }
+          ]
+          continue
+        }
+      }
+    }
 
     // ── 5. handleToolCalls ──
     try {
@@ -413,7 +516,14 @@ export async function runTurn(
         break
       } catch (err) {
         const errStart = Date.now()
-        deps.emit({ type: 'step:end', step: 'callLLM', turnId, stepIndex: 3, durationMs: errStart - errStart, ok: false })
+        deps.emit({
+          type: 'step:end',
+          step: 'callLLM',
+          turnId,
+          stepIndex: 3,
+          durationMs: errStart - errStart,
+          ok: false
+        })
         return erroredResult(turnId, stepDurations, tokenUsed, stepsExecuted, err)
       }
     }
@@ -422,40 +532,18 @@ export async function runTurn(
     try {
       const startMs = Date.now()
       deps.emit({ type: 'step:start', step: 'runTools', turnId, stepIndex: 5 })
-      // 把当前 assistant 消息写进 history（LangChain ToolNode 需要 last message 是 assistant with tool_calls）
-      const assistantMsg = new AIMessage('')
-      ;(assistantMsg as { tool_calls?: unknown }).tool_calls = llmResponse.toolCalls.map((tc) => ({
-        id: tc.id,
-        name: tc.name,
-        args: tc.args,
-        type: 'tool_call'
-      }))
-      const messagesForToolNode = [
-        new SystemMessage(systemPrompt),
-        ...history.map((m) => {
-          if (m.role === 'user') return new HumanMessage(m.content)
-          if (m.role === 'tool') return new ToolMessage({ content: m.content, tool_call_id: m.toolCallId ?? '' })
-          return new AIMessage(m.content)
-        }),
-        assistantMsg
-      ]
-      const toolResult = (await toolNode.invoke({ messages: messagesForToolNode })) as {
-        messages: ToolMessage[]
-      }
-      for (const tm of toolResult.messages) {
-        const tmAny = tm as unknown as { tool_call_id?: string; content: unknown }
-        emitToolResult(
-          {
-            id: tmAny.tool_call_id ?? '',
-            output: typeof tmAny.content === 'string' ? tmAny.content : JSON.stringify(tmAny.content)
-          },
-          deps.emit,
-          turnId
-        )
-      }
+      // 自研分发器执行工具：校验参数 + 执行 + emit turn:tool_result（含 hook 包装）
+      const toolResults = await runToolCalls(hookedTools, llmResponse.toolCalls, turnId, deps.emit)
       stepDurations.runTools = Date.now() - startMs
       stepsExecuted += llmResponse.toolCalls.length
-      deps.emit({ type: 'step:end', step: 'runTools', turnId, stepIndex: 5, durationMs: stepDurations.runTools, ok: true })
+      deps.emit({
+        type: 'step:end',
+        step: 'runTools',
+        turnId,
+        stepIndex: 5,
+        durationMs: stepDurations.runTools,
+        ok: true
+      })
 
       // ── 7. appendHistory ──
       const histStartMs = Date.now()
@@ -465,18 +553,31 @@ export async function runTurn(
           content: llmResponse.content,
           toolCalls: llmResponse.toolCalls
         },
-        ...toolResult.messages.map((tm) => {
-          const tmAny = tm as unknown as { tool_call_id?: string; content: unknown }
-          return {
-            role: 'tool' as const,
-            content: typeof tmAny.content === 'string' ? tmAny.content : JSON.stringify(tmAny.content),
-            toolCallId: tmAny.tool_call_id
-          }
-        })
+        ...toolResults.map((tr) => ({
+          role: 'tool' as const,
+          content: tr.content,
+          toolCallId: tr.tool_call_id
+        }))
       ]
       const appended = appendHistory(history, newMessages, deps.emit, turnId)
       history = appended.history as typeof history
       stepDurations.appendHistory = Date.now() - histStartMs
+
+      // ── hooks: onHistoryChanged / onStepEnd ──
+      for (const h of hooks.onHistoryChanged ?? []) {
+        await h({ turnId, sessionId: input.sessionId, reason: 'append', messages: history })
+      }
+      for (const h of hooks.onStepEnd ?? []) {
+        await h({
+          turnId,
+          sessionId: input.sessionId,
+          content: llmResponse.content,
+          toolResults: toolResults.map((tr) => ({
+            tool_call_id: tr.tool_call_id,
+            content: tr.content
+          }))
+        })
+      }
     } catch (err) {
       return erroredResult(turnId, stepDurations, tokenUsed, stepsExecuted, err)
     }

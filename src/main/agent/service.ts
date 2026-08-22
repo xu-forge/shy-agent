@@ -1,13 +1,14 @@
-import { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages'
+import type { LLMClientConfig } from './llm-client'
 import { getSettings } from '../settings/store'
 import { buildTools, type ToolContext } from './tools/registry'
 import { buildAgentGraph } from './graph'
 import { AgentRunLogWriter, mapAgentEventToLog } from './run-log'
-import { matchSkills, formatSkillsForPrompt } from '../skills/match'
+import { getEnabledSkillEntries } from '../skills/store'
+import { renderSkillCatalog } from '../skills/catalog'
 import { listLongMemory, upsertSessionTask, deleteSessionTask } from '../memory/db'
 import { compressWithLlm } from '../memory/compress'
 import { appendMessage, getSession, updateSessionRuntime } from '../sessions/store'
+import { getSessionWorkspace } from '../paths'
 import { summarizeSessionTitle } from '../sessions/title'
 import type { AgentEvent, AgentMode, GoalChecklistItem, TaskSource } from '../../shared/ipc'
 import { runGoalDriver } from './goal-driver'
@@ -73,7 +74,10 @@ function upsertChecklistItem(
   return [...list, next]
 }
 
-export async function waitIfPaused(sessionId: string, emit: (e: AgentEvent) => void): Promise<void> {
+export async function waitIfPaused(
+  sessionId: string,
+  emit: (e: AgentEvent) => void
+): Promise<void> {
   const rt = runtimes.get(sessionId)
   if (!rt?.paused) return
   emit({ type: 'status', message: '已暂停，等待恢复…' })
@@ -159,35 +163,34 @@ export async function runAgent(args: RunArgs): Promise<void> {
       return
     }
 
-    const llm = new ChatOpenAI({
-      model: settings.model,
+    const llmConfig: LLMClientConfig = {
+      baseURL: settings.baseURL,
       apiKey: settings.apiKey,
-      configuration: { baseURL: settings.baseURL },
-      temperature: 0.2,
-      streaming: true
-    })
+      model: settings.model
+    }
 
-    const matched = await matchSkills(message || session?.goal || '', 3)
-    const skillBlock = formatSkillsForPrompt(matched)
-    if (matched.length) {
+    // 技能目录注入（minimax-feature-port）：token 预算内渲染 catalog，替代旧 token 匹配注入
+    const enabledSkills = await getEnabledSkillEntries()
+    const contextWindow = settings.contextWindow ?? 1_000_000
+    const skillCatalog = renderSkillCatalog(enabledSkills, Math.floor(contextWindow * 0.02))
+    const skillBlock = skillCatalog.text
+    if (skillCatalog.included > 0) {
       emit({
         type: 'notify',
-        message: `已匹配技能：${matched.map((s) => s.name).join('、')}`
+        message: `已加载技能目录：${skillCatalog.included} 个技能可用（skill 工具读取全文）`
       })
     }
 
     const ctx: ToolContext = {
       emit: (event, payload) => {
-        if (event === 'tool') {
-          const p = payload as { name?: string }
-          emit({ type: 'tool', name: p.name ?? 'tool', detail: payload })
-        } else if (event === 'memory') {
+        if (event === 'memory') {
           const p = payload as { action: string; entryId?: string; title?: string }
           emit({ type: 'memory', ...p })
         }
       },
       confirmHighRisk: waitConfirm,
-      sessionId
+      sessionId,
+      workspaceDir: getSessionWorkspace(sessionId)
     }
 
     const tools = buildTools(ctx)
@@ -210,11 +213,23 @@ export async function runAgent(args: RunArgs): Promise<void> {
       evidence?: string
       source?: TaskSource
       reason?: string
+      input?: unknown
+      output?: unknown
+      error?: string
     }): void => {
       if (event.type === 'status' && event.message) emit({ type: 'status', message: event.message })
+      if (event.type === 'assistant_delta' && event.content) {
+        emit({ type: 'assistant_delta', content: event.content })
+      }
       if (event.type === 'assistant' && event.content) {
         emit({ type: 'assistant', content: event.content })
         appendMessage(sessionId, 'assistant', event.content)
+      }
+      if (event.type === 'tool_call' && event.id) {
+        emit({ type: 'tool_call', id: event.id, name: event.name ?? 'tool', input: event.input })
+      }
+      if (event.type === 'tool_result' && event.id) {
+        emit({ type: 'tool_result', id: event.id, output: event.output, error: event.error })
       }
       if (event.type === 'tool') {
         emit({ type: 'tool', name: event.name ?? 'tool', detail: event.detail })
@@ -329,24 +344,36 @@ export async function runAgent(args: RunArgs): Promise<void> {
       const history = (fresh?.messages ?? [])
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .slice(-20)
-        .map((m) => (m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content)))
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
-      const finalMessages =
+      const finalMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> =
         resume || totalRound > 0
           ? [
               ...(runningShortMemory
-                ? [new SystemMessage(`【短期记忆/保关键压缩】\n${runningShortMemory}`)]
+                ? [
+                    {
+                      role: 'system' as const,
+                      content: `【短期记忆/保关键压缩】\n${runningShortMemory}`
+                    }
+                  ]
                 : []),
               ...history,
-              new HumanMessage(
-                totalRound > 0
-                  ? '请从上次落盘点继续推进未完成目标，对照验收清单执行（勿重复已完成项）。'
-                  : '请从暂停点继续推进未完成目标，对照验收清单执行。'
-              )
+              {
+                role: 'user' as const,
+                content:
+                  totalRound > 0
+                    ? '请从上次落盘点继续推进未完成目标，对照验收清单执行（勿重复已完成项）。'
+                    : '请从暂停点继续推进未完成目标，对照验收清单执行。'
+              }
             ]
           : [
               ...(runningShortMemory
-                ? [new SystemMessage(`【短期记忆/保关键压缩】\n${runningShortMemory}`)]
+                ? [
+                    {
+                      role: 'system' as const,
+                      content: `【短期记忆/保关键压缩】\n${runningShortMemory}`
+                    }
+                  ]
                 : []),
               ...history
             ]
@@ -384,6 +411,19 @@ export async function runAgent(args: RunArgs): Promise<void> {
       lastDoneCount = rt.checklist.filter((c) => c.done).length
       stagnantRounds = (result?.stagnantRounds as number) ?? 0
 
+      // 落库 + 推送到 UI：交互式单段产出的完整助手回复。
+      // turn-runner 只发 assistant_delta（流式增量），这里用 graph 返回的 finalContent 补发完整 assistant，
+      // 让 app 既能实时打字、又能把回复持久化进会话（否则交互式回复既不显示也不落库）。
+      const aiMsg = (result?.messages ?? []).find((m) => {
+        const mm = m as { _getType?: () => string }
+        return typeof mm._getType === 'function' && mm._getType() === 'ai'
+      })
+      const aiContent =
+        aiMsg && typeof (aiMsg as { content?: unknown }).content === 'string'
+          ? (aiMsg as { content: string }).content
+          : ''
+      if (aiContent) graphEmit({ type: 'assistant', content: aiContent })
+
       if (ac.signal.aborted) {
         updateSessionRuntime(sessionId, {
           paused: rt.paused,
@@ -406,7 +446,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
 
         if (shouldCompress) {
           runningShortMemory = await compressWithLlm(
-            llm,
+            llmConfig,
             [
               runningShortMemory,
               message,
@@ -435,7 +475,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
 
     if (exitReason === 'completed') {
       const compressed = await compressWithLlm(
-        llm,
+        llmConfig,
         [
           runningShortMemory,
           message,
@@ -451,7 +491,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
         checkpoint: null
       })
 
-      const title = await summarizeSessionTitle(sessionId, llm)
+      const title = await summarizeSessionTitle(sessionId, llmConfig)
       if (title) emit({ type: 'session', title })
       emit({ type: 'done', reason: 'completed' })
     } else {

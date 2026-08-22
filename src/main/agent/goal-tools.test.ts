@@ -12,7 +12,9 @@ import type { AgentEvent } from './service'
 import type { MockedFunction } from 'vitest'
 
 const mkEvent = (): AgentEvent[] => []
-const mkSession = (checklist: Array<{ id: string; title: string; done: boolean; check?: string }> = []): import('../../shared/ipc').SessionDetail => ({
+const mkSession = (
+  checklist: Array<{ id: string; title: string; done: boolean; check?: string }> = []
+): import('../../shared/ipc').SessionDetail => ({
   id: 's1',
   title: 'test',
   mode: 'goal' as const,
@@ -24,19 +26,21 @@ const mkSession = (checklist: Array<{ id: string; title: string; done: boolean; 
   messages: [],
   shortMemory: ''
 })
-const mkGetSnapshot = (overrides = {}) => () => ({
-  goal: '测试目标',
-  checklist: [{ id: '1', title: '步骤 1', done: true }],
-  runStatus: 'running',
-  progress: { done: 1, total: 1 },
-  budget: { tokenUsed: 100, tokenBudget: 1000, pct: 10, disabled: false },
-  stagnantRounds: 0,
-  blockedRounds: 0,
-  blockedAuditRounds: 3,
-  paused: false,
-  checkpoint: null,
-  ...overrides
-})
+const mkGetSnapshot =
+  (overrides = {}) =>
+  () => ({
+    goal: '测试目标',
+    checklist: [{ id: '1', title: '步骤 1', done: true }],
+    runStatus: 'running',
+    progress: { done: 1, total: 1 },
+    budget: { tokenUsed: 100, tokenBudget: 1000, pct: 10, disabled: false },
+    stagnantRounds: 0,
+    blockedRounds: 0,
+    blockedAuditRounds: 3,
+    paused: false,
+    checkpoint: null,
+    ...overrides
+  })
 
 describe('makeGetGoalTool', () => {
   it('name 是 get_goal', () => {
@@ -60,7 +64,7 @@ describe('makeGetGoalTool', () => {
       blockedAuditRounds: 3,
       enableGoalCompleteReport: true
     })
-    const result = await tool.func({})
+    const result = await tool.run({})
     const parsed = JSON.parse(String(result))
     expect(parsed.goal).toBe('我的目标')
     expect(parsed.checklist).toEqual([{ id: '1', title: '步骤 1', done: true }])
@@ -90,7 +94,7 @@ describe('makeUpdateGoalTool', () => {
       enableGoalCompleteReport: true
     })
     ;(getSession as unknown as MockedFunction<typeof getSession>).mockReturnValue(mkSession())
-    const result = await tool.func({ status: 'complete', tokensUsed: 100 })
+    const result = await tool.run({ status: 'complete', tokensUsed: 100 })
     const parsed = JSON.parse(String(result))
     expect(parsed.ok).toBe(false)
     expect(parsed.error).toContain('Completion audit gate rejected')
@@ -107,13 +111,16 @@ describe('makeUpdateGoalTool', () => {
       enableGoalCompleteReport: false
     })
     ;(getSession as unknown as MockedFunction<typeof getSession>).mockReturnValue(mkSession())
-    const result = await tool.func({ status: 'complete', tokensUsed: 200 })
+    const result = await tool.run({ status: 'complete', tokensUsed: 200 })
     const parsed = JSON.parse(String(result))
     expect(parsed.ok).toBe(true)
     expect(parsed.status).toBe('complete')
     expect(parsed.reported).toBe(false)
     expect(events).toHaveLength(0)
-    expect(updateSessionRuntime).toHaveBeenCalledWith('s1', expect.objectContaining({ runStatus: 'completed' }))
+    expect(updateSessionRuntime).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ runStatus: 'completed' })
+    )
   })
 
   it('auditCheck 通过 + report on → emit goal_complete', async () => {
@@ -126,8 +133,10 @@ describe('makeUpdateGoalTool', () => {
       blockedAuditRounds: 3,
       enableGoalCompleteReport: true
     })
-    ;(getSession as unknown as MockedFunction<typeof getSession>).mockReturnValue(mkSession([{ id: '1', title: 'a', done: true }]))
-    await tool.func({ status: 'complete', tokensUsed: 500 })
+    ;(getSession as unknown as MockedFunction<typeof getSession>).mockReturnValue(
+      mkSession([{ id: '1', title: 'a', done: true }])
+    )
+    await tool.run({ status: 'complete', tokensUsed: 500 })
     expect(events).toHaveLength(1)
     expect(events[0].type).toBe('goal_complete')
     expect((events[0] as Extract<AgentEvent, { type: 'goal_complete' }>).tokenUsed).toBe(500)
@@ -144,7 +153,7 @@ describe('makeUpdateGoalTool', () => {
       enableGoalCompleteReport: true
     })
     ;(getSession as unknown as MockedFunction<typeof getSession>).mockReturnValue(mkSession())
-    const result = await tool.func({ status: 'blocked', reason: '网络问题' })
+    const result = await tool.run({ status: 'blocked', reason: '网络问题' })
     const parsed = JSON.parse(String(result))
     expect(parsed.ok).toBe(false)
     expect(parsed.error).toContain('Blocked audit gate rejected')
@@ -162,7 +171,7 @@ describe('makeUpdateGoalTool', () => {
       enableGoalCompleteReport: true
     })
     ;(getSession as unknown as MockedFunction<typeof getSession>).mockReturnValue(mkSession())
-    const result = await tool.func({ status: 'blocked', reason: 'LLM 一直同样失败' })
+    const result = await tool.run({ status: 'blocked', reason: 'LLM 一直同样失败' })
     const parsed = JSON.parse(String(result))
     expect(parsed.ok).toBe(true)
     expect(parsed.status).toBe('blocked')
@@ -171,7 +180,10 @@ describe('makeUpdateGoalTool', () => {
     expect(events[0].type).toBe('blocked')
     expect((events[0] as Extract<AgentEvent, { type: 'blocked' }>).rounds).toBe(3)
     expect((events[0] as Extract<AgentEvent, { type: 'blocked' }>).reason).toBe('LLM 一直同样失败')
-    expect(updateSessionRuntime).toHaveBeenCalledWith('s1', expect.objectContaining({ runStatus: 'idle', paused: true }))
+    expect(updateSessionRuntime).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ runStatus: 'idle', paused: true })
+    )
   })
 
   it('session 不存在 → ok=false', async () => {
@@ -184,7 +196,7 @@ describe('makeUpdateGoalTool', () => {
       enableGoalCompleteReport: true
     })
     ;(getSession as unknown as MockedFunction<typeof getSession>).mockReturnValue(null)
-    const result = await tool.func({ status: 'complete' })
+    const result = await tool.run({ status: 'complete' })
     const parsed = JSON.parse(String(result))
     expect(parsed.ok).toBe(false)
     expect(parsed.error).toBe('session not found')

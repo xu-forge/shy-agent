@@ -46,6 +46,8 @@ export function bridgeEventBusToIpc(bus: EventBus, getWindow: WindowProvider): (
     'assistant_delta',
     'assistant_done',
     'tool',
+    'tool_call',
+    'tool_result',
     'memory',
     'goal',
     'task',
@@ -56,7 +58,10 @@ export function bridgeEventBusToIpc(bus: EventBus, getWindow: WindowProvider): (
     'notify',
     'session',
     'blocked',
-    'goal_complete'
+    'goal_complete',
+    'skills_changed',
+    'browser_navigated',
+    'browser_screenshot'
   ]
 
   const unsubs: Array<() => void> = []

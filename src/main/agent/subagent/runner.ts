@@ -10,11 +10,9 @@
  *
  * 这一版实现「能跑」最小集；Stage 1.4 换成 8 步 turn-runner 后会替换。
  */
-import { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, SystemMessage, AIMessage, ToolMessage } from '@langchain/core/messages'
-import { ToolNode } from '@langchain/langgraph/prebuilt'
-import type { DynamicStructuredTool } from '@langchain/core/tools'
+import { invokeChatCompletion, type LLMMessage } from '../llm-client'
 import { buildTools, type ToolContext } from '../tools/registry'
+import { runToolCalls, toOpenAITools } from '../tools/dispatcher'
 import {
   type SubagentTask,
   type SubagentEvent,
@@ -22,10 +20,7 @@ import {
   DEFAULT_SUBAGENT_BUDGET,
   SUBAGENT_TOOL_ALLOWLIST
 } from './types'
-import {
-  getSubagentTask,
-  updateSubagentTask
-} from './store'
+import { getSubagentTask, updateSubagentTask } from './store'
 
 export type SubagentRunDeps = {
   /** LLM 配置（baseURL/apiKey/model） */
@@ -86,23 +81,13 @@ export async function runSubagent(taskId: string, deps: SubagentRunDeps): Promis
 
   // 2. 工具构造（ctx 复用父 session 的 emit / confirm；sessionId 用父 session）
   const allTools = buildTools(deps.toolCtx)
-  const tools = allTools.filter((t) => allowlist.has(t.name)) as DynamicStructuredTool[]
+  const tools = allTools.filter((t) => allowlist.has(t.name))
+  const openaiTools = toOpenAITools(tools)
 
-  // 3. LLM 客户端
-  const llm = new ChatOpenAI({
-    model: deps.llmConfig.model,
-    apiKey: deps.llmConfig.apiKey,
-    configuration: { baseURL: deps.llmConfig.baseURL },
-    temperature: 0.2,
-    streaming: false
-  })
-  const llmWithTools = llm.bindTools(tools)
-
-  // 4. 单循环：system + user prompt → 调 LLM → 跑 tool → 写回 → 终止
-  const toolNode = new ToolNode(tools)
-  const messages: Array<SystemMessage | HumanMessage | AIMessage | ToolMessage> = [
-    new SystemMessage(SUBAGENT_SYSTEM_PROMPT[task.subagentType]),
-    new HumanMessage(task.prompt)
+  // 3-4. 单循环：system + user prompt → 调 LLM → 跑 tool → 写回 → 终止
+  const messages: LLMMessage[] = [
+    { role: 'system', content: SUBAGENT_SYSTEM_PROMPT[task.subagentType] },
+    { role: 'user', content: task.prompt }
   ]
   let tokenUsed = task.tokenUsed
   let rounds = task.rounds
@@ -131,39 +116,33 @@ export async function runSubagent(taskId: string, deps: SubagentRunDeps): Promis
         break
       }
 
-      // 调 LLM
       rounds += 1
-      const aiMsg = (await llmWithTools.invoke(messages)) as AIMessage
-      messages.push(aiMsg)
-
-      // 估算 token（实际从 aiMsg.usage_metadata；没有就粗估 1 轮 ~500 token）
-      const used = (aiMsg as unknown as { usage_metadata?: { total_tokens?: number } })
-        .usage_metadata?.total_tokens
-      if (typeof used === 'number') tokenUsed += used
-      else tokenUsed += 500
+      const res = await invokeChatCompletion(deps.llmConfig, messages, {
+        signal: deps.signal,
+        temperature: 0.2,
+        tools: openaiTools
+      })
+      tokenUsed += res.usage.promptTokens + res.usage.completionTokens
+      messages.push({ role: 'assistant', content: res.content, tool_calls: res.toolCalls })
 
       // budget: token
       if (budget.tokenBudget > 0 && tokenUsed >= budget.tokenBudget) {
         finalStatus = 'budget_exceeded'
         lastError = `达到 token 预算 ${budget.tokenBudget}`
-        // 仍把已写的内容当作 output
-        finalOutput = typeof aiMsg.content === 'string' ? aiMsg.content : ''
+        finalOutput = res.content
         break
       }
 
-      // 检查 tool_calls
-      const toolCalls = (aiMsg.tool_calls ?? []) as Array<{
-        id: string
-        name: string
-        args: Record<string, unknown>
-      }>
+      const toolCalls = res.toolCalls.map((tc) => ({
+        id: tc.id,
+        name: (tc as { function?: { name?: string } }).function?.name ?? '',
+        args: (tc as { function?: { arguments?: string } }).function?.arguments ?? ''
+      }))
       if (toolCalls.length === 0) {
-        // 终止：把 aiMsg.content 当 output
-        finalOutput = typeof aiMsg.content === 'string' ? aiMsg.content : ''
+        finalOutput = res.content
         break
       }
 
-      // 跑 tools
       deps.emit({
         type: 'progress',
         taskId,
@@ -171,11 +150,9 @@ export async function runSubagent(taskId: string, deps: SubagentRunDeps): Promis
         rounds,
         tokenUsed
       })
-      const toolResult = (await toolNode.invoke({
-        messages: messages.map((m) => m.toDict())
-      })) as { messages: ToolMessage[] }
-      for (const tm of toolResult.messages) {
-        messages.push(tm)
+      const toolResults = await runToolCalls(tools, toolCalls, `sub_${taskId}`, () => {})
+      for (const tr of toolResults) {
+        messages.push({ role: 'tool', content: tr.content, tool_call_id: tr.tool_call_id })
       }
     }
   } catch (err) {

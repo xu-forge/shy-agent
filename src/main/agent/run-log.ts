@@ -3,13 +3,7 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { getShyPaths } from '../paths'
 
-export type RunLogKind =
-  | 'run_start'
-  | 'run_end'
-  | 'llm_turn'
-  | 'tool_call'
-  | 'status'
-  | 'error'
+export type RunLogKind = 'run_start' | 'run_end' | 'llm_turn' | 'tool_call' | 'status' | 'error'
 
 export type RunLogLine = {
   ts: string
@@ -66,9 +60,7 @@ export class AgentRunLogWriter {
       runId: this.runId,
       sessionId: this.sessionId,
       kind,
-      payload: Object.fromEntries(
-        Object.entries(payload).map(([k, v]) => [k, truncateField(v)])
-      )
+      payload: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, truncateField(v)]))
     }
     const text = JSON.stringify(line) + '\n'
     this.queue = this.queue
@@ -97,10 +89,20 @@ export function mapAgentEventToLog(
       writer.append('llm_turn', { content: event.content })
       break
     case 'result':
-      writer.append('llm_turn', { content: event.content, kind: 'result', reportPath: event.reportPath })
+      writer.append('llm_turn', {
+        content: event.content,
+        kind: 'result',
+        reportPath: event.reportPath
+      })
       break
     case 'tool':
       writer.append('tool_call', { name: event.name, detail: event.detail })
+      break
+    case 'tool_call':
+      writer.append('tool_call', { id: event.id, name: event.name, input: event.input })
+      break
+    case 'tool_result':
+      writer.append('tool_call', { id: event.id, output: event.output, error: event.error })
       break
     case 'status':
       writer.append('status', { message: event.message })

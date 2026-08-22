@@ -1,61 +1,47 @@
-import { mkdir, readdir, readFile, writeFile, rm, access } from 'fs/promises'
+import { mkdir, writeFile, rm } from 'fs/promises'
 import { join, basename } from 'path'
 import type { SkillSummary } from '../../shared/ipc'
-import { getShyPaths } from '../paths'
+import { getShyPaths, resolveShyHome } from '../paths'
+import {
+  getDefaultSkillRegistry,
+  parseFrontmatter,
+  type SkillEntry
+} from './registry'
+import { loadDisabledSkills, saveDisabledSkills } from './enabled-state'
+import { getDefaultBus } from '../event-bridge'
 
-function skillsRoot(): string {
-  return getShyPaths().skillsDir
-}
-
-async function ensureRoot(): Promise<string> {
-  const root = skillsRoot()
-  await mkdir(root, { recursive: true })
-  return root
-}
-
-function parseFrontmatter(md: string): { name: string; description: string } {
-  const match = md.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-  if (!match) {
-    const title = md.match(/^#\s+(.+)$/m)?.[1]?.trim() || 'untitled'
-    return { name: title, description: '' }
-  }
-  const block = match[1]
-  const name = block.match(/^name:\s*(.+)$/m)?.[1]?.trim() || 'untitled'
-  const description = block.match(/^description:\s*(.+)$/m)?.[1]?.trim() || ''
-  return { name, description }
+function shyHome(): string {
+  return resolveShyHome()
 }
 
 export async function listSkills(): Promise<SkillSummary[]> {
-  const root = await ensureRoot()
-  const entries = await readdir(root, { withFileTypes: true })
-  const out: SkillSummary[] = []
-  for (const ent of entries) {
-    if (!ent.isDirectory()) continue
-    const skillPath = join(root, ent.name, 'SKILL.md')
-    try {
-      await access(skillPath)
-      const md = await readFile(skillPath, 'utf8')
-      const meta = parseFrontmatter(md)
-      out.push({
-        id: ent.name,
-        name: meta.name,
-        description: meta.description,
-        path: join(root, ent.name)
-      })
-    } catch {
-      // skip invalid
-    }
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  const registry = getDefaultSkillRegistry()
+  const snap = await registry.refresh()
+  const disabled = new Set(await loadDisabledSkills(shyHome()))
+  return snap.entries.map((e) => ({
+    id: basename(e.dir),
+    name: e.name,
+    description: e.description,
+    path: e.dir,
+    rootKind: e.rootKind,
+    enabled: !disabled.has(e.name)
+  }))
+}
+
+function findEntry(idOrName: string): SkillEntry | undefined {
+  const snap = getDefaultSkillRegistry().getSnapshot()
+  return (
+    snap.entries.find((e) => e.name === idOrName) ??
+    snap.entries.find((e) => basename(e.dir) === basename(idOrName))
+  )
 }
 
 export async function readSkill(
   id: string
 ): Promise<{ id: string; markdown: string; path: string }> {
-  const dir = join(await ensureRoot(), basename(id))
-  const skillPath = join(dir, 'SKILL.md')
-  const markdown = await readFile(skillPath, 'utf8')
-  return { id: basename(id), markdown, path: dir }
+  const entry = findEntry(id)
+  if (!entry) throw new Error(`skill not found: ${id}`)
+  return { id: basename(entry.dir), markdown: entry.content, path: entry.dir }
 }
 
 export async function writeSkill(input: {
@@ -63,7 +49,8 @@ export async function writeSkill(input: {
   markdown: string
   scripts?: Record<string, string>
 }): Promise<SkillSummary> {
-  const root = await ensureRoot()
+  const root = getShyPaths().skillsDir
+  await mkdir(root, { recursive: true })
   const meta = parseFrontmatter(input.markdown)
   const id =
     input.id?.trim() ||
@@ -82,15 +69,53 @@ export async function writeSkill(input: {
       await writeFile(join(scriptsDir, basename(name)), body, 'utf8')
     }
   }
+  await getDefaultSkillRegistry().refresh()
   return {
     id,
     name: meta.name,
     description: meta.description,
-    path: dir
+    path: dir,
+    rootKind: 'user',
+    enabled: true
   }
 }
 
 export async function deleteSkill(id: string): Promise<void> {
-  const dir = join(await ensureRoot(), basename(id))
+  const entry = findEntry(id)
+  if (entry && entry.rootKind !== 'user') {
+    throw new Error(`仅支持删除用户级技能：${id} 来自 ${entry.rootKind} 根`)
+  }
+  const dir = join(getShyPaths().skillsDir, basename(id))
   await rm(dir, { recursive: true, force: true })
+  await getDefaultSkillRegistry().refresh()
+}
+
+export async function setSkillEnabled(name: string, enabled: boolean): Promise<void> {
+  const home = shyHome()
+  const disabled = new Set(await loadDisabledSkills(home))
+  if (enabled) disabled.delete(name)
+  else disabled.add(name)
+  await saveDisabledSkills(home, [...disabled])
+  emitSkillsChanged()
+}
+
+/** registry 热重载 → 刷新 snapshot 并广播 skills_changed */
+export function startSkillWatch(): { close: () => void } {
+  const registry = getDefaultSkillRegistry()
+  const w = registry.watch(() => {
+    void registry.refresh().then(() => emitSkillsChanged())
+  })
+  return w
+}
+
+function emitSkillsChanged(): void {
+  getDefaultBus().emitSync({ type: 'skills_changed' })
+}
+
+/** catalog 用：当前生效且启用的条目 */
+export async function getEnabledSkillEntries(): Promise<SkillEntry[]> {
+  const registry = getDefaultSkillRegistry()
+  const snap = await registry.refresh()
+  const disabled = new Set(await loadDisabledSkills(shyHome()))
+  return snap.entries.filter((e) => !disabled.has(e.name))
 }

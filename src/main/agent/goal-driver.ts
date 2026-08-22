@@ -1,10 +1,9 @@
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { AIMessage, HumanMessage } from '@langchain/core/messages'
 import type { GoalChecklistItem, RunStatus } from '../../shared/ipc'
 import { getSession, updateSessionRuntime, appendMessage, getCheckpoint } from '../sessions/store'
 import { getSettings } from '../settings/store'
-import { getShyPaths } from '../paths'
+import { getShyPaths, getSessionWorkspace } from '../paths'
 import type { AgentEvent } from './service'
 import type { CheckRunResult } from './checks'
 import { runCheckCommand } from './checks'
@@ -99,7 +98,7 @@ export async function runGoalDriver(args: {
   }
   const verifyCommand = storedVerify || incomingVerify
 
-  let goal = freezeGoal(session.goal, message)
+  const goal = freezeGoal(session.goal, message)
   persistIfOwner({ goal })
   let checklist: GoalChecklistItem[] = session.checklist ?? []
   let approved = new Set(session.approvedChecks ?? [])
@@ -303,12 +302,28 @@ export async function runGoalDriver(args: {
         return
       }
       // verify LLM：段尾自检 + blocked 判定
-      const blockedAudit = await runVerifyPhase(goal, checklist, auditOkRef, blockedRoundsRef, emit, settings)
+      const blockedAudit = await runVerifyPhase(
+        goal,
+        checklist,
+        auditOkRef,
+        blockedRoundsRef,
+        emit,
+        settings
+      )
       if (blockedAudit.shouldPause) {
         finishStop('paused')
         return
       }
-      if (await concludeAfterChecks(overall, true, auditOkRef.current ? undefined : { requirements: [], unsatisfied: ['completion audit 未通过'] })) return
+      if (
+        await concludeAfterChecks(
+          overall,
+          true,
+          auditOkRef.current
+            ? undefined
+            : { requirements: [], unsatisfied: ['completion audit 未通过'] }
+        )
+      )
+        return
       if (failures.length) feedback = buildFailureFeedback(failures)
     }
 
@@ -342,17 +357,29 @@ export async function runGoalDriver(args: {
       }
 
       // verify LLM：段尾自检 + blocked 判定
-      const blockedAudit = await runVerifyPhase(goal, checklist, auditOkRef, blockedRoundsRef, emit, settings)
+      const blockedAudit = await runVerifyPhase(
+        goal,
+        checklist,
+        auditOkRef,
+        blockedRoundsRef,
+        emit,
+        settings
+      )
       if (blockedAudit.shouldPause) {
         finishStop('paused')
         return
       }
 
-      if (await concludeAfterChecks(
-        overall,
-        true,
-        auditOkRef.current ? undefined : { requirements: [], unsatisfied: ['completion audit 未通过'] }
-      )) return
+      if (
+        await concludeAfterChecks(
+          overall,
+          true,
+          auditOkRef.current
+            ? undefined
+            : { requirements: [], unsatisfied: ['completion audit 未通过'] }
+        )
+      )
+        return
 
       stagnantRounds = nextStagnantRounds({
         prev: stagnantRounds,
@@ -546,7 +573,10 @@ async function defaultRunBurst(opts: {
       budget: {
         tokenUsed: opts.tokenUsedRef.current,
         tokenBudget,
-        pct: tokenBudget > 0 ? Math.min(100, Math.round((opts.tokenUsedRef.current / tokenBudget) * 100)) : 0,
+        pct:
+          tokenBudget > 0
+            ? Math.min(100, Math.round((opts.tokenUsedRef.current / tokenBudget) * 100))
+            : 0,
         disabled: tokenBudget <= 0
       },
       stagnantRounds: 0,
@@ -559,16 +589,14 @@ async function defaultRunBurst(opts: {
 
   const ctx: ToolContext = {
     emit: (event, payload) => {
-      if (event === 'tool') {
-        const p = payload as { name?: string }
-        emit({ type: 'tool', name: p.name ?? 'tool', detail: payload })
-      } else if (event === 'memory') {
+      if (event === 'memory') {
         const p = payload as { action: string; entryId?: string; title?: string }
         emit({ type: 'memory', ...p })
       }
     },
     confirmHighRisk: waitConfirm,
-    sessionId
+    sessionId,
+    workspaceDir: getSessionWorkspace(sessionId)
   }
 
   const goalTools = buildGoalTools({
@@ -579,6 +607,9 @@ async function defaultRunBurst(opts: {
     blockedAuditRounds: settings.blockedAuditRounds ?? 3,
     enableGoalCompleteReport: settings.enableGoalCompleteReport ?? true
   })
+
+  // 目标模式思考流文本（每步工具调用前落盘一次，供会话回放）
+  let pendingAssistantText = ''
 
   const graph = buildAgentGraph({
     llm: {
@@ -592,6 +623,23 @@ async function defaultRunBurst(opts: {
       if (event.type === 'assistant' && event.content) {
         emit({ type: 'assistant', content: event.content })
         appendMessage(sessionId, 'assistant', event.content)
+      }
+      // 目标模式的思考过程流（与交互式 service.ts 一致）— 否则 UI 只能看到工具调用链
+      if (event.type === 'assistant_delta' && event.content) {
+        pendingAssistantText += event.content
+        emit({ type: 'assistant_delta', content: event.content })
+      }
+      if (event.type === 'tool_call' && event.id) {
+        // 工具调用开始 = 上一段思考流已完整：落盘 + 停掉渲染层打字光标
+        if (pendingAssistantText.trim()) {
+          appendMessage(sessionId, 'assistant', pendingAssistantText)
+          pendingAssistantText = ''
+        }
+        emit({ type: 'assistant_done' })
+        emit({ type: 'tool_call', id: event.id, name: event.name ?? 'tool', input: event.input })
+      }
+      if (event.type === 'tool_result' && event.id) {
+        emit({ type: 'tool_result', id: event.id, output: event.output, error: event.error })
       }
       if (event.type === 'tool') {
         emit({ type: 'tool', name: event.name ?? 'tool', detail: event.detail })
@@ -617,9 +665,12 @@ async function defaultRunBurst(opts: {
   const history = (fresh?.messages ?? [])
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .slice(-20)
-    .map((m) => (m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content)))
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
-  const messages = [...history, ...(input.feedback ? [new HumanMessage(input.feedback)] : [])]
+  const messages = [
+    ...history,
+    ...(input.feedback ? [{ role: 'user' as const, content: input.feedback }] : [])
+  ]
 
   const result = await graph.invoke(
     {

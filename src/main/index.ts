@@ -3,6 +3,16 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerCoreIpc, resumeInterruptedGoalSessions, setMainWindow } from './ipc'
+import { startSkillWatch } from './skills/store'
+import { registerBrowserIpc, setBrowserWindowProvider, getEmbeddedBrowserManager } from './browser'
+import { setBrowserManagerGetter } from './agent/tools/browser'
+import { protocol, net } from 'electron'
+import { pathToFileURL } from 'url'
+
+// minimax-feature-port：shy-asset:// 协议 — 渲染层展示 ~/.shy 下的产物（浏览器截图等）
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'shy-asset', privileges: { standard: true, secure: true, supportFetchAPI: false } }
+])
 import { ensureShyHomeDirs, resolveShyHome } from './paths'
 import { dropLegacyWorkflowTables, migrateLegacyUserData } from './migration'
 import { bridgeEventBusToIpc, getDefaultBus } from './event-bridge'
@@ -86,6 +96,25 @@ app.whenReady().then(() => {
   })
 
   registerCoreIpc()
+  // minimax-feature-port：技能注册表热重载 + 内嵌浏览器 IPC
+  startSkillWatch()
+  registerBrowserIpc()
+  setBrowserWindowProvider(() => BrowserWindow.getAllWindows()[0] ?? null)
+  setBrowserManagerGetter(() => getEmbeddedBrowserManager())
+
+  // shy-asset://<相对路径> → ~/.shy/<相对路径>（仅限 shyHome 内，防穿越）
+  protocol.handle('shy-asset', (request) => {
+    try {
+      const u = new URL(request.url)
+      const rel = decodeURIComponent(u.pathname.replace(/^\/+/, ''))
+      const home = resolveShyHome()
+      const file = join(home, rel)
+      if (!file.startsWith(home)) return new Response('forbidden', { status: 403 })
+      return net.fetch(pathToFileURL(file).toString())
+    } catch (err) {
+      return new Response('bad request', { status: 400 })
+    }
+  })
   // Stage 3.2: 把 EventBus 桥接到 IPC,让 main emit 的事件自动推到 renderer
   // 通过 getMainWindow 闭包动态拿最新 mainWindow(支持重开窗口)
   bridgeEventBusToIpc(getDefaultBus(), () => {

@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import { randomUUID } from 'crypto'
 import { IPC } from '../shared/ipc'
 import { getDefaultBus } from './event-bridge'
+import { getSettings } from './settings/store'
 
 type Pending = {
   resolve: (ok: boolean) => void
@@ -21,6 +22,15 @@ export function createConfirmWaiter(_getWindow: () => BrowserWindow | null) {
   return async (action: string, detail: string): Promise<boolean> => {
     // Stage 3.2 集成:走 EventBus → preload-adapter → IPC,统一通路
     void _getWindow // 不再直接 send,由 bus 推
+
+    // 始终授权:开关开启时直接放行,不弹逐条确认
+    try {
+      const settings = await getSettings()
+      if (settings.autoApproveTools) return true
+    } catch {
+      // 设置读取失败则回退到逐条确认
+    }
+
     const requestId = randomUUID()
     return await new Promise<boolean>((resolve) => {
       pending.set(requestId, { resolve })

@@ -61,6 +61,20 @@ const shy = {
     scripts?: Record<string, string>
   }): Promise<SkillSummary> => ipcRenderer.invoke(IPC.skillsWrite, input),
   deleteSkill: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.skillsDelete, id),
+  setSkillEnabled: (name: string, enabled: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.skillsSetEnabled, { name, enabled }),
+  // minimax-feature-port：内嵌浏览器控制
+  browserShow: (bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke(IPC.browserShow, bounds),
+  browserHide: () => ipcRenderer.invoke(IPC.browserHide),
+  browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.invoke(IPC.browserSetBounds, bounds),
+  browserGetState: () => ipcRenderer.invoke(IPC.browserGetState),
+  browserNavigate: (url: string) => ipcRenderer.invoke(IPC.browserNavigate, url),
+  browserScreenshot: () => ipcRenderer.invoke(IPC.browserScreenshot),
+  browserBack: () => ipcRenderer.invoke(IPC.browserBack),
+  browserForward: () => ipcRenderer.invoke(IPC.browserForward),
+  browserReload: () => ipcRenderer.invoke(IPC.browserReload),
   // shell-session-side-panel
   listSessionFiles: (sessionId: string): Promise<SessionFileRecord[]> =>
     ipcRenderer.invoke(IPC.sessionFilesList, sessionId),

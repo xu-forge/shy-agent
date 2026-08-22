@@ -11,7 +11,7 @@
  *
  * 注意：本文件只导出**工具工厂**（不自动注册），由 goal-driver 在 defaultRunBurst 里显式调用。
  */
-import { DynamicStructuredTool } from '@langchain/core/tools'
+import type { ShyTool } from './tools/dispatcher'
 import { z } from 'zod'
 import { getSession, updateSessionRuntime } from '../sessions/store'
 import { clampBlockedAuditRounds, isBlocked } from './blocked-audit'
@@ -47,24 +47,24 @@ export type GoalToolDeps = {
 }
 
 /** 构造 get_goal 工具 */
-export function makeGetGoalTool(deps: GoalToolDeps): DynamicStructuredTool {
-  return new DynamicStructuredTool({
+export function makeGetGoalTool(deps: GoalToolDeps): ShyTool {
+  return {
     name: 'get_goal',
     description:
       'Get the current active goal snapshot (objective / checklist / runStatus / progress / budget / blocked rounds / paused). ' +
       'Use this before deciding to act, plan, or call update_goal. ' +
       'Do not infer goal state from prior memory — always call get_goal first.',
     schema: z.object({}),
-    func: async () => {
+    run: async () => {
       const snap = deps.getSnapshot()
       return JSON.stringify(snap, null, 2)
     }
-  })
+  }
 }
 
 /** 构造 update_goal 工具 */
-export function makeUpdateGoalTool(deps: GoalToolDeps): DynamicStructuredTool {
-  return new DynamicStructuredTool({
+export function makeUpdateGoalTool(deps: GoalToolDeps): ShyTool {
+  return {
     name: 'update_goal',
     description:
       'Mark the active goal as `complete` or `blocked`. ' +
@@ -77,10 +77,16 @@ export function makeUpdateGoalTool(deps: GoalToolDeps): DynamicStructuredTool {
       'This tool CANNOT pause, resume, budget-limit, or usage-limit a goal; those are controlled by the user or system.',
     schema: z.object({
       status: z.enum(['complete', 'blocked']).describe('Goal end status'),
-      reason: z.string().optional().describe('For blocked: short description of the blocking condition'),
-      tokensUsed: z.number().optional().describe('For complete: cumulative tokens used (reported to user)')
+      reason: z
+        .string()
+        .optional()
+        .describe('For blocked: short description of the blocking condition'),
+      tokensUsed: z
+        .number()
+        .optional()
+        .describe('For complete: cumulative tokens used (reported to user)')
     }),
-    func: async (input) => {
+    run: async (input) => {
       const { status, reason, tokensUsed } = input as {
         status: 'complete' | 'blocked'
         reason?: string
@@ -150,10 +156,10 @@ export function makeUpdateGoalTool(deps: GoalToolDeps): DynamicStructuredTool {
 
       return JSON.stringify({ ok: false, error: `unknown status: ${String(status)}` })
     }
-  })
+  }
 }
 
 /** 工具工厂（便捷返回两个） */
-export function buildGoalTools(deps: GoalToolDeps): DynamicStructuredTool[] {
+export function buildGoalTools(deps: GoalToolDeps): ShyTool[] {
   return [makeGetGoalTool(deps), makeUpdateGoalTool(deps)]
 }

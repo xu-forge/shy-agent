@@ -3,19 +3,14 @@ import { mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-const {
-  runGoalDriver,
-  buildAgentGraph,
-  getSession,
-  appendMessage,
-  updateSessionRuntime
-} = vi.hoisted(() => ({
-  runGoalDriver: vi.fn(async () => undefined),
-  buildAgentGraph: vi.fn(),
-  getSession: vi.fn(),
-  appendMessage: vi.fn(),
-  updateSessionRuntime: vi.fn()
-}))
+const { runGoalDriver, buildAgentGraph, getSession, appendMessage, updateSessionRuntime } =
+  vi.hoisted(() => ({
+    runGoalDriver: vi.fn(async () => undefined),
+    buildAgentGraph: vi.fn(),
+    getSession: vi.fn(),
+    appendMessage: vi.fn(),
+    updateSessionRuntime: vi.fn()
+  }))
 
 vi.mock('electron', () => ({
   app: { getPath: () => process.env.SHY_HOME ?? tmpdir() }
@@ -40,18 +35,6 @@ vi.mock('../sessions/store', () => ({
   appendMessage,
   updateSessionRuntime
 }))
-
-vi.mock('@langchain/openai', () => {
-  class MockChatOpenAI {
-    bindTools(): this {
-      return this
-    }
-    async invoke(): Promise<{ content: string }> {
-      return { content: '' }
-    }
-  }
-  return { ChatOpenAI: MockChatOpenAI }
-})
 
 vi.mock('../skills/match', () => ({
   matchSkills: async () => [],

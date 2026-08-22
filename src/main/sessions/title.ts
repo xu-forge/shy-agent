@@ -1,5 +1,4 @@
-import { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, SystemMessage } from '@langchain/core/messages'
+import { invokeChatCompletion, type LLMClientConfig, type LLMMessage } from '../agent/llm-client'
 import { getSession, setSessionTitle } from './store'
 import { stripThink } from '../agent/goal-policy'
 
@@ -19,7 +18,7 @@ export function localSummaryTitle(userText: string): string {
 /** 用 LLM 生成会话总结标题；失败则本地兜底 */
 export async function summarizeSessionTitle(
   sessionId: string,
-  llm: ChatOpenAI | null
+  llm: LLMClientConfig | null
 ): Promise<string | null> {
   const session = getSession(sessionId)
   if (!session) return null
@@ -43,18 +42,21 @@ export async function summarizeSessionTitle(
     const transcript = turns
       .map((m) => `${m.role === 'user' ? '用户' : '助手'}: ${m.content.slice(0, 500)}`)
       .join('\n')
-    const res = await llm.invoke([
-      new SystemMessage(
-        `为对话生成极短中文标题（会话总结）。要求：
+    const messages: LLMMessage[] = [
+      {
+        role: 'system',
+        content: `为对话生成极短中文标题（会话总结）。要求：
 - 6～18 个字，概括主题/任务，不要标点收尾
 - 不要「对话」「会话」「关于」等废话前缀
 - 只输出标题本身`
-      ),
-      new HumanMessage(
-        `目标字段：${session.goal || '（无）'}\n\n对话摘录：\n${transcript}`
-      )
-    ])
-    const raw = typeof res.content === 'string' ? res.content.trim() : ''
+      },
+      {
+        role: 'user',
+        content: `目标字段：${session.goal || '（无）'}\n\n对话摘录：\n${transcript}`
+      }
+    ]
+    const res = await invokeChatCompletion(llm, messages)
+    const raw = res.content.trim()
     const title = stripThink(raw)
       .replace(/^["「『]|["」』]$/g, '')
       .replace(/\s+/g, ' ')

@@ -50,6 +50,16 @@ export interface ShyApi {
     scripts?: Record<string, string>
   }) => Promise<SkillSummary>
   deleteSkill: (id: string) => Promise<{ ok: boolean }>
+  setSkillEnabled: (name: string, enabled: boolean) => Promise<{ ok: boolean }>
+  browserShow: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ ok: boolean }>
+  browserHide: () => Promise<{ ok: boolean }>
+  browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ ok: boolean }>
+  browserGetState: () => Promise<unknown>
+  browserNavigate: (url: string) => Promise<{ ok: boolean }>
+  browserScreenshot: () => Promise<string>
+  browserBack: () => Promise<{ ok: boolean }>
+  browserForward: () => Promise<{ ok: boolean }>
+  browserReload: () => Promise<{ ok: boolean }>
   listSessionFiles: (sessionId: string) => Promise<SessionFileRecord[]>
   revealSessionFile: (sessionId: string, filePath: string) => Promise<{ ok: boolean }>
   listSessionTasks: (sessionId: string) => Promise<SessionTaskRecord[]>

@@ -12,6 +12,7 @@ export const IPC = {
   skillsRead: 'shy:skills-read',
   skillsWrite: 'shy:skills-write',
   skillsDelete: 'shy:skills-delete',
+  skillsSetEnabled: 'shy:skills-set-enabled',
   settingsGet: 'shy:settings-get',
   settingsSet: 'shy:settings-set',
   toolConfirm: 'shy:tool-confirm',
@@ -34,7 +35,16 @@ export const IPC = {
   logsAgentList: 'shy:logs-agent-list',
   logsAgentRead: 'shy:logs-agent-read',
   logsAgentReveal: 'shy:logs-agent-reveal',
-  events: 'shy:events'
+  events: 'shy:events',
+  browserShow: 'shy:browser-show',
+  browserHide: 'shy:browser-hide',
+  browserSetBounds: 'shy:browser-set-bounds',
+  browserGetState: 'shy:browser-get-state',
+  browserNavigate: 'shy:browser-navigate',
+  browserScreenshot: 'shy:browser-screenshot',
+  browserBack: 'shy:browser-back',
+  browserForward: 'shy:browser-forward',
+  browserReload: 'shy:browser-reload'
 } as const
 
 export type AppPaths = {
@@ -88,11 +98,17 @@ export type LongMemoryEntry = {
   createdAt: string
 }
 
+export type SkillRootKind = 'project' | 'agent' | 'user' | 'builtin'
+
 export type SkillSummary = {
   id: string
   name: string
   description: string
   path: string
+  /** 来源根（minimax-feature-port） */
+  rootKind: SkillRootKind
+  /** 启用状态（默认 true） */
+  enabled: boolean
 }
 
 export type ModelSettings = {
@@ -113,6 +129,8 @@ export type ModelSettings = {
   blockedAuditRounds?: number
   /** 目标模式：完成时是否通过 goal_complete 事件向 UI 报告 tokenUsed / rounds / duration（默认 true） */
   enableGoalCompleteReport?: boolean
+  /** 始终授权：开启后工具确认不再逐条弹窗，直接放行（默认 false） */
+  autoApproveTools?: boolean
 }
 
 export type ChatMessage = {
@@ -273,7 +291,6 @@ export type ScheduleReminderEvent = {
   at: string
 }
 
-
 /* ────────── Agent events (chat → renderer) ────────── */
 
 export type AgentEvent =
@@ -282,6 +299,8 @@ export type AgentEvent =
   | { type: 'assistant_delta'; content: string; sessionId?: string }
   | { type: 'assistant_done'; sessionId?: string }
   | { type: 'tool'; name: string; detail?: unknown; input?: unknown; sessionId?: string }
+  | { type: 'tool_call'; id: string; name?: string; input?: unknown; sessionId?: string }
+  | { type: 'tool_result'; id: string; output?: unknown; error?: string; sessionId?: string }
   | { type: 'memory'; action: string; entryId?: string; title?: string; sessionId?: string }
   | { type: 'goal'; goal?: string; checklist?: GoalChecklistItem[]; sessionId?: string }
   | {
@@ -308,7 +327,13 @@ export type AgentEvent =
   | { type: 'error'; message: string; sessionId?: string }
   | { type: 'result'; content: string; reportPath?: string; sessionId?: string }
   | { type: 'done'; reason: string; sessionId?: string }
-  | { type: 'confirm_required'; action: string; detail: string; requestId: string; sessionId?: string }
+  | {
+      type: 'confirm_required'
+      action: string
+      detail: string
+      requestId: string
+      sessionId?: string
+    }
   | { type: 'notify'; message: string; sessionId?: string }
   | { type: 'session'; title?: string; sessionId?: string }
   | { type: 'blocked'; rounds: number; reason?: string; sessionId?: string }
@@ -321,3 +346,6 @@ export type AgentEvent =
       durationMs: number
       sessionId?: string
     }
+  | { type: 'skills_changed' }
+  | { type: 'browser_navigated'; tabId: string; url: string }
+  | { type: 'browser_screenshot'; path: string }

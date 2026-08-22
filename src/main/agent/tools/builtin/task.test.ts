@@ -22,6 +22,7 @@ describe('task tool 8 段式 prompt 设计', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-1'
     })
     const taskTool = tools.find((t) => t.name === 'task')
@@ -45,6 +46,7 @@ describe('task tool 8 段式 prompt 设计', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-1'
     })
     const out = tools.find((t) => t.name === 'task_output')
@@ -59,6 +61,7 @@ describe('task tool 8 段式 prompt 设计', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-1'
     })
     const q = tools.find((t) => t.name === 'task_query')
@@ -73,6 +76,7 @@ describe('task tool 8 段式 prompt 设计', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-1'
     })
     const stop = tools.find((t) => t.name === 'task_stop')

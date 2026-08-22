@@ -12,6 +12,7 @@ describe('tool description 8 段式质量', () => {
     tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'test'
     })
   })

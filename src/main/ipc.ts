@@ -15,7 +15,7 @@ import {
   updateSessionTaskDone,
   upsertLongMemory
 } from './memory/db'
-import { deleteSkill, listSkills, readSkill, writeSkill } from './skills/store'
+import { deleteSkill, listSkills, readSkill, writeSkill, setSkillEnabled } from './skills/store'
 import {
   createSession,
   deleteSession,
@@ -107,6 +107,13 @@ export function registerCoreIpc(): void {
     await deleteSkill(id)
     return { ok: true }
   })
+  ipcMain.handle(
+    IPC.skillsSetEnabled,
+    async (_e, input: { name: string; enabled: boolean }) => {
+      await setSkillEnabled(input.name, input.enabled)
+      return { ok: true }
+    }
+  )
 
   ipcMain.handle(IPC.sessionsList, async () => listSessions())
   ipcMain.handle(IPC.sessionsGet, async (_e, id: string) => getSession(id))

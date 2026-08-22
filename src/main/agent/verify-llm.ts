@@ -4,8 +4,7 @@
  * 设计：复用 ChatOpenAI 实例（与 planChecklist 风格一致），保持轻量（不引入 LangGraph 节点）。
  * 时机：goal-driver 的 runCheckRound 之后，isGoalComplete 之前。
  */
-import { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, SystemMessage } from '@langchain/core/messages'
+import { invokeChatCompletion, type LLMMessage } from './llm-client'
 import { getSettings } from '../settings/store'
 import type { GoalChecklistItem } from '../../shared/ipc'
 import { extractVerifyBlocked, nextBlockedRounds, type VerifyBlockedOutput } from './blocked-audit'
@@ -102,12 +101,11 @@ export async function runVerifyLLM(input: {
     return { ok: false, error: 'apiKey 未配置' }
   }
 
-  const llm = new ChatOpenAI({
-    model: settings.model,
+  const llmConfig = {
+    baseURL: settings.baseURL,
     apiKey: settings.apiKey,
-    configuration: { baseURL: settings.baseURL },
-    temperature: 0
-  })
+    model: settings.model
+  }
 
   const pending = input.checklist.filter((c) => !c.done)
   const done = input.checklist.filter((c) => c.done)
@@ -122,8 +120,12 @@ export async function runVerifyLLM(input: {
   }`
 
   try {
-    const res = await llm.invoke([new SystemMessage(VERIFY_SYSTEM_PROMPT), new HumanMessage(humanMsg)])
-    const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content)
+    const messages: LLMMessage[] = [
+      { role: 'system', content: VERIFY_SYSTEM_PROMPT },
+      { role: 'user', content: humanMsg }
+    ]
+    const res = await invokeChatCompletion(llmConfig, messages, { temperature: 0 })
+    const text = res.content
     const parsed = parseJsonObject(text)
     if (!parsed) {
       // JSON 解析失败：保守放行 audit，blocked 默认 false
@@ -154,6 +156,8 @@ export function applyBlockedAudit(input: {
 } {
   const newBlockedRounds = nextBlockedRounds(input.prevBlockedRounds, input.blocked)
   const shouldPause =
-    newBlockedRounds > 0 && newBlockedRounds >= input.blockedAuditRounds && input.blocked.sameCondition === true
+    newBlockedRounds > 0 &&
+    newBlockedRounds >= input.blockedAuditRounds &&
+    input.blocked.sameCondition === true
   return { newBlockedRounds, shouldPause }
 }

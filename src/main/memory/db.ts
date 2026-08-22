@@ -2,7 +2,13 @@ import { mkdirSync } from 'fs'
 import { dirname } from 'path'
 import Database from 'better-sqlite3'
 import { randomUUID } from 'crypto'
-import type { FileOp, LongMemoryEntry, SessionFileRecord, SessionTaskRecord, TaskSource } from '../../shared/ipc'
+import type {
+  FileOp,
+  LongMemoryEntry,
+  SessionFileRecord,
+  SessionTaskRecord,
+  TaskSource
+} from '../../shared/ipc'
 import { getShyPaths } from '../paths'
 
 let db: Database.Database | null = null
@@ -104,8 +110,7 @@ export function upsertLongMemory(input: {
   const ts = new Date().toISOString()
   const id = input.id || randomUUID()
   const existing = getDb().prepare(`SELECT * FROM long_memory WHERE id = ?`).get(id) as
-    | Record<string, unknown>
-    | undefined
+    Record<string, unknown> | undefined
   if (existing) {
     const revision = Number(existing.revision ?? 1) + 1
     getDb()
@@ -131,16 +136,7 @@ export function upsertLongMemory(input: {
     .prepare(
       `INSERT INTO long_memory (id, title, content, tags, source, revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`
     )
-    .run(
-      id,
-      input.title,
-      input.content,
-      JSON.stringify(input.tags ?? []),
-      input.source,
-      1,
-      ts,
-      ts
-    )
+    .run(id, input.title, input.content, JSON.stringify(input.tags ?? []), input.source, 1, ts, ts)
   const entry = rowToEntry(
     getDb().prepare(`SELECT * FROM long_memory WHERE id = ?`).get(id) as Record<string, unknown>
   )
@@ -313,7 +309,43 @@ export function listSessionTasks(sessionId: string, limit = 500): SessionTaskRec
        FROM session_tasks WHERE session_id = ? ORDER BY updated_at DESC LIMIT ?`
     )
     .all(sessionId, limit) as Record<string, unknown>[]
-  return rows.map(rowToTask)
+  const tasks = rows.map(rowToTask)
+
+  // 合并 goal 模式的验收清单：它存在 sessions.checklist（JSON），不走 session_tasks 表。
+  // goal 驱动的 task 事件并未落库到 session_tasks，导致右面板「进度」读不到，这里补齐。
+  try {
+    const srow = getDb().prepare(`SELECT checklist FROM sessions WHERE id = ?`).get(sessionId) as
+      { checklist?: unknown } | undefined
+    const raw = typeof srow?.checklist === 'string' ? srow.checklist : ''
+    if (raw) {
+      const checklist = JSON.parse(raw) as Array<{
+        id?: unknown
+        title?: unknown
+        done?: unknown
+        evidence?: unknown
+      }>
+      const seen = new Set(tasks.map((t) => t.id))
+      const now = Date.now()
+      for (const c of checklist) {
+        const id = String(c.id ?? '')
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        tasks.push({
+          id,
+          sessionId,
+          title: String(c.title ?? ''),
+          done: Boolean(c.done),
+          evidence: c.evidence ? String(c.evidence) : undefined,
+          source: 'goal',
+          occurredAt: now,
+          updatedAt: now
+        })
+      }
+    }
+  } catch {
+    // checklist 解析失败不影响已查到的任务
+  }
+  return tasks
 }
 
 function rowToTask(row: Record<string, unknown>): SessionTaskRecord {

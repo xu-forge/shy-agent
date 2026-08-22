@@ -1,5 +1,4 @@
-import type { ChatOpenAI } from '@langchain/openai'
-import { HumanMessage, SystemMessage } from '@langchain/core/messages'
+import { invokeChatCompletion, type LLMClientConfig, type LLMMessage } from '../agent/llm-client'
 import { compressContext as keywordCompress } from './db'
 
 const SYSTEM = `你是上下文压缩器。把对话压缩为「保关键」结构化摘要，尽量不丢关键数据。
@@ -9,7 +8,7 @@ const SYSTEM = `你是上下文压缩器。把对话压缩为「保关键」结�
 
 /** Prefer LLM keep-key compression; fall back to keyword extract. */
 export async function compressWithLlm(
-  llm: ChatOpenAI | null,
+  llm: LLMClientConfig | null,
   chunks: string[],
   previous = ''
 ): Promise<string> {
@@ -21,13 +20,15 @@ export async function compressWithLlm(
   }
 
   try {
-    const res = await llm.invoke([
-      new SystemMessage(SYSTEM),
-      new HumanMessage(
-        `已有压缩态：\n${previous || '（无）'}\n\n新增内容：\n${joined}\n\n请输出更新后的保关键压缩态：`
-      )
-    ])
-    const text = typeof res.content === 'string' ? res.content.trim() : String(res.content)
+    const messages: LLMMessage[] = [
+      { role: 'system', content: SYSTEM },
+      {
+        role: 'user',
+        content: `已有压缩态：\n${previous || '（无）'}\n\n新增内容：\n${joined}\n\n请输出更新后的保关键压缩态：`
+      }
+    ]
+    const res = await invokeChatCompletion(llm, messages)
+    const text = res.content.trim()
     if (text.length > 20) return text.slice(0, 8000)
   } catch {
     // fall through

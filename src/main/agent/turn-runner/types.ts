@@ -89,22 +89,31 @@ export type TurnInput = {
     contextWindow?: number
     maxTokens?: number
     /** Stage 2.5: LLM 总结函数(可选,不传走本地模板) */
-    generateSummary?: (messages: ReadonlyArray<{
-      role: 'user' | 'assistant' | 'tool'
-      content: string
-      toolCalls?: ReadonlyArray<{ id: string; name: string; args: string }>
-      toolCallId?: string
-    }>) => Promise<string>
+    generateSummary?: (
+      messages: ReadonlyArray<{
+        role: 'user' | 'assistant' | 'tool'
+        content: string
+        toolCalls?: ReadonlyArray<{ id: string; name: string; args: string }>
+        toolCallId?: string
+      }>
+    ) => Promise<string>
   }
 }
 
 /** 单步执行结果（用于 observability） */
 export type TurnStepEvent =
   | { type: 'step:start'; step: TurnStep; turnId: string; stepIndex: number }
-  | { type: 'step:end'; step: TurnStep; turnId: string; stepIndex: number; durationMs: number; ok: boolean }
+  | {
+      type: 'step:end'
+      step: TurnStep
+      turnId: string
+      stepIndex: number
+      durationMs: number
+      ok: boolean
+    }
   | { type: 'turn:delta'; turnId: string; content: string }
   | { type: 'turn:tool_call'; turnId: string; id: string; name: string; input: unknown }
-  | { type: 'turn:tool_result'; turnId: string; id: string; output: unknown; error?: string }
+  | { type: 'turn:tool_result'; turnId: string; id: string; output?: unknown; error?: string }
   | { type: 'turn:usage'; turnId: string; promptTokens: number; completionTokens: number }
   | {
       type: 'compaction:applied'
@@ -131,4 +140,83 @@ export type TurnResult = {
   error?: string
   /** 下一步应该从哪个 step 继续（status=continue 时填） */
   nextStep?: TurnStep
+}
+
+/* ────────── turn hooks（minimax-feature-port，参考 pi-turn-runner/hooks.ts） ────────── */
+
+export type TurnHistoryMessage = {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  toolCalls?: ReadonlyArray<{ id: string; name: string; args: string }>
+  toolCallId?: string
+}
+
+/** beforeLlmCall：每次 LLM 请求前触发（compaction 等决策钩子） */
+export type BeforeLlmCallDecision =
+  | 'continue'
+  | { type: 'skip'; reason: string }
+  | { type: 'replaceMessages'; messages: TurnHistoryMessage[]; reason: string }
+  | { type: 'abort'; reason: string }
+
+export type BeforeLlmCallHook = (input: {
+  turnId: string
+  sessionId: string
+  phase: 'initial' | 'iteration'
+  messages: ReadonlyArray<TurnHistoryMessage>
+  systemPrompt: string
+}) => Promise<BeforeLlmCallDecision>
+
+/** afterLlmCall：assistant 响应产出后、工具执行前触发 */
+export type AfterLlmCallDecision =
+  | 'continue'
+  | { type: 'retry'; reason: string; prompt: string }
+  | { type: 'fail'; reason: string }
+
+export type AfterLlmCallHook = (input: {
+  turnId: string
+  sessionId: string
+  content: string
+  toolCalls: ReadonlyArray<{ id: string; name: string; args: string }>
+}) => Promise<AfterLlmCallDecision>
+
+/** beforeToolCall：单个工具执行前；返回 skip 则不执行 */
+export type BeforeToolCallHook = (input: {
+  turnId: string
+  sessionId: string
+  name: string
+  args: unknown
+}) => Promise<{ type: 'skip'; reason: string } | undefined>
+
+/** afterToolCall：单个工具执行后 */
+export type AfterToolCallHook = (input: {
+  turnId: string
+  sessionId: string
+  name: string
+  args: unknown
+  output: string
+}) => Promise<void>
+
+/** onHistoryChanged：appendHistory 后触发 */
+export type OnHistoryChangedHook = (input: {
+  turnId: string
+  sessionId: string
+  reason: 'append'
+  messages: ReadonlyArray<TurnHistoryMessage>
+}) => Promise<void>
+
+/** onStepEnd：一个 step（LLM 响应 + 工具执行）结束时触发 */
+export type OnStepEndHook = (input: {
+  turnId: string
+  sessionId: string
+  content: string
+  toolResults: ReadonlyArray<{ tool_call_id: string; content: string }>
+}) => Promise<void>
+
+export type TurnHooks = {
+  beforeLlmCall?: BeforeLlmCallHook[]
+  afterLlmCall?: AfterLlmCallHook[]
+  beforeToolCall?: BeforeToolCallHook[]
+  afterToolCall?: AfterToolCallHook[]
+  onHistoryChanged?: OnHistoryChangedHook[]
+  onStepEnd?: OnStepEndHook[]
 }

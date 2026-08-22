@@ -7,10 +7,7 @@ import { buildTools } from '../tools/registry'
 let callCount = 0
 const seenSystemPrompts: string[] = []
 vi.mock('../llm-client', () => ({
-  streamChatCompletion: async function* (
-    _config: unknown,
-    messages: unknown
-  ) {
+  streamChatCompletion: async function* (_config: unknown, messages: unknown) {
     callCount += 1
     const sysMsg = (messages as Array<{ role: string; content: string }>).find(
       (m) => m.role === 'system'
@@ -20,7 +17,13 @@ vi.mock('../llm-client', () => ({
       yield { type: 'content', delta: '我先执行 ping：' }
       yield {
         type: 'tool_calls',
-        toolCalls: [{ id: 'tc-1', type: 'function', function: { name: 'runtime_ping', arguments: '{"note":"first"}' } }]
+        toolCalls: [
+          {
+            id: 'tc-1',
+            type: 'function',
+            function: { name: 'runtime_ping', arguments: '{"note":"first"}' }
+          }
+        ]
       }
       yield { type: 'usage', promptTokens: 100, completionTokens: 50, totalTokens: 150 }
       yield { type: 'done' }
@@ -51,6 +54,7 @@ describe('runTurn 端到端', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-test'
     })
     // 过滤只留 runtime_ping（避免其他工具混入）
@@ -86,6 +90,15 @@ describe('runTurn 端到端', () => {
     // turn:tool_call 至少触发 1 次
     const toolCalls = events.filter((e) => e.type === 'turn:tool_call')
     expect(toolCalls.length).toBeGreaterThanOrEqual(1)
+    // 回归：tool_call 的 args 必须解析成对象，否则 ToolNode 报 "expected object, received string"
+    const toolResults = events.filter(
+      (e): e is Extract<TurnStepEvent, { type: 'turn:tool_result' }> =>
+        e.type === 'turn:tool_result'
+    )
+    expect(toolResults.length).toBeGreaterThanOrEqual(1)
+    for (const tr of toolResults) {
+      expect(String(tr.output)).not.toMatch(/did not match expected schema/)
+    }
   })
 
   it('system-reminder 接入:buildReminder 被调且 block 拼到 systemPrompt', async () => {
@@ -100,6 +113,7 @@ describe('runTurn 端到端', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-test'
     }).filter((t) => t.name === 'runtime_ping')
 
@@ -140,6 +154,7 @@ describe('runTurn 端到端', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-test'
     }).filter((t) => t.name === 'runtime_ping')
 
@@ -158,8 +173,7 @@ describe('runTurn 端到端', () => {
     const compactionEvents = events.filter((e) => e.type === 'compaction:applied')
     expect(compactionEvents.length).toBeGreaterThanOrEqual(1)
     const lastCompaction = compactionEvents[compactionEvents.length - 1] as
-      | Extract<TurnStepEvent, { type: 'compaction:applied' }>
-      | undefined
+      Extract<TurnStepEvent, { type: 'compaction:applied' }> | undefined
     expect(lastCompaction).toBeDefined()
     expect(lastCompaction!.level).toBe('light')
     expect(lastCompaction!.tokensAfter).toBeLessThan(lastCompaction!.tokensBefore)
@@ -176,6 +190,7 @@ describe('runTurn 端到端', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-test'
     }).filter((t) => t.name === 'runtime_ping')
 
@@ -215,6 +230,7 @@ describe('runTurn 端到端', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-test'
     }).filter((t) => t.name === 'runtime_ping')
 
@@ -269,6 +285,7 @@ describe('runTurn 端到端', () => {
     const tools = buildTools({
       emit: () => undefined,
       confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
       sessionId: 'ses-test'
     }).filter((t) => t.name === 'runtime_ping')
 
