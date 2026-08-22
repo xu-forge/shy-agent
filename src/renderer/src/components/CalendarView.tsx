@@ -242,7 +242,7 @@ export function CalendarView(): React.JSX.Element {
     <div className="main pane calendar-view">
       <div className="pane-frame calendar-frame">
         <div className="pane-header">
-          <h1>日历</h1>
+          <h1>定时任务</h1>
           <p className="muted">
             按月查看定时任务的展开实例；点击空白日期新建，点击任务卡片编辑，拖拽卡片可调整整个系列的落点。
           </p>

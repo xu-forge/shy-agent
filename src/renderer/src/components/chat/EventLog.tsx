@@ -10,7 +10,6 @@
  * 这是 minimax Inspector 右下角"event stream" 区域的轻量版。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { AgentEvent } from '../../../../shared/ipc'
 
 const MAX_ENTRIES = 30
 

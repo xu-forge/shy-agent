@@ -3,13 +3,12 @@ import type { ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
 import { Sidebar, type NavKey } from './components/Sidebar'
 import { Header } from './components/Header'
 import { ChatWorkspace } from './components/ChatWorkspace'
-import { MemoryView } from './components/MemoryView'
 import { SkillsView } from './components/SkillsView'
-import { SettingsPanel } from './components/SettingsPanel'
 import { CalendarView } from './components/CalendarView'
 import { InspectorPanel } from './components/InspectorPanel'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -20,16 +19,14 @@ const NAV_KEY = '***'
 
 const NAV_TITLES: Record<NavKey, string> = {
   chat: '对话',
-  memory: '长期记忆',
-  skills: '技能',
-  calendar: '日历',
-  settings: '设置'
+  skills: '技能管理',
+  calendar: '定时任务'
 }
 
 function readNav(): NavKey {
   try {
     const v = localStorage.getItem(NAV_KEY)
-    return v === 'memory' || v === 'skills' || v === 'calendar' || v === 'settings' ? v : 'chat'
+    return v === 'skills' || v === 'calendar' ? v : 'chat'
   } catch {
     return 'chat'
   }
@@ -45,6 +42,9 @@ function App(): React.JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [sessionId, setSessionId] = useState('')
   const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
+  const [chatHasConversation, setChatHasConversation] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
 
   // 主题：应用 + 持久化
   useEffect(() => {
@@ -170,32 +170,34 @@ function App(): React.JSX.Element {
         onSelectSession={setSessionId}
         onNewSession={() => void onNewSession()}
         onDeleteSession={(id, title) => onDeleteSession(id, title)}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         ipcOk={ipcOk}
-        onOpenSettings={() => setNav('settings')}
+        onOpenSettings={(tab) => {
+          setSettingsTab(tab ?? 'general')
+          setSettingsOpen(true)
+        }}
       />
       <div className="main-column">
-        <Header title={NAV_TITLES[nav]} />
+        {nav !== 'chat' ? <Header title={NAV_TITLES[nav]} /> : null}
         {nav === 'chat' ? (
           <ChatWorkspace
             notice={notice}
             sessionId={sessionId}
             onSessionsChanged={() => void refreshSessions()}
+            onConversationState={setChatHasConversation}
           />
         ) : null}
-        {nav === 'memory' ? <MemoryView /> : null}
         {nav === 'skills' ? <SkillsView /> : null}
         {nav === 'calendar' ? <CalendarView /> : null}
-        {nav === 'settings' ? (
-          <SettingsPanel
-            theme={theme}
-            onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-          />
-        ) : null}
       </div>
-      {/* minimax 风格右侧 Inspector 面板 — 仅在 chat 视图显示 */}
-      {nav === 'chat' ? <InspectorPanel sessionId={sessionId} /> : null}
+      {/* 右侧「环境」面板 — 仅在 chat 且有对话时显示（空态不显示，对齐 MiniMax） */}
+      {nav === 'chat' && chatHasConversation ? <InspectorPanel sessionId={sessionId} /> : null}
+      <SettingsDialog
+        open={settingsOpen}
+        initialTab={settingsTab}
+        onClose={() => setSettingsOpen(false)}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+      />
       {confirmDialog ? (
         <ConfirmDialog
           {...confirmDialog}

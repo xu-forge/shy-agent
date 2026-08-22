@@ -1,51 +1,74 @@
 /**
- * Inspector Panel — minimax 布局的右侧面板。
+ * ProgressPanel — 对话视图右侧「进度」面板（对齐 MiniMax 参考图二）。
  *
- * 3 个 tab 实时显示当前 session 的状态:
- * - 任务 (Tasks)     — 当前 session 的 session_tasks,含 done/pending 进度
- * - 记忆 (Memory)    — 长期记忆条目数 + 最近 5 条标题
- * - 技能 (Skills)    — 本地技能包列表
+ * 「进度」勾选清单，而非 "环境" 摘要：
+ * - 进度：任务清单，每项带 ✓（已完成）/ ●（进行中）/ ○（待办），当前步骤高亮，分组计数
+ * - 交付物：已编辑文件，点按复制路径，带操作徽标与计数
  *
- * Stage 4.1 最小可用版:
- * - 复用现有 IPC API (listSessionTasks / listMemory / listSkills)
- * - 自动刷新:每 5s poll 一次（避免实时订阅复杂度）
- * - 选中 sessionId 变化时立即重拉
- * - 空数据时给友好提示
+ * 每 5s 轮询；sessionId 变化时立即重拉；分组展开状态持久化到 localStorage。
  */
 import { useEffect, useState } from 'react'
-import type { SessionTaskRecord, LongMemoryEntry, SkillSummary } from '../../../shared/ipc'
-
-type Tab = 'tasks' | 'memory' | 'skills'
+import type { SessionFileRecord, SessionTaskRecord } from '../../../shared/ipc'
 
 type Props = {
   sessionId: string
 }
 
 const POLL_INTERVAL_MS = 5_000
+const ACCORDION_KEY = 'shy.envAccordion'
+
+type SectionKey = 'progress' | 'deliverables'
+
+const DEFAULT_OPEN: SectionKey[] = ['progress', 'deliverables']
+
+function readOpen(): Set<SectionKey> {
+  try {
+    const raw = localStorage.getItem(ACCORDION_KEY)
+    if (!raw) return new Set(DEFAULT_OPEN)
+    const arr = JSON.parse(raw) as SectionKey[]
+    return new Set(arr.filter((k): k is SectionKey => (DEFAULT_OPEN as string[]).includes(k)))
+  } catch {
+    return new Set(DEFAULT_OPEN)
+  }
+}
 
 export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
-  const [tab, setTab] = useState<Tab>('tasks')
   const [tasks, setTasks] = useState<SessionTaskRecord[]>([])
-  const [memories, setMemories] = useState<LongMemoryEntry[]>([])
-  const [skills, setSkills] = useState<SkillSummary[]>([])
+  const [files, setFiles] = useState<SessionFileRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState<Set<SectionKey>>(readOpen)
+  const [copiedPath, setCopiedPath] = useState('')
 
-  // 加载 + 自动刷新
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACCORDION_KEY, JSON.stringify([...open]))
+    } catch {
+      /* ignore */
+    }
+  }, [open])
+
+  const toggle = (key: SectionKey): void => {
+    setOpen((cur) => {
+      const next = new Set(cur)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   useEffect(() => {
     let alive = true
     const load = async (): Promise<void> => {
       try {
-        const [t, m, s] = await Promise.all([
+        const [t, f] = await Promise.all([
           sessionId
             ? window.shy.listSessionTasks(sessionId).catch(() => [])
             : Promise.resolve([] as SessionTaskRecord[]),
-          window.shy.listMemory().catch(() => []),
-          window.shy.listSkills().catch(() => [])
+          sessionId ? window.shy.listSessionFiles(sessionId).catch(() => []) : Promise.resolve([])
         ])
         if (!alive) return
         setTasks(t)
-        setMemories(m)
-        setSkills(s)
+        setFiles(f)
         setLoading(false)
       } catch {
         if (alive) setLoading(false)
@@ -59,147 +82,141 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
     }
   }, [sessionId])
 
+  const done = tasks.filter((t) => t.done).length
+  const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0
+  const editedFiles = files.filter((f) => f.op === 'write')
+  const currentTask = tasks.find((t) => !t.done)
+
+  const copyPath = async (path: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(path)
+      setCopiedPath(path)
+      setTimeout(() => setCopiedPath(''), 1500)
+    } catch {
+      /* ignore */
+    }
+  }
+
   return (
     <aside className="inspector-panel">
-      <div className="inspector-tabs" role="tablist">
-        <TabButton active={tab === 'tasks'} onClick={() => setTab('tasks')}>
-          任务
-          {tasks.length > 0 && <span className="inspector-count">{tasks.length}</span>}
-        </TabButton>
-        <TabButton active={tab === 'memory'} onClick={() => setTab('memory')}>
-          记忆
-          {memories.length > 0 && <span className="inspector-count">{memories.length}</span>}
-        </TabButton>
-        <TabButton active={tab === 'skills'} onClick={() => setTab('skills')}>
-          技能
-          {skills.length > 0 && <span className="inspector-count">{skills.length}</span>}
-        </TabButton>
-      </div>
-
+      <div className="inspector-header">进度</div>
       <div className="inspector-body">
         {loading ? <div className="inspector-empty">加载中…</div> : null}
-        {!loading && tab === 'tasks' ? <TasksTab tasks={tasks} /> : null}
-        {!loading && tab === 'memory' ? <MemoryTab memories={memories} /> : null}
-        {!loading && tab === 'skills' ? <SkillsTab skills={skills} /> : null}
+        {!loading ? (
+          <>
+            <EnvGroup
+              title="进度"
+              badge={tasks.length ? `${done}/${tasks.length}` : undefined}
+              open={open.has('progress')}
+              onToggle={() => toggle('progress')}
+            >
+              {tasks.length === 0 ? (
+                <EmptyHint title="还没有任务" hint="目标模式下会自动生成清单" />
+              ) : (
+                <div className="env-progress-wrap">
+                  <div className="env-progress">
+                    <div className="env-progress-bar">
+                      <div className="env-progress-fill" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="env-progress-label">
+                      {done}/{tasks.length} 完成 · {pct}%
+                    </div>
+                  </div>
+                  <ul className="env-task-list">
+                    {tasks.map((t) => {
+                      const isCurrent = !t.done && currentTask?.id === t.id
+                      return (
+                        <li
+                          key={t.id}
+                          className={`env-task${t.done ? ' done' : ''}${isCurrent ? ' current' : ''}`}
+                        >
+                          <span className="task-check" aria-hidden="true">
+                            {t.done ? '✓' : isCurrent ? '●' : '○'}
+                          </span>
+                          <div className="task-body">
+                            <div className="task-title">{t.title}</div>
+                            {t.evidence ? (
+                              <div className="task-evidence">{t.evidence.slice(0, 90)}</div>
+                            ) : null}
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              )}
+            </EnvGroup>
+
+            <EnvGroup
+              title="交付物"
+              badge={editedFiles.length ? `${editedFiles.length}` : undefined}
+              open={open.has('deliverables')}
+              onToggle={() => toggle('deliverables')}
+            >
+              {editedFiles.length === 0 ? (
+                <EmptyHint title="暂无交付物" hint="Agent 改动的文件会出现在这里" />
+              ) : (
+                <ul className="env-file-list">
+                  {editedFiles.map((f) => (
+                    <li key={`${f.id}-${f.path}`}>
+                      <button
+                        type="button"
+                        className="env-file"
+                        onClick={() => void copyPath(f.path)}
+                        title="点击复制路径"
+                      >
+                        <span className="file-op">改</span>
+                        <span className="file-path">{f.path}</span>
+                        <span className="file-copy">
+                          {copiedPath === f.path ? '已复制' : '复制'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </EnvGroup>
+          </>
+        ) : null}
       </div>
     </aside>
   )
 }
 
-function TabButton({
-  active,
-  onClick,
+function EnvGroup({
+  title,
+  badge,
+  open,
+  onToggle,
   children
 }: {
-  active: boolean
-  onClick: () => void
+  title: string
+  badge?: string
+  open: boolean
+  onToggle: () => void
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <button
-      type="button"
-      className={`inspector-tab${active ? ' active' : ''}`}
-      onClick={onClick}
-      role="tab"
-      aria-selected={active}
-    >
-      {children}
-    </button>
+    <section className={`env-section${open ? ' open' : ''}`}>
+      <button type="button" className="env-section-head" onClick={onToggle} aria-expanded={open}>
+        <span className="env-chevron" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </span>
+        <span className="env-section-title">{title}</span>
+        {badge ? <span className="env-section-badge">{badge}</span> : null}
+      </button>
+      {open ? <div className="env-section-body">{children}</div> : null}
+    </section>
   )
 }
 
-function TasksTab({ tasks }: { tasks: SessionTaskRecord[] }): React.JSX.Element {
-  if (tasks.length === 0) {
-    return (
-      <div className="inspector-empty">
-        <div className="inspector-empty-title">还没有任务</div>
-        <div className="inspector-empty-hint">目标模式下会自动生成清单</div>
-      </div>
-    )
-  }
-  const done = tasks.filter((t) => t.done).length
-  const pct = Math.round((done / tasks.length) * 100)
+function EmptyHint({ title, hint }: { title: string; hint: string }): React.JSX.Element {
   return (
-    <div className="inspector-section">
-      <div className="inspector-progress">
-        <div className="inspector-progress-bar">
-          <div className="inspector-progress-fill" style={{ width: `${pct}%` }} />
-        </div>
-        <div className="inspector-progress-label">
-          {done}/{tasks.length} 完成 · {pct}%
-        </div>
-      </div>
-      <ul className="inspector-list">
-        {tasks.map((t) => (
-          <li key={t.id} className={`inspector-item task-${t.source}${t.done ? ' done' : ''}`}>
-            <span className="inspector-item-check">{t.done ? '☑' : '☐'}</span>
-            <div className="inspector-item-body">
-              <div className="inspector-item-title">{t.title}</div>
-              {t.evidence ? <div className="inspector-item-evidence">{t.evidence.slice(0, 100)}</div> : null}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function MemoryTab({ memories }: { memories: LongMemoryEntry[] }): React.JSX.Element {
-  if (memories.length === 0) {
-    return (
-      <div className="inspector-empty">
-        <div className="inspector-empty-title">长期记忆为空</div>
-        <div className="inspector-empty-hint">agent 会自动维护偏好/规范</div>
-      </div>
-    )
-  }
-  const recent = memories.slice(0, 5)
-  return (
-    <div className="inspector-section">
-      <div className="inspector-section-title">最近 {Math.min(5, memories.length)} 条</div>
-      <ul className="inspector-list">
-        {recent.map((m) => (
-          <li key={m.id} className="inspector-item memory">
-            <div className="inspector-item-body">
-              <div className="inspector-item-title">
-                {m.title}
-                <span className="inspector-item-source" data-source={m.source}>
-                  {m.source === 'agent' ? 'agent' : 'user'}
-                </span>
-              </div>
-              <div className="inspector-item-evidence">{m.content.slice(0, 100)}</div>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {memories.length > 5 ? (
-        <div className="inspector-more">+{memories.length - 5} 条更多,见「长期记忆」页</div>
-      ) : null}
-    </div>
-  )
-}
-
-function SkillsTab({ skills }: { skills: SkillSummary[] }): React.JSX.Element {
-  if (skills.length === 0) {
-    return (
-      <div className="inspector-empty">
-        <div className="inspector-empty-title">本地没有技能</div>
-        <div className="inspector-empty-hint">在「技能」页可创建/加载</div>
-      </div>
-    )
-  }
-  return (
-    <div className="inspector-section">
-      <ul className="inspector-list">
-        {skills.map((s) => (
-          <li key={s.id} className="inspector-item skill">
-            <div className="inspector-item-body">
-              <div className="inspector-item-title">{s.name}</div>
-              <div className="inspector-item-evidence">{s.description || s.id}</div>
-            </div>
-          </li>
-        ))}
-      </ul>
+    <div className="inspector-empty">
+      <div className="inspector-empty-title">{title}</div>
+      <div className="inspector-empty-hint">{hint}</div>
     </div>
   )
 }

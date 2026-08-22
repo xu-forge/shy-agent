@@ -66,10 +66,15 @@ export function SkillsView(): React.JSX.Element {
     void window.shy.listSkills().then((rows) => {
       if (alive) setItems(rows)
     })
+    // minimax-feature-port：技能热重载 → skills_changed 自动刷新
+    const off = window.shy.onEvent((payload) => {
+      if ((payload as { type?: string }).type === 'skills_changed') void reload()
+    })
     return () => {
       alive = false
+      off()
     }
-  }, [])
+  }, [reload])
 
   const closeDrawer = useCallback((): void => {
     setDrawer(null)
@@ -146,7 +151,7 @@ export function SkillsView(): React.JSX.Element {
     <div className="main pane">
       <div className="pane-frame">
         <div className="pane-header">
-          <h1>技能</h1>
+          <h1>技能管理</h1>
           <p className="muted">本地 SKILL.md 包。点击卡片查看详情，也可让 Agent 生成新技能。</p>
         </div>
 
@@ -177,20 +182,33 @@ export function SkillsView(): React.JSX.Element {
         ) : (
           <div className="skill-grid">
             {filtered.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className="card skill-card"
-                onClick={() => void openDetail(s.id)}
-                aria-label={`查看技能 ${s.name}`}
-              >
-                <span className="card-title-row">
-                  <strong>{s.name}</strong>
-                  <span className="chip chip-goal">详情</span>
-                </span>
-                <span className="card-meta">{s.id}</span>
-                <span className="muted skill-desc">{s.description || '暂无描述'}</span>
-              </button>
+              <div key={s.id} className="card skill-card">
+                <button
+                  type="button"
+                  className="skill-card-main"
+                  onClick={() => void openDetail(s.id)}
+                  aria-label={`查看技能 ${s.name}`}
+                >
+                  <span className="card-title-row">
+                    <strong>{s.name}</strong>
+                    <span className={`skill-root-chip root-${s.rootKind ?? 'user'}`}>
+                      {s.rootKind ?? 'user'}
+                    </span>
+                  </span>
+                  <span className="card-meta">{s.id}</span>
+                  <span className="muted skill-desc">{s.description || '暂无描述'}</span>
+                </button>
+                <label className="skill-enable" title="启用 / 禁用该技能">
+                  <input
+                    type="checkbox"
+                    checked={s.enabled !== false}
+                    onChange={(e) => {
+                      void window.shy.setSkillEnabled(s.name, e.target.checked).then(reload)
+                    }}
+                  />
+                  启用
+                </label>
+              </div>
             ))}
           </div>
         )}

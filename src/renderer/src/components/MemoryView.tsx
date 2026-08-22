@@ -120,53 +120,47 @@ export function MemoryView(): React.JSX.Element {
   }
 
   return (
-    <div className="main pane">
-      <div className="pane-frame">
-        <div className="pane-header">
-          <h1>长期记忆</h1>
-          <p className="muted">偏好、规范与可复用工作流。Agent 更新时会通知你。</p>
+    <div className="memory-view">
+      <div className="memory-toolbar">
+        <input
+          className="memory-search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索标题 / 内容 / 标签…"
+          aria-label="搜索长期记忆"
+        />
+        <div className="seg" role="tablist" aria-label="来源筛选">
+          {(['all', 'user', 'agent'] as SourceFilter[]).map((s) => (
+            <button
+              key={s}
+              type="button"
+              role="tab"
+              aria-selected={source === s}
+              className={`seg-btn${source === s ? ' active' : ''}`}
+              onClick={() => setSource(s)}
+            >
+              {s === 'all' ? '全部' : s === 'user' ? '用户' : 'Agent'}
+            </button>
+          ))}
         </div>
-
-        <div className="memory-toolbar">
-          <input
-            className="memory-search"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索标题 / 内容 / 标签…"
-            aria-label="搜索长期记忆"
-          />
-          <div className="seg" role="tablist" aria-label="来源筛选">
-            {(['all', 'user', 'agent'] as SourceFilter[]).map((s) => (
-              <button
-                key={s}
-                type="button"
-                role="tab"
-                aria-selected={source === s}
-                className={`seg-btn${source === s ? ' active' : ''}`}
-                onClick={() => setSource(s)}
-              >
-                {s === 'all' ? '全部' : s === 'user' ? '用户' : 'Agent'}
-              </button>
-            ))}
-          </div>
-          <label className="sort-label">
-            排序
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-              <option value="updated">更新时间</option>
-              <option value="created">创建时间</option>
-              <option value="title">标题</option>
-            </select>
-          </label>
-          <span className="count-chip">
-            {filtered.length === items.length
-              ? `共 ${items.length} 条`
-              : `${filtered.length} / ${items.length} 条`}
-          </span>
-          <button type="button" className="btn btn-primary" onClick={onCreate}>
-            + 新增
-          </button>
-        </div>
+        <label className="sort-label">
+          排序
+          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+            <option value="updated">更新时间</option>
+            <option value="created">创建时间</option>
+            <option value="title">标题</option>
+          </select>
+        </label>
+        <span className="count-chip">
+          {filtered.length === items.length
+            ? `共 ${items.length} 条`
+            : `${filtered.length} / ${items.length} 条`}
+        </span>
+        <button type="button" className="btn btn-primary" onClick={onCreate}>
+          + 新增
+        </button>
+      </div>
 
         {filtered.length === 0 ? (
           <div className="empty-inline">
@@ -233,7 +227,7 @@ export function MemoryView(): React.JSX.Element {
             })}
           </div>
         )}
-      </div>
+      <p className="memory-view-foot">记忆由 agent 维护、更新时会通知你；过时或重复的条目可随时清理。</p>
 
       {edit ? (
         <>
