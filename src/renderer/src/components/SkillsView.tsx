@@ -149,7 +149,7 @@ export function SkillsView(): React.JSX.Element {
   }
 
   return (
-    <div className="main pane">
+    <div className="main pane skills-view">
       <div className="pane-frame">
         <div className="pane-header">
           <h1>技能管理</h1>

@@ -6622,3 +6622,9 @@
 .drawer-head .drawer-close {
   margin-left: auto;
 }
+
+/* 技能 / 定时任务内容区白底（记忆页保持 canvas 分层不变） */
+.skills-view .pane-frame,
+.calendar-frame {
+  background: var(--bg);
+}
