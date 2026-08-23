@@ -14,6 +14,7 @@ import type {
   ScheduleTasksListResult,
   SessionDetail,
   SessionFileRecord,
+  SessionDiffRecord,
   SessionSummary,
   SessionTaskRecord,
   SkillSummary,
@@ -61,6 +62,7 @@ export interface ShyApi {
   browserForward: () => Promise<{ ok: boolean }>
   browserReload: () => Promise<{ ok: boolean }>
   listSessionFiles: (sessionId: string) => Promise<SessionFileRecord[]>
+  listSessionDiffs: (sessionId: string) => Promise<SessionDiffRecord[]>
   revealSessionFile: (sessionId: string, filePath: string) => Promise<{ ok: boolean }>
   listSessionTasks: (sessionId: string) => Promise<SessionTaskRecord[]>
   updateSessionTask: (input: {

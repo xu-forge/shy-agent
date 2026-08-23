@@ -6371,3 +6371,145 @@
   border-radius: 0;
   box-shadow: none;
 }
+
+/* ══════════ inspector-func-panel：右侧功能面板 tabs + diff 视图 ══════════ */
+.inspector-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px 0;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.inspector-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.inspector-tab svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.8; fill: none; }
+.inspector-tab:hover { color: var(--text-secondary); background: var(--bg-hover); border-radius: 8px 8px 0 0; }
+.inspector-tab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--ink); }
+
+.inspector-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  padding: 8px;
+}
+.inspector-browser .browser-panel {
+  width: 100%;
+  min-width: 0;
+  border-left: none;
+  padding: 0;
+  gap: 6px;
+}
+
+/* diff 列表与展开视图 */
+.diff-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.diff-item { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg-panel); }
+.diff-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+}
+.diff-item-head:hover { background: var(--bg-hover); }
+.diff-item-name { flex: 1; min-width: 0; font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-item-counts { display: inline-flex; gap: 6px; font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
+.diff-add { color: #1a7f37; }
+.diff-del { color: var(--danger); }
+
+.diff-body { border-top: 1px solid var(--line); }
+.diff-path {
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  word-break: break-all;
+}
+.diff-pre {
+  margin: 0;
+  padding: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-x: auto;
+  background: var(--bg-panel);
+}
+.diff-hunk { padding: 3px 10px; color: var(--text-muted); background: var(--bg-soft); }
+.diff-line { display: flex; align-items: flex-start; }
+.diff-mark { width: 24px; flex-shrink: 0; text-align: center; color: var(--text-muted); user-select: none; }
+.diff-code { white-space: pre; flex: 1; padding-right: 10px; background: transparent; }
+.diff-line-add .diff-mark { color: #1a7f37; }
+.diff-line-add { background: rgba(26, 127, 55, 0.08); }
+.diff-line-del .diff-mark { color: var(--danger); }
+.diff-line-del { background: color-mix(in srgb, var(--danger) 8%, transparent); }
+[data-theme='dark'] .diff-line-add { background: rgba(63, 185, 80, 0.12); }
+[data-theme='dark'] .diff-add { color: #3fb950; }
+.hljs { background: transparent !important; padding: 0 !important; }
+
+/* ══════════ inspector 面板展开/收起（收起态右缘把手） ══════════ */
+.inspector-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 340px;
+  flex-shrink: 0;
+}
+.inspector-panel.collapsed {
+  width: 26px;
+  align-items: center;
+  padding-top: 10px;
+  border-left: 1px solid var(--line);
+  background: var(--bg-panel);
+}
+.inspector-handle {
+  width: 22px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.inspector-handle:hover { color: var(--text); background: var(--bg-hover); }
+.inspector-handle svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
+
+.inspector-tabs { display: flex; } /* 恢复横向 tab 条 */
+.inspector-collapse {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  align-self: center;
+  margin-right: 6px;
+  margin-bottom: -1px;
+}
+.inspector-collapse:hover { background: var(--bg-hover); color: var(--text); }
+.inspector-collapse svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }

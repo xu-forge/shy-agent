@@ -11,6 +11,7 @@ import {
   deleteSessionTask,
   listLongMemory,
   listSessionFiles,
+  listSessionDiffs,
   listSessionTasks,
   updateSessionTaskDone,
   upsertLongMemory
@@ -128,6 +129,10 @@ export function registerCoreIpc(): void {
 
   // shell-session-side-panel: 会话文件追踪
   ipcMain.handle(IPC.sessionFilesList, async (_e, sessionId: string) => listSessionFiles(sessionId))
+  // inspector-func-panel: 会话文件改动 diff
+  ipcMain.handle(IPC.sessionDiffsList, async (_e, sessionId: string) =>
+    listSessionDiffs(sessionId)
+  )
   ipcMain.handle(IPC.sessionFilesReveal, async (_e, _sessionId: string, filePath: string) => {
     if (process.platform === 'win32') {
       // explorer /select, 在资源管理器中选中文件（需转义逗号）

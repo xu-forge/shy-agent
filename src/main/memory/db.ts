@@ -62,6 +62,18 @@ export function getDb(): Database.Database {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_session_tasks_sid ON session_tasks(session_id, updated_at DESC);
+    CREATE TABLE IF NOT EXISTS session_diffs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      op TEXT NOT NULL,
+      added INTEGER NOT NULL DEFAULT 0,
+      removed INTEGER NOT NULL DEFAULT 0,
+      diff_text TEXT NOT NULL,
+      snapshot_path TEXT,
+      occurred_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_diffs_sid ON session_diffs(session_id, occurred_at DESC);
   `)
   // migrate revision column if missing
   try {
@@ -214,6 +226,68 @@ export function listSessionFiles(sessionId: string, limit = 200): SessionFileRec
     sessionId: String(row.session_id),
     op: row.op as FileOp,
     path: String(row.path),
+    occurredAt: Number(row.occurred_at)
+  }))
+}
+
+/* ────────── session diffs (文件改动 diff 捕获，inspector-func-panel) ────────── */
+
+export type SessionDiffRecord = {
+  id: number
+  sessionId: string
+  path: string
+  op: 'write' | 'delete'
+  added: number
+  removed: number
+  diffText: string
+  snapshotPath: string | null
+  occurredAt: number
+}
+
+export function recordDiff(input: {
+  sessionId: string
+  path: string
+  op: 'write' | 'delete'
+  added: number
+  removed: number
+  diffText: string
+  snapshotPath: string | null
+}): SessionDiffRecord {
+  const occurredAt = Date.now()
+  const info = getDb()
+    .prepare(
+      `INSERT INTO session_diffs (session_id, path, op, added, removed, diff_text, snapshot_path, occurred_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      input.sessionId,
+      input.path,
+      input.op,
+      input.added,
+      input.removed,
+      input.diffText,
+      input.snapshotPath,
+      occurredAt
+    )
+  return { id: Number(info.lastInsertRowid), occurredAt, ...input }
+}
+
+export function listSessionDiffs(sessionId: string, limit = 100): SessionDiffRecord[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, session_id, path, op, added, removed, diff_text, snapshot_path, occurred_at
+       FROM session_diffs WHERE session_id = ? ORDER BY occurred_at DESC LIMIT ?`
+    )
+    .all(sessionId, limit) as Record<string, unknown>[]
+  return rows.map((row) => ({
+    id: Number(row.id),
+    sessionId: String(row.session_id),
+    path: String(row.path),
+    op: row.op === 'delete' ? 'delete' : 'write',
+    added: Number(row.added),
+    removed: Number(row.removed),
+    diffText: String(row.diff_text),
+    snapshotPath: row.snapshot_path ? String(row.snapshot_path) : null,
     occurredAt: Number(row.occurred_at)
   }))
 }

@@ -15,7 +15,14 @@ function assetUrl(path: string): string {
   return `shy-asset://${rel}`
 }
 
-export function BrowserPanel({ onClose }: { onClose: () => void }): React.JSX.Element {
+export function BrowserPanel({
+  onClose,
+  embedded = false
+}: {
+  onClose?: () => void
+  /** 嵌入右侧功能面板：隐藏关闭按钮（切 tab 即关闭），紧凑布局 */
+  embedded?: boolean
+}): React.JSX.Element {
   const slotRef = useRef<HTMLDivElement>(null)
   const [url, setUrl] = useState('about:blank')
   const [shots, setShots] = useState<string[]>([])
@@ -83,7 +90,12 @@ export function BrowserPanel({ onClose }: { onClose: () => void }): React.JSX.El
           <button type="button" title="刷新" onClick={() => void window.shy.browserReload()}>
             ⟳
           </button>
-          <button type="button" title="关闭面板" onClick={onClose}>
+          <button
+            type="button"
+            title="关闭面板"
+            onClick={() => onClose?.()}
+            style={embedded ? { display: 'none' } : undefined}
+          >
             ✕
           </button>
         </div>

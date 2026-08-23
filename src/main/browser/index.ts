@@ -1,6 +1,6 @@
 /** 浏览器模块入口：单例 manager + IPC 注册 */
 import { realpath } from 'fs/promises'
-import { ipcMain } from 'electron'
+import { ipcMain, type BrowserWindow } from 'electron'
 import { IPC } from '../../shared/ipc'
 import { getShyPaths } from '../paths'
 import { EmbeddedBrowserManager, BROWSER_ACTIONS } from './embedded-browser-manager'
@@ -38,8 +38,27 @@ export function getEmbeddedBrowserManager(): EmbeddedBrowserManager {
 export function registerBrowserIpc(): void {
   const m = () => getEmbeddedBrowserManager()
 
+  // 渲染层发的是 CSS 像素；页面 zoom ≠ 1 时需换算为 DIP 才能与 React 布局对齐
+  const toDip = (bounds: ViewBounds): ViewBounds => {
+    const win = _getWindow()
+    let zoom = 1
+    try {
+      const bw = win as unknown as BrowserWindow | null
+      zoom = bw && !bw.isDestroyed() ? bw.webContents.getZoomFactor() : 1
+    } catch {
+      zoom = 1
+    }
+    if (zoom === 1) return bounds
+    return {
+      x: Math.round(bounds.x / zoom),
+      y: Math.round(bounds.y / zoom),
+      width: Math.max(1, Math.round(bounds.width / zoom)),
+      height: Math.max(1, Math.round(bounds.height / zoom))
+    }
+  }
+
   ipcMain.handle(IPC.browserShow, (_e, bounds: ViewBounds) => {
-    m().show(bounds)
+    m().show(toDip(bounds))
     return { ok: true }
   })
   ipcMain.handle(IPC.browserHide, () => {
@@ -47,7 +66,7 @@ export function registerBrowserIpc(): void {
     return { ok: true }
   })
   ipcMain.handle(IPC.browserSetBounds, (_e, bounds: ViewBounds) => {
-    m().setBounds(bounds)
+    m().setBounds(toDip(bounds))
     return { ok: true }
   })
   ipcMain.handle(IPC.browserGetState, () => m().getState())

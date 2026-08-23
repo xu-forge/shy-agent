@@ -75,7 +75,7 @@ export type TurnInput = {
     model: string
     temperature?: number
   }
-  /** 已匹配技能 block（plan 阶段从 skills/match.ts 拿） */
+  /** 技能目录 block（catalog 注入，见 skills/catalog.ts） */
   skillBlock?: string
   /** 长期记忆 block（来自 memory/db.ts） */
   memoryBlock?: string

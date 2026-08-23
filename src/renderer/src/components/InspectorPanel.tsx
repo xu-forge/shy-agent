@@ -1,14 +1,17 @@
 /**
- * ProgressPanel — 对话视图右侧「进度」面板（对齐 MiniMax 参考图二）。
+ * InspectorPanel — 对话视图右侧功能面板（inspector-func-panel）。
  *
- * 「进度」勾选清单，而非 "环境" 摘要：
- * - 进度：任务清单，每项带 ✓（已完成）/ ●（进行中）/ ○（待办），当前步骤高亮，分组计数
- * - 交付物：已编辑文件，点按复制路径，带操作徽标与计数
+ * 三个 tab：
+ * - 任务：进度勾选清单 + 交付物文件列表
+ * - 文件：会话内文件改动 diff（jsdiff 计算 + highlight.js 高亮）
+ * - 浏览器：内嵌浏览器（切走 tab 即隐藏原生视图，状态保留）
  *
- * 每 5s 轮询；sessionId 变化时立即重拉；分组展开状态持久化到 localStorage。
+ * 每 5s 轮询；tab 选择与分组展开持久化到 localStorage。
  */
 import { useEffect, useState } from 'react'
 import type { SessionFileRecord, SessionTaskRecord } from '../../../shared/ipc'
+import { DiffView } from './DiffView'
+import { BrowserPanel } from './chat/BrowserPanel'
 
 type Props = {
   sessionId: string
@@ -16,10 +19,53 @@ type Props = {
 
 const POLL_INTERVAL_MS = 5_000
 const ACCORDION_KEY = 'shy.envAccordion'
+const TAB_KEY = 'shy.inspectorTab'
+const OPEN_KEY = 'shy.inspectorOpen'
 
 type SectionKey = 'progress' | 'deliverables'
+type PanelTab = 'tasks' | 'diffs' | 'browser'
 
 const DEFAULT_OPEN: SectionKey[] = ['progress', 'deliverables']
+
+const TABS: { key: PanelTab; label: string; icon: React.JSX.Element }[] = [
+  {
+    key: 'tasks',
+    label: '任务',
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 12l4 4L19 6" />
+      </svg>
+    )
+  },
+  {
+    key: 'diffs',
+    label: '文件',
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4v16M4 12h16" />
+      </svg>
+    )
+  },
+  {
+    key: 'browser',
+    label: '浏览器',
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M3.5 9h17M3.5 15h17M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+      </svg>
+    )
+  }
+]
+
+function readTab(): PanelTab {
+  const raw = localStorage.getItem(TAB_KEY)
+  return raw === 'diffs' || raw === 'browser' || raw === 'tasks' ? raw : 'tasks'
+}
+
+function readPanelOpen(): boolean {
+  return localStorage.getItem(OPEN_KEY) !== 'false'
+}
 
 function readOpen(): Set<SectionKey> {
   try {
@@ -36,6 +82,8 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
   const [tasks, setTasks] = useState<SessionTaskRecord[]>([])
   const [files, setFiles] = useState<SessionFileRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<PanelTab>(readTab)
+  const [panelOpen, setPanelOpen] = useState<boolean>(readPanelOpen)
   const [open, setOpen] = useState<Set<SectionKey>>(readOpen)
   const [copiedPath, setCopiedPath] = useState('')
 
@@ -97,13 +145,83 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
     }
   }
 
+  const setOpenPersisted = (next: boolean): void => {
+    setPanelOpen(next)
+    try {
+      localStorage.setItem(OPEN_KEY, String(next))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // 收起态：右缘只留一个展开把手（参考 ZCode 最右侧图标按钮）
+  if (!panelOpen) {
+    return (
+      <aside className="inspector-panel collapsed">
+        <button
+          type="button"
+          className="inspector-handle"
+          title="展开功能面板"
+          aria-label="展开功能面板"
+          onClick={() => setOpenPersisted(true)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 6l-6 6 6 6" />
+          </svg>
+        </button>
+      </aside>
+    )
+  }
+
   return (
     <aside className="inspector-panel">
-      <div className="inspector-header">进度</div>
-      <div className="inspector-body">
-        {loading ? <div className="inspector-empty">加载中…</div> : null}
-        {!loading ? (
-          <>
+      <div className="inspector-tabs" role="tablist" aria-label="功能面板">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            className={`inspector-tab${tab === t.key ? ' active' : ''}`}
+            onClick={() => {
+              setTab(t.key)
+              try {
+                localStorage.setItem(TAB_KEY, t.key)
+              } catch {
+                /* ignore */
+              }
+            }}
+          >
+            {t.icon}
+            <span>{t.label}</span>
+          </button>
+        ))}
+        <button
+          type="button"
+          className="inspector-collapse"
+          title="收起面板"
+          aria-label="收起面板"
+          onClick={() => setOpenPersisted(false)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M10 6l6 6-6 6" />
+          </svg>
+        </button>
+      </div>
+
+      {tab === 'browser' ? (
+        <div className="inspector-browser">
+          <BrowserPanel embedded />
+        </div>
+      ) : (
+        <div className="inspector-body">
+          {tab === 'diffs' ? (
+            <DiffView sessionId={sessionId} />
+          ) : (
+            <>
+              {loading ? <div className="inspector-empty">加载中…</div> : null}
+              {!loading ? (
+                <>
             <EnvGroup
               title="进度"
               badge={tasks.length ? `${done}/${tasks.length}` : undefined}
@@ -176,9 +294,12 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
                 </ul>
               )}
             </EnvGroup>
-          </>
-        ) : null}
-      </div>
+                </>
+              ) : null}
+            </>
+          )}
+        </div>
+      )}
     </aside>
   )
 }

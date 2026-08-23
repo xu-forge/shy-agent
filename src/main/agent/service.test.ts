@@ -36,11 +36,6 @@ vi.mock('../sessions/store', () => ({
   updateSessionRuntime
 }))
 
-vi.mock('../skills/match', () => ({
-  matchSkills: async () => [],
-  formatSkillsForPrompt: () => ''
-}))
-
 vi.mock('../memory/compress', () => ({
   compressWithLlm: async () => ''
 }))

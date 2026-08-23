@@ -8,6 +8,7 @@ import { upsertLongMemory, deleteLongMemory, listLongMemory, recordFileOp } from
 import { writeSkill, listSkills, deleteSkill, getEnabledSkillEntries } from '../../skills/store'
 import { registerTaskTools } from './builtin/task'
 import { registerBrowserTool } from './browser'
+import { captureWriteDiff, captureDeleteDiff } from '../../diff/capture'
 
 /**
  * shell-session-side-panel：本文件内置工具中需要打点文件操作到 session_files 表的工具：
@@ -121,6 +122,7 @@ export function registerBuiltinTools(): void {
         if (!ok) return JSON.stringify({ ok: false, error: '用户拒绝' })
       }
       ctx.emit('tool', { name: 'fs_write', path: abs })
+      await captureWriteDiff(ctx.sessionId, abs, content)
       await mkdir(dirname(abs), { recursive: true })
       await writeFile(abs, content, 'utf8')
       recordFileOp(ctx.sessionId, 'write', abs)
@@ -146,6 +148,7 @@ export function registerBuiltinTools(): void {
         if (!ok) return JSON.stringify({ ok: false, error: '用户拒绝' })
       }
       ctx.emit('tool', { name: 'fs_delete', path: abs })
+      if (!recursive) await captureDeleteDiff(ctx.sessionId, abs)
       await rm(abs, { recursive: Boolean(recursive), force: true })
       recordFileOp(ctx.sessionId, 'delete', abs)
       return JSON.stringify({ ok: true })
@@ -214,7 +217,7 @@ export function registerBuiltinTools(): void {
       '何时用：用户给稳定的工作流（"以后做 X 都要这样"）；agent 抽出可复用模式（"这个流程值得固化"）。\n' +
       '何时不用：临时步骤用 plan checklist；一次性流程不需要技能化。\n' +
       'SKILL.md 内容是 markdown 说明 + 可选 scripts 字典（脚本会被存到同目录）。\n' +
-      '新技能会自动被下次对话的 matchSkills 命中（关键词打分）。\n' +
+      '新技能写入后立即生效：出现在下次对话的技能目录里，LLM 会用 skill 工具读取全文。\n' +
       '参数：`markdown` 必填（SKILL.md 完整内容）；`id` 可选（不传则新建，传则更新）；`scripts` 可选（脚本名 → 脚本内容）。',
     schema: z.object({
       id: z.string().optional(),
@@ -233,7 +236,7 @@ export function registerBuiltinTools(): void {
     description:
       '列出本地所有技能包（~/.shy/skills/*）。\n\n' +
       '何时用：检查现有能力（避免重复创建）/ 找适合当前任务的技能 id。\n' +
-      '何时不用：用某个技能做实际事 — 技能会自动被 matchSkills 注入到 system prompt，不需要显式调。\n' +
+      '何时不用：用某个技能做实际事 — 技能目录已在 system prompt 里，LLM 会用 skill 工具按需读取，不需要先列一遍。\n' +
       '返回技能 id/name/description/path，无参数。\n' +
       '与 skill_list 不同：本工具只列"我自己管理的技能"，不是用户视角的全集。',
     schema: z.object({}),

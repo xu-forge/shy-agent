@@ -8,6 +8,7 @@ import {
   type ModelSettings,
   type SessionDetail,
   type SessionFileRecord,
+  type SessionDiffRecord,
   type SessionSummary,
   type SessionTaskRecord,
   type SkillSummary,
@@ -78,6 +79,8 @@ const shy = {
   // shell-session-side-panel
   listSessionFiles: (sessionId: string): Promise<SessionFileRecord[]> =>
     ipcRenderer.invoke(IPC.sessionFilesList, sessionId),
+  listSessionDiffs: (sessionId: string): Promise<SessionDiffRecord[]> =>
+    ipcRenderer.invoke(IPC.sessionDiffsList, sessionId),
   revealSessionFile: (sessionId: string, filePath: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.sessionFilesReveal, sessionId, filePath),
   listSessionTasks: (sessionId: string): Promise<SessionTaskRecord[]> =>

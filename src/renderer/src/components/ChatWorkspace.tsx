@@ -6,7 +6,6 @@ import { timeAgo } from '../lib/time'
 import { ReActContent } from './chat/ReActContent'
 import { ToolCallCard } from './chat/ToolCallCard'
 import { SlashMenu, type SlashItem } from './chat/SlashMenu'
-import { BrowserPanel } from './chat/BrowserPanel'
 
 type Props = {
   notice?: string
@@ -78,7 +77,6 @@ export function ChatWorkspace({
   const [alwaysAuthorize, setAlwaysAuthorize] = useState(false)
   const [sessionFiles, setSessionFiles] = useState<SessionFileRecord[]>([])
   const [slashIndex, setSlashIndex] = useState(0)
-  const [browserOpen, setBrowserOpen] = useState(false)
   const [lastResult, setLastResult] = useState<{
     tokenUsed: number
     rounds: number
@@ -623,14 +621,6 @@ export function ChatWorkspace({
       <div className="topbar">
         <div className="topbar-title">对话</div>
         <div className="top-actions">
-          <button
-            type="button"
-            className={`browser-toggle${browserOpen ? ' active' : ''}`}
-            onClick={() => setBrowserOpen((v) => !v)}
-            title="内嵌浏览器面板"
-          >
-            浏览器
-          </button>
           {runningCls ? (
             <div className={`status ${runningCls}`}>
               <span className="status-dot" aria-hidden="true" />
@@ -641,7 +631,6 @@ export function ChatWorkspace({
       </div>
 
       <div className="chat-body">
-        {browserOpen ? <BrowserPanel onClose={() => setBrowserOpen(false)} /> : null}
         <div className="workspace">
           <div className="workspace-inner">
             {notice ? <div className="banner">{notice}</div> : null}

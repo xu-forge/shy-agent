@@ -22,6 +22,7 @@ export const IPC = {
   sessionsDelete: 'shy:sessions-delete',
   sessionFilesList: 'shy:session-files-list',
   sessionFilesReveal: 'shy:session-files-reveal',
+  sessionDiffsList: 'shy:session-diffs-list',
   sessionTasksList: 'shy:session-tasks-list',
   sessionTasksUpdate: 'shy:session-tasks-update',
   sessionTasksDelete: 'shy:session-tasks-delete',
@@ -171,6 +172,20 @@ export type SessionFileRecord = {
   sessionId: string
   op: FileOp
   path: string
+  occurredAt: number
+}
+
+/* ────────── session diffs（inspector-func-panel） ────────── */
+
+export type SessionDiffRecord = {
+  id: number
+  sessionId: string
+  path: string
+  op: 'write' | 'delete'
+  added: number
+  removed: number
+  diffText: string
+  snapshotPath: string | null
   occurredAt: number
 }
 

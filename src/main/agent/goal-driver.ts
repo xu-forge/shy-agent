@@ -21,6 +21,9 @@ import { buildTools, type ToolContext } from './tools/registry'
 import { buildGoalTools, type GoalSnapshot } from './goal-tools'
 import { runVerifyLLM, applyBlockedAudit, type VerifyLLMResult } from './verify-llm'
 import { invokeChatCompletion, type LLMMessage } from './llm-client'
+import { getEnabledSkillEntries } from '../skills/store'
+import { renderSkillCatalog } from '../skills/catalog'
+import { listLongMemory } from '../memory/db'
 
 export const GOAL_PLAN_SYSTEM_PROMPT = `你是步骤规划器。根据用户目标只输出步骤 JSON：
 {"checklist":[{"id":"1","title":"...","done":false,"check":"可在本机运行的 shell 命令"}]}
@@ -611,6 +614,16 @@ async function defaultRunBurst(opts: {
   // 目标模式思考流文本（每步工具调用前落盘一次，供会话回放）
   let pendingAssistantText = ''
 
+  // 技能目录 + 长期记忆（与交互式 service.ts 同源同预算）
+  const goalSkillCatalog = renderSkillCatalog(
+    await getEnabledSkillEntries(),
+    Math.floor((settings.contextWindow ?? 1_000_000) * 0.02)
+  ).text
+  const goalMemoryBlock = listLongMemory()
+    .slice(0, 12)
+    .map((m) => `- [${m.title}] (v${m.revision}) ${m.content.slice(0, 400)}`)
+    .join('\n')
+
   const graph = buildAgentGraph({
     llm: {
       baseURL: settings.baseURL,
@@ -645,8 +658,10 @@ async function defaultRunBurst(opts: {
         emit({ type: 'tool', name: event.name ?? 'tool', detail: event.detail })
       }
     },
-    skillBlock: '',
-    memoryBlock: '',
+    // 与交互式 service.ts 同源：目标模式同样注入技能目录与长期记忆
+    // （此前为空串 —— 目标模式既看不到技能也没有记忆，属功能缺陷）
+    skillBlock: goalSkillCatalog,
+    memoryBlock: goalMemoryBlock,
     sessionId,
     beforeStep: async () => {
       if (signal.aborted) throw new Error('aborted')

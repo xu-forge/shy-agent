@@ -24,7 +24,10 @@ const SUBSCRIBED_TYPES = [
   'notify',
   'blocked',
   'goal_complete',
-  'result'
+  'result',
+  'skills_changed',
+  'browser_navigated',
+  'browser_screenshot'
 ] as const
 
 type LogEntry = {
@@ -58,6 +61,12 @@ function summarize(type: string, e: Record<string, unknown>): string {
       return `✓ ${String(e.goal ?? '').slice(0, 40)}`
     case 'result':
       return String(e.content ?? '').slice(0, 60)
+    case 'skills_changed':
+      return '技能注册表已刷新'
+    case 'browser_navigated':
+      return String(e.url ?? '')
+    case 'browser_screenshot':
+      return String(e.path ?? '').split('/').pop() ?? ''
     default:
       return JSON.stringify(e).slice(0, 60)
   }
