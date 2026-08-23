@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { SkillSummary } from '../../../shared/ipc'
 import { ConfirmDialog } from './ConfirmDialog'
 import { MarkdownBody } from './MarkdownBody'
+import { Switch } from './ui'
 
 const TEMPLATE = `---
 name: example-skill
@@ -156,17 +157,27 @@ export function SkillsView(): React.JSX.Element {
         </div>
 
         <div className="memory-toolbar">
-          <input
-            className="memory-search"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜索技能…"
-            aria-label="搜索技能"
-          />
+          <span className="ui-input-wrap skills-search">
+            <span className="ui-input-affix" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="14" height="14">
+                <circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M10.4 10.4 13.5 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </span>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索名称 / 描述 / ID…"
+              aria-label="搜索技能"
+            />
+          </span>
           <span className="count-chip">共 {items.length} 个</span>
           <button type="button" className="btn btn-primary" onClick={openNew}>
-            + 新建技能
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+            新建技能
           </button>
         </div>
 
@@ -198,16 +209,17 @@ export function SkillsView(): React.JSX.Element {
                   <span className="card-meta">{s.id}</span>
                   <span className="muted skill-desc">{s.description || '暂无描述'}</span>
                 </button>
-                <label className="skill-enable" title="启用 / 禁用该技能">
-                  <input
-                    type="checkbox"
+                <div className="skill-enable" title="启用 / 禁用该技能">
+                  <Switch
+                    size="s"
                     checked={s.enabled !== false}
-                    onChange={(e) => {
-                      void window.shy.setSkillEnabled(s.name, e.target.checked).then(reload)
+                    onChange={(checked) => {
+                      void window.shy.setSkillEnabled(s.name, checked).then(reload)
                     }}
+                    ariaLabel={`启用技能 ${s.name}`}
                   />
-                  启用
-                </label>
+                  <span className="skill-enable-label">启用</span>
+                </div>
               </div>
             ))}
           </div>
@@ -227,8 +239,15 @@ export function SkillsView(): React.JSX.Element {
               ) : (
                 <span className="chip chip-goal">详情</span>
               )}
-              <button type="button" className="ghost-btn" onClick={closeDrawer}>
-                关闭
+              <button
+                type="button"
+                className="ui-modal-close drawer-close"
+                aria-label="关闭"
+                onClick={closeDrawer}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
               </button>
             </header>
 

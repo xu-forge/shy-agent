@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/ipc'
 import { dayKey, groupOccurrencesByDay } from '../lib/calendarOccurrences'
 import { ScheduleEditor } from './ScheduleEditor'
+import { Field, Input, Modal, Select, TextArea } from './ui'
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
 
@@ -250,20 +251,37 @@ export function CalendarView(): React.JSX.Element {
 
         <div className="calendar-toolbar">
           <div className="calendar-nav">
-            <button type="button" className="btn btn-ghost" onClick={goPrevMonth}>
-              ‹ 上月
+            <button
+              type="button"
+              className="cal-nav-btn"
+              aria-label="上一月"
+              onClick={goPrevMonth}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
             <span className="calendar-title">
               {year} 年 {month + 1} 月
             </span>
-            <button type="button" className="btn btn-ghost" onClick={goNextMonth}>
-              下月 ›
+            <button
+              type="button"
+              className="cal-nav-btn"
+              aria-label="下一月"
+              onClick={goNextMonth}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
-            <button type="button" className="btn btn-outline" onClick={goToday}>
+            <button type="button" className="btn btn-ghost" onClick={goToday}>
               回到今天
             </button>
           </div>
           <button type="button" className="btn btn-primary" onClick={() => openCreate(new Date())}>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
             新建任务
           </button>
         </div>
@@ -349,75 +367,12 @@ export function CalendarView(): React.JSX.Element {
       </div>
 
       {form ? (
-        <div
-          className="modal-backdrop"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setForm(null)
-          }}
-        >
-          <div className="modal" role="dialog" aria-labelledby="calendar-form-title">
-            <h2 id="calendar-form-title">{form.id ? '编辑任务' : '新建任务'}</h2>
-            <label>
-              标题
-              <input
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="例如：每周晨报"
-                autoFocus
-              />
-            </label>
-            <label>
-              到点动作
-              <select
-                value={form.action}
-                onChange={(e) => setForm({ ...form, action: e.target.value as ScheduleTaskAction })}
-              >
-                <option value="remind">提醒</option>
-                <option value="run_skill">运行技能</option>
-              </select>
-            </label>
-
-            {form.action === 'remind' ? (
-              <label>
-                提醒内容
-                <textarea
-                  rows={3}
-                  value={form.message}
-                  onChange={(e) => setForm({ ...form, message: e.target.value })}
-                  placeholder="到点后会在应用中看到该文案"
-                />
-              </label>
-            ) : null}
-
-            {form.action === 'run_skill' ? (
-              <label>
-                选择技能
-                <select
-                  value={form.skillId}
-                  onChange={(e) => setForm({ ...form, skillId: e.target.value })}
-                >
-                  <option value="">请选择…</option>
-                  {skills.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-                {skills.length === 0 ? (
-                  <p className="calendar-form-hint">还没有技能，可先去「技能」创建。</p>
-                ) : null}
-              </label>
-            ) : null}
-
-            <div className="section-divider">
-              <h3>重复规则</h3>
-            </div>
-            <ScheduleEditor
-              schedule={form.schedule}
-              onChange={(schedule) => setForm({ ...form, schedule })}
-            />
-
-            <div className="modal-actions">
+        <Modal
+          title={form.id ? '编辑任务' : '新建任务'}
+          subtitle={form.id ? '调整后从下一次触发开始生效。' : '到点后按下面的动作自动执行。'}
+          onClose={() => setForm(null)}
+          footer={
+            <>
               {form.id ? (
                 <button
                   type="button"
@@ -438,18 +393,80 @@ export function CalendarView(): React.JSX.Element {
               >
                 保存
               </button>
-            </div>
+            </>
+          }
+        >
+          <div className="ui-form-section">
+            <Field label="标题">
+              <Input
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="例如：每周晨报"
+                autoFocus
+              />
+            </Field>
+            <Field label="到点动作">
+              <Select
+                value={form.action}
+                options={[
+                  { value: 'remind', label: '提醒（应用内通知）' },
+                  { value: 'run_skill', label: '运行技能' }
+                ]}
+                onChange={(action) =>
+                  setForm({ ...form, action: action as ScheduleTaskAction })
+                }
+                ariaLabel="到点动作"
+              />
+            </Field>
+            {form.action === 'remind' ? (
+              <Field label="提醒内容">
+                <TextArea
+                  rows={3}
+                  value={form.message}
+                  onChange={(e) => setForm({ ...form, message: e.target.value })}
+                  placeholder="到点后会在应用中看到该文案"
+                />
+              </Field>
+            ) : null}
+            {form.action === 'run_skill' ? (
+              <Field
+                label="选择技能"
+                hint={skills.length === 0 ? '还没有技能，可先去「技能」页创建。' : undefined}
+              >
+                <Select
+                  value={form.skillId}
+                  placeholder="请选择…"
+                  options={skills.map((s) => ({ value: s.id, label: s.name }))}
+                  onChange={(skillId) => setForm({ ...form, skillId })}
+                  ariaLabel="选择技能"
+                />
+              </Field>
+            ) : null}
           </div>
-        </div>
+          <div className="ui-form-section">
+            <div className="ui-form-section-title">重复规则</div>
+            <ScheduleEditor
+              schedule={form.schedule}
+              onChange={(schedule) => setForm({ ...form, schedule })}
+            />
+          </div>
+        </Modal>
       ) : null}
 
       {confirmDeleteId ? (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>删除任务</h3>
-            <p>删除后不可恢复，日历将不再展示该任务的实例。</p>
-            <div className="modal-actions">
-              <button type="button" className="btn" onClick={() => setConfirmDeleteId(null)}>
+        <Modal
+          danger
+          title="删除任务"
+          subtitle="删除后不可恢复，日历将不再展示该任务的实例。"
+          closeOnBackdrop={false}
+          onClose={() => setConfirmDeleteId(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setConfirmDeleteId(null)}
+              >
                 取消
               </button>
               <button
@@ -459,9 +476,13 @@ export function CalendarView(): React.JSX.Element {
               >
                 删除
               </button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        >
+          <p className="calendar-confirm-text">
+            确认删除「{tasksById.get(confirmDeleteId)?.title ?? confirmDeleteId}」？
+          </p>
+        </Modal>
       ) : null}
     </div>
   )

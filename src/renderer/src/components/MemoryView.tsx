@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { LongMemoryEntry } from '../../../shared/ipc'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Select } from './ui'
 
 type SourceFilter = 'all' | 'user' | 'agent'
 type SortKey = 'updated' | 'created' | 'title'
@@ -144,14 +145,20 @@ export function MemoryView(): React.JSX.Element {
             </button>
           ))}
         </div>
-        <label className="sort-label">
+        <div className="sort-label">
           排序
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-            <option value="updated">更新时间</option>
-            <option value="created">创建时间</option>
-            <option value="title">标题</option>
-          </select>
-        </label>
+          <Select
+            value={sort}
+            className="memory-sort"
+            options={[
+              { value: 'updated', label: '更新时间' },
+              { value: 'created', label: '创建时间' },
+              { value: 'title', label: '标题' }
+            ]}
+            onChange={(v) => setSort(v as SortKey)}
+            ariaLabel="排序方式"
+          />
+        </div>
         <span className="count-chip">
           {filtered.length === items.length
             ? `共 ${items.length} 条`

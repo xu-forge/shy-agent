@@ -12,6 +12,7 @@ import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import './styles/tokens.css'
 import './styles/app.css'
+import './styles/ui.css'
 
 type ConfirmState = { action: string; detail: string; requestId: string } | null
 

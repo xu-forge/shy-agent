@@ -1,4 +1,5 @@
 import type { WorkflowSchedule } from '../../../shared/ipc'
+import { Field, NumberInput, Select, Switch, TimePicker } from './ui'
 
 type Props = {
   schedule: WorkflowSchedule
@@ -15,6 +16,14 @@ const WEEKDAYS = [
   { v: 6, label: '六' }
 ]
 
+const FREQUENCY_OPTIONS = [
+  { value: 'hourly', label: '每小时' },
+  { value: 'daily', label: '每天' },
+  { value: 'weekdays', label: '工作日' },
+  { value: 'weekly', label: '每周（选星期）' },
+  { value: 'monthly', label: '每月（选日）' }
+]
+
 export function ScheduleEditor({ schedule, onChange }: Props): React.JSX.Element {
   const set = (patch: Partial<WorkflowSchedule>): void => {
     onChange({ ...schedule, ...patch })
@@ -26,92 +35,96 @@ export function ScheduleEditor({ schedule, onChange }: Props): React.JSX.Element
     set({ weekdays: next })
   }
 
+  const showTime =
+    schedule.frequency === 'daily' ||
+    schedule.frequency === 'weekdays' ||
+    schedule.frequency === 'weekly' ||
+    schedule.frequency === 'monthly'
+
   return (
-    <div className="schedule-editor">
-      <label className="row-check">
-        <input
-          type="checkbox"
+    <div className="schedule-editor ui-form-section">
+      <div className="schedule-editor-top">
+        <Switch
           checked={!!schedule.enabled}
-          onChange={(e) => set({ enabled: e.target.checked })}
+          onChange={(enabled) => set({ enabled })}
+          label="启用定时执行"
         />
-        启用定时执行
-      </label>
+        <span className={`schedule-state-chip${schedule.enabled ? '' : ' off'}`}>
+          {schedule.enabled ? '到点自动触发' : '已暂停，不会触发'}
+        </span>
+      </div>
 
-      <label>
-        频率
-        <select
-          value={schedule.frequency}
-          onChange={(e) => set({ frequency: e.target.value as WorkflowSchedule['frequency'] })}
-        >
-          <option value="hourly">每小时</option>
-          <option value="daily">每天</option>
-          <option value="weekdays">工作日</option>
-          <option value="weekly">每周（选星期）</option>
-          <option value="monthly">每月（选日）</option>
-        </select>
-      </label>
-
-      {(schedule.frequency === 'daily' ||
-        schedule.frequency === 'weekdays' ||
-        schedule.frequency === 'weekly' ||
-        schedule.frequency === 'monthly') && (
-        <label>
-          时间
-          <input
-            type="time"
-            value={schedule.time ?? '09:00'}
-            onChange={(e) => set({ time: e.target.value || '09:00' })}
+      <div className="ui-form-grid">
+        <Field label="频率">
+          <Select
+            value={schedule.frequency}
+            options={FREQUENCY_OPTIONS}
+            onChange={(frequency) => set({ frequency: frequency as WorkflowSchedule['frequency'] })}
+            ariaLabel="重复频率"
           />
-        </label>
-      )}
+        </Field>
 
-      {schedule.frequency === 'hourly' && (
-        <label>
-          每小时第几分钟
-          <input
-            type="number"
-            min={0}
-            max={59}
-            value={schedule.minute ?? 0}
-            onChange={(e) => set({ minute: Number(e.target.value) || 0 })}
-          />
-        </label>
-      )}
+        {showTime ? (
+          <Field label="时间">
+            <TimePicker
+              value={schedule.time ?? '09:00'}
+              onChange={(time) => set({ time: time || '09:00' })}
+              ariaLabel="触发时间"
+            />
+          </Field>
+        ) : null}
 
-      {(schedule.frequency === 'weekly' || schedule.frequency === 'weekdays') && (
-        <div className="day-picker">
-          <div className="day-label">选择星期</div>
-          <div className="day-buttons">
-            {WEEKDAYS.map((d) => (
-              <button
-                key={d.v}
-                type="button"
-                className={`day-btn${(schedule.weekdays ?? []).includes(d.v) ? ' active' : ''}`}
-                onClick={() => toggleDay(d.v)}
-              >
-                {d.label}
-              </button>
-            ))}
+        {schedule.frequency === 'hourly' ? (
+          <Field label="每小时第几分钟">
+            <NumberInput
+              value={schedule.minute ?? 0}
+              min={0}
+              max={59}
+              ariaLabel="每小时第几分钟"
+              onChange={(minute) => set({ minute })}
+            />
+          </Field>
+        ) : null}
+
+        {schedule.frequency === 'monthly' ? (
+          <Field label="每月几号" hint="2 月等短月不存在该日期时，当月跳过。">
+            <NumberInput
+              value={schedule.dayOfMonth ?? 1}
+              min={1}
+              max={31}
+              ariaLabel="每月几号"
+              onChange={(dayOfMonth) => set({ dayOfMonth })}
+            />
+          </Field>
+        ) : null}
+
+        {schedule.frequency === 'weekly' || schedule.frequency === 'weekdays' ? (
+          <div className="ui-field-full">
+            <Field
+              label="选择星期"
+              hint={
+                schedule.frequency === 'weekdays'
+                  ? '工作日默认周一至周五；如需自定义，改用「每周」并勾选。'
+                  : undefined
+              }
+            >
+              <div className="ui-days" role="group" aria-label="选择星期">
+                {WEEKDAYS.map((d) => (
+                  <button
+                    key={d.v}
+                    type="button"
+                    className={`ui-day${(schedule.weekdays ?? []).includes(d.v) ? ' on' : ''}`}
+                    aria-pressed={(schedule.weekdays ?? []).includes(d.v)}
+                    onClick={() => toggleDay(d.v)}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
           </div>
-        </div>
-      )}
-
-      {schedule.frequency === 'monthly' && (
-        <label>
-          每月几号
-          <input
-            type="number"
-            min={1}
-            max={31}
-            value={schedule.dayOfMonth ?? 1}
-            onChange={(e) => set({ dayOfMonth: Number(e.target.value) || 1 })}
-          />
-        </label>
-      )}
-
-      {schedule.frequency === 'weekdays' && (
-        <p className="muted">工作日默认周一至周五；如需自定义，改用「每周」并勾选。</p>
-      )}
+        ) : null}
+      </div>
     </div>
   )
 }
