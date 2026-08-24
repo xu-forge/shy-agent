@@ -13,7 +13,17 @@ import {
   type SessionTaskRecord,
   type SkillSummary,
   type AgentLogFileSummary,
+  type BindSessionProjectResult,
   type CreateScheduleTaskInput,
+  type Project,
+  type ProjectCreateResult,
+  type ProjectFileReadResult,
+  type ProjectFileWriteResult,
+  type ProjectMaterialsImportResult,
+  type ProjectMaterialsListResult,
+  type ProjectPickFolderResult,
+  type ProjectTreeListResult,
+  type ProjectType,
   type ScheduleOccurrence,
   type ScheduleReminderEvent,
   type ScheduleTask,
@@ -118,6 +128,37 @@ const shy = {
   }): Promise<{ name: string; content: string; truncated: boolean }> =>
     ipcRenderer.invoke(IPC.logsAgentRead, input),
   revealAgentLogsDir: (): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.logsAgentReveal),
+  listProjects: (): Promise<Project[]> => ipcRenderer.invoke(IPC.projectsList),
+  createProject: (input: {
+    type: ProjectType
+    rootPath: string
+    name?: string
+  }): Promise<ProjectCreateResult> => ipcRenderer.invoke(IPC.projectsCreate, input),
+  deleteProject: (id: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.projectsDelete, id),
+  bindSessionProject: (input: {
+    sessionId: string
+    projectId: string
+  }): Promise<BindSessionProjectResult> => ipcRenderer.invoke(IPC.sessionsBindProject, input),
+  pickFolder: (): Promise<ProjectPickFolderResult> => ipcRenderer.invoke(IPC.projectPickFolder),
+  projectTreeList: (projectId: string): Promise<ProjectTreeListResult> =>
+    ipcRenderer.invoke(IPC.projectTreeList, projectId),
+  projectFileRead: (input: {
+    projectId: string
+    relativePath: string
+  }): Promise<ProjectFileReadResult> => ipcRenderer.invoke(IPC.projectFileRead, input),
+  projectFileWrite: (input: {
+    projectId: string
+    relativePath: string
+    content: string
+  }): Promise<ProjectFileWriteResult> => ipcRenderer.invoke(IPC.projectFileWrite, input),
+  projectMaterialsList: (projectId: string): Promise<ProjectMaterialsListResult> =>
+    ipcRenderer.invoke(IPC.projectMaterialsList, projectId),
+  projectMaterialsImport: (input: {
+    projectId: string
+    sourceAbsPath: string
+  }): Promise<ProjectMaterialsImportResult> =>
+    ipcRenderer.invoke(IPC.projectMaterialsImport, input),
   onEvent: (handler: (payload: unknown) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
       handler(payload)

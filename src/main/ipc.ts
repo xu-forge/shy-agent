@@ -1,5 +1,12 @@
-import { BrowserWindow, ipcMain, shell } from 'electron'
-import { IPC, type AgentMode, type ChatRequest, type ModelSettings } from '../shared/ipc'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { readFile, writeFile } from 'fs/promises'
+import {
+  IPC,
+  type AgentMode,
+  type ChatRequest,
+  type ModelSettings,
+  type ProjectType
+} from '../shared/ipc'
 import { getSettings, setSettings } from './settings/store'
 import { runAgent, cancelAgent, pauseAgent, resumeAgent } from './agent/service'
 import { createConfirmWaiter, registerConfirmIpc } from './confirm'
@@ -31,6 +38,19 @@ import { listAgentLogFiles, readAgentLogFile, revealAgentLogsDir } from './logs/
 import { registerScheduleIpc } from './schedule/ipc'
 import { resumeInterruptedGoals } from './agent/boot-resume'
 import { getDefaultBus } from './event-bridge'
+import {
+  bindSessionProject,
+  createProject,
+  deleteProject,
+  getProject,
+  listProjects
+} from './projects/store'
+import { importMaterial, listMaterials, listProjectTree } from './projects/fs-guard'
+import {
+  asIpcFailure,
+  collectProjectMaterialWrites,
+  resolveProjectFilePath
+} from './projects/ipc-helpers'
 
 let mainWindow: BrowserWindow | null = null
 const waitConfirm = createConfirmWaiter(() => mainWindow)
@@ -165,6 +185,91 @@ export function registerCoreIpc(): void {
     const removed = deleteSessionTask(input.sessionId, input.id)
     return { ok: removed }
   })
+
+  ipcMain.handle(IPC.projectsList, async () => listProjects())
+  ipcMain.handle(
+    IPC.projectsCreate,
+    async (_e, input: { type: ProjectType; rootPath: string; name?: string }) => {
+      try {
+        return { ok: true as const, project: createProject(input) }
+      } catch (err) {
+        const mapped = asIpcFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+  ipcMain.handle(IPC.projectsDelete, async (_e, id: string) => deleteProject(id))
+  ipcMain.handle(
+    IPC.sessionsBindProject,
+    async (_e, input: { sessionId: string; projectId: string }) =>
+      bindSessionProject(input.sessionId, input.projectId)
+  )
+  ipcMain.handle(IPC.projectPickFolder, async () => {
+    if (!mainWindow) return { ok: false as const }
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
+    if (result.canceled || result.filePaths.length === 0) return { ok: false as const }
+    return { ok: true as const, path: result.filePaths[0] }
+  })
+  ipcMain.handle(IPC.projectTreeList, async (_e, projectId: string) => {
+    const project = getProject(projectId)
+    if (!project) return { ok: false as const, error: 'not_found' as const }
+    const { tree, truncated } = listProjectTree(project.rootPath)
+    return { ok: true as const, tree, truncated }
+  })
+  ipcMain.handle(
+    IPC.projectFileRead,
+    async (_e, input: { projectId: string; relativePath: string }) => {
+      const project = getProject(input.projectId)
+      if (!project) return { ok: false as const, error: 'not_found' as const }
+      try {
+        const absPath = resolveProjectFilePath(project.rootPath, input.relativePath)
+        const content = await readFile(absPath, 'utf8')
+        return { ok: true as const, content }
+      } catch (err) {
+        const mapped = asIpcFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+  ipcMain.handle(
+    IPC.projectFileWrite,
+    async (_e, input: { projectId: string; relativePath: string; content: string }) => {
+      const project = getProject(input.projectId)
+      if (!project) return { ok: false as const, error: 'not_found' as const }
+      try {
+        const absPath = resolveProjectFilePath(project.rootPath, input.relativePath)
+        await writeFile(absPath, input.content, 'utf8')
+        return { ok: true as const }
+      } catch (err) {
+        const mapped = asIpcFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+  ipcMain.handle(IPC.projectMaterialsList, async (_e, projectId: string) => {
+    const project = getProject(projectId)
+    if (!project) return { ok: false as const, error: 'not_found' as const }
+    const writes = collectProjectMaterialWrites(listSessions(), projectId, listSessionFiles)
+    return { ok: true as const, items: listMaterials(project.rootPath, writes) }
+  })
+  ipcMain.handle(
+    IPC.projectMaterialsImport,
+    async (_e, input: { projectId: string; sourceAbsPath: string }) => {
+      const project = getProject(input.projectId)
+      if (!project) return { ok: false as const, error: 'not_found' as const }
+      try {
+        const item = importMaterial(project.rootPath, input.sourceAbsPath)
+        return { ok: true as const, item }
+      } catch (err) {
+        const mapped = asIpcFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
 
   ipcMain.handle(IPC.agentCancel, async (_e, sessionId: string) => {
     cancelAgent(sessionId)

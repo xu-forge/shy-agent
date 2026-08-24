@@ -36,6 +36,16 @@ export const IPC = {
   logsAgentList: 'shy:logs-agent-list',
   logsAgentRead: 'shy:logs-agent-read',
   logsAgentReveal: 'shy:logs-agent-reveal',
+  projectsList: 'shy:projects-list',
+  projectsCreate: 'shy:projects-create',
+  projectsDelete: 'shy:projects-delete',
+  sessionsBindProject: 'shy:sessions-bind-project',
+  projectPickFolder: 'shy:project-pick-folder',
+  projectTreeList: 'shy:project-tree-list',
+  projectFileRead: 'shy:project-file-read',
+  projectFileWrite: 'shy:project-file-write',
+  projectMaterialsList: 'shy:project-materials-list',
+  projectMaterialsImport: 'shy:project-materials-import',
   events: 'shy:events',
   browserShow: 'shy:browser-show',
   browserHide: 'shy:browser-hide',
@@ -188,6 +198,31 @@ export type MaterialItem = {
   sourceSessionId?: string
   derivedFrom?: string
 }
+
+export type TreeNode = { name: string; path: string; type: 'file' | 'dir'; children?: TreeNode[] }
+
+export type BindSessionProjectResult =
+  { ok: true } | { ok: false; error: 'already_bound' | 'has_messages' | 'not_found' }
+
+export type ProjectPickFolderResult = { ok: true; path: string } | { ok: false }
+
+export type ProjectCreateResult =
+  { ok: true; project: Project } | { ok: false; error: 'root_path_taken' }
+
+export type ProjectTreeListResult =
+  { ok: true; tree: TreeNode[]; truncated: boolean } | { ok: false; error: 'not_found' }
+
+export type ProjectFileReadResult =
+  { ok: true; content: string } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type ProjectFileWriteResult =
+  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type ProjectMaterialsListResult =
+  { ok: true; items: MaterialItem[] } | { ok: false; error: 'not_found' }
+
+export type ProjectMaterialsImportResult =
+  { ok: true; item: MaterialItem } | { ok: false; error: 'path_escape' | 'not_found' }
 
 /* ────────── session files & tasks（shell-session-side-panel） ────────── */
 

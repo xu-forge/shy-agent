@@ -1,13 +1,11 @@
 import { copyFileSync, readdirSync, statSync, existsSync } from 'fs'
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'path'
-import type { MaterialItem, MaterialKind } from '../../shared/ipc'
+import type { MaterialItem, MaterialKind, TreeNode } from '../../shared/ipc'
 
-export type { MaterialItem, MaterialKind }
+export type { MaterialItem, MaterialKind, TreeNode }
 
 export const TREE_IGNORE = ['node_modules', '.git', 'dist', 'out', '.next', 'coverage', '.shy']
 export const TREE_NODE_LIMIT = 5000
-
-export type TreeNode = { name: string; path: string; type: 'file' | 'dir'; children?: TreeNode[] }
 
 const KIND_BY_EXT: Record<string, MaterialKind> = {
   '.png': 'image',
