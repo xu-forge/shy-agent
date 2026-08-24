@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { SessionFileRecord } from '../../../shared/ipc'
 import {
   AGENT_CONFLICT_HINT,
+  applySuccessfulSave,
   detectAgentWrites,
   languageFromPath,
   monacoThemeFromDataset,
+  nextOpenFileRequest,
   toRelativePath,
   writeHitsTab
 } from './codeWorkspace'
@@ -19,7 +21,7 @@ function write(partial: Partial<SessionFileRecord> & { id: number; path: string 
 }
 
 describe('monacoThemeFromDataset', () => {
-  it('dark 用 vs-dark，其余用 vs', () => {
+  it('live toggle 以传入的 theme 为准（dark→vs-dark，其余→vs）', () => {
     expect(monacoThemeFromDataset('dark')).toBe('vs-dark')
     expect(monacoThemeFromDataset('light')).toBe('vs')
     expect(monacoThemeFromDataset(undefined)).toBe('vs')
@@ -127,5 +129,49 @@ describe('languageFromPath', () => {
 describe('AGENT_CONFLICT_HINT', () => {
   it('冲突条文案固定', () => {
     expect(AGENT_CONFLICT_HINT).toBe('Agent 已修改此文件，放弃本地更改以加载磁盘版本')
+  })
+})
+
+describe('nextOpenFileRequest', () => {
+  it('同一路径再次打开仍递增 seq，关闭后重开不会被同字符串 setState 吞掉', () => {
+    const first = nextOpenFileRequest(null, 'src/a.ts')
+    const second = nextOpenFileRequest(first, 'src/a.ts')
+    expect(first).toEqual({ path: 'src/a.ts', seq: 1 })
+    expect(second).toEqual({ path: 'src/a.ts', seq: 2 })
+    expect(second.seq).not.toBe(first.seq)
+  })
+})
+
+describe('applySuccessfulSave', () => {
+  it('以实际写入内容为 savedContent；写入期间又改了则仍 dirty', () => {
+    const after = applySuccessfulSave(
+      {
+        relativePath: 'src/a.ts',
+        content: 'typed-during-save',
+        savedContent: 'old',
+        dirty: true,
+        conflict: true
+      },
+      'written'
+    )
+    expect(after.savedContent).toBe('written')
+    expect(after.dirty).toBe(true)
+    expect(after.conflict).toBe(false)
+    expect(after.content).toBe('typed-during-save')
+  })
+
+  it('写入内容与当前一致则干净', () => {
+    const after = applySuccessfulSave(
+      {
+        relativePath: 'src/a.ts',
+        content: 'hello',
+        savedContent: 'old',
+        dirty: true,
+        conflict: false
+      },
+      'hello'
+    )
+    expect(after.savedContent).toBe('hello')
+    expect(after.dirty).toBe(false)
   })
 })

@@ -20,6 +20,7 @@ import {
   type NavKey,
   type SecondaryMode
 } from './lib/shellLayout'
+import { nextOpenFileRequest, type OpenFileRequest } from './lib/codeWorkspace'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/ui.css'
@@ -58,7 +59,7 @@ function App(): React.JSX.Element {
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
-  const [openFilePath, setOpenFilePath] = useState<string | null>(null)
+  const [openFile, setOpenFile] = useState<OpenFileRequest | null>(null)
 
   // 主题：应用 + 持久化
   useEffect(() => {
@@ -178,7 +179,7 @@ function App(): React.JSX.Element {
   )
 
   useEffect(() => {
-    setOpenFilePath(null)
+    setOpenFile(null)
   }, [boundProject?.id])
 
   const onNavChange = (key: NavKey): void => {
@@ -242,8 +243,8 @@ function App(): React.JSX.Element {
         }}
         codeProjectId={layout.main === 'code' ? boundProject?.id ?? null : null}
         codeRootPath={layout.main === 'code' ? boundProject?.rootPath ?? null : null}
-        openFilePath={openFilePath}
-        onOpenFile={setOpenFilePath}
+        openFilePath={openFile?.path ?? null}
+        onOpenFile={(path) => setOpenFile((prev) => nextOpenFileRequest(prev, path))}
       />
       <div className={`main-column${layout.main === 'chat' ? ' main-collapsed' : ''}`}>
         {nav !== 'projects' ? <Header title={NAV_TITLES[nav]} /> : null}
@@ -252,7 +253,8 @@ function App(): React.JSX.Element {
             projectId={boundProject.id}
             rootPath={boundProject.rootPath}
             sessionId={sessionId}
-            openPath={openFilePath}
+            openPath={openFile?.path ?? null}
+            openSeq={openFile?.seq ?? 0}
             theme={theme}
           />
         ) : null}

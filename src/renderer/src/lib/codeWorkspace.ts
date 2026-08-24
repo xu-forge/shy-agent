@@ -43,6 +43,31 @@ export function monacoThemeFromDataset(theme: string | undefined): 'vs-dark' | '
   return theme === 'dark' ? 'vs-dark' : 'vs'
 }
 
+export type OpenFileRequest = { path: string; seq: number }
+
+export function nextOpenFileRequest(
+  prev: OpenFileRequest | null,
+  path: string
+): OpenFileRequest {
+  return { path, seq: (prev?.seq ?? 0) + 1 }
+}
+
+export type SaveableTab = {
+  content: string
+  savedContent: string
+  dirty: boolean
+  conflict: boolean
+}
+
+export function applySuccessfulSave<T extends SaveableTab>(tab: T, writtenContent: string): T {
+  return {
+    ...tab,
+    savedContent: writtenContent,
+    dirty: tab.content !== writtenContent,
+    conflict: false
+  }
+}
+
 export function toRelativePath(rootPath: string, absOrRel: string): string {
   const root = normalizeSlashes(rootPath).replace(/\/+$/, '')
   const path = normalizeSlashes(absOrRel)

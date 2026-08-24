@@ -4,6 +4,7 @@ import '../../lib/monaco-env'
 import {
   AGENT_CONFLICT_HINT,
   SESSION_FILES_POLL_MS,
+  applySuccessfulSave,
   detectAgentWrites,
   languageFromPath,
   monacoThemeFromDataset
@@ -23,6 +24,7 @@ type Props = {
   rootPath: string
   sessionId: string
   openPath: string | null
+  openSeq: number
   theme: Theme
 }
 
@@ -31,6 +33,7 @@ export function CodeWorkspace({
   rootPath,
   sessionId,
   openPath,
+  openSeq,
   theme
 }: Props): React.JSX.Element {
   const [tabs, setTabs] = useState<TabState[]>([])
@@ -40,9 +43,7 @@ export function CodeWorkspace({
   const lastSeenIdRef = useRef<number | null>(null)
   tabsRef.current = tabs
 
-  const monacoTheme = monacoThemeFromDataset(
-    document.documentElement.dataset.theme ?? theme
-  )
+  const monacoTheme = monacoThemeFromDataset(theme)
 
   const openFile = useCallback(
     async (relativePath: string): Promise<void> => {
@@ -80,7 +81,7 @@ export function CodeWorkspace({
 
   useEffect(() => {
     if (openPath) void openFile(openPath)
-  }, [openPath, openFile])
+  }, [openPath, openSeq, openFile])
 
   const saveTab = useCallback(
     async (relativePath: string): Promise<void> => {
@@ -97,9 +98,7 @@ export function CodeWorkspace({
       }
       setTabs((prev) =>
         prev.map((t) =>
-          t.relativePath === relativePath
-            ? { ...t, savedContent: t.content, dirty: false, conflict: false }
-            : t
+          t.relativePath === relativePath ? applySuccessfulSave(t, tab.content) : t
         )
       )
       setLoadError('')
