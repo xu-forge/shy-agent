@@ -41,4 +41,26 @@ describe('resolveAgentWorkspace', () => {
     const s = sessions.createSession()
     expect(resolveAgentWorkspace(s.id)).toBe(getDefaultSessionWorkspace(s.id))
   })
+
+  it('项目已删除回退会话目录且不抛错', async () => {
+    const sessions = await import('../sessions/store')
+    const { createProject, bindSessionProject, deleteProject } = await import('./store')
+    const { getDefaultSessionWorkspace } = await import('../paths')
+    const { resolveAgentWorkspace } = await import('./workspace')
+    const s = sessions.createSession()
+    const p = createProject({ type: 'code', rootPath: rootA })
+    bindSessionProject(s.id, p.id)
+    expect(resolveAgentWorkspace(s.id)).toBe(rootA)
+    deleteProject(p.id)
+    expect(() => resolveAgentWorkspace(s.id)).not.toThrow()
+    expect(resolveAgentWorkspace(s.id)).toBe(getDefaultSessionWorkspace(s.id))
+  })
+
+  it('会话不存在回退默认目录且不抛错', async () => {
+    const { getDefaultSessionWorkspace } = await import('../paths')
+    const { resolveAgentWorkspace } = await import('./workspace')
+    const missingId = 'missing-session-id'
+    expect(() => resolveAgentWorkspace(missingId)).not.toThrow()
+    expect(resolveAgentWorkspace(missingId)).toBe(getDefaultSessionWorkspace(missingId))
+  })
 })
