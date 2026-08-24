@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ModeKey } from './ModeToggle'
-import type { SessionFileRecord, SkillSummary } from '../../../shared/ipc'
+import type { SessionFileRecord, SessionSummary, SkillSummary } from '../../../shared/ipc'
 import { MarkdownBody } from './MarkdownBody'
 import { timeAgo } from '../lib/time'
 import { ReActContent } from './chat/ReActContent'
 import { ToolCallCard } from './chat/ToolCallCard'
 import { SlashMenu, type SlashItem } from './chat/SlashMenu'
+import { ProjectPicker } from './ProjectPicker'
+import {
+  BIND_ERROR_LABEL,
+  isProjectPickerLocked,
+  sameProjectSessions,
+  shouldBindOnSend
+} from '../lib/projectBind'
 
 type Props = {
   notice?: string
   sessionId: string
+  sessions?: SessionSummary[]
+  onSelectSession?: (sessionId: string) => void
   onSessionsChanged?: () => void
   onConversationState?: (has: boolean) => void
 }
@@ -63,6 +72,8 @@ const MODE_ITEMS: SlashItem[] = [
 export function ChatWorkspace({
   notice,
   sessionId,
+  sessions = [],
+  onSelectSession,
   onSessionsChanged,
   onConversationState
 }: Props): React.JSX.Element {
@@ -72,6 +83,8 @@ export function ChatWorkspace({
   const [paused, setPaused] = useState(false)
   const [status, setStatus] = useState('')
   const [messages, setMessages] = useState<Msg[]>([])
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null)
+  const [boundProjectId, setBoundProjectId] = useState<string | null>(null)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [model, setModel] = useState('')
   const [alwaysAuthorize, setAlwaysAuthorize] = useState(false)
@@ -89,6 +102,7 @@ export function ChatWorkspace({
   const currentSessionIdRef = useRef(sessionId)
   useEffect(() => {
     currentSessionIdRef.current = sessionId
+    setPendingProjectId(null)
   }, [sessionId])
 
   // 加载：设置(始终授权/模型)、技能、会话文件
@@ -265,6 +279,15 @@ export function ChatWorkspace({
       ) : null}
       <div className="composer-bar">
         <div className="composer-options">
+          <ProjectPicker
+            value={boundProjectId ?? pendingProjectId}
+            disabled={isProjectPickerLocked({
+              hasUserMessages: messages.some((m) => m.role === 'user'),
+              projectId: boundProjectId
+            })}
+            onChange={setPendingProjectId}
+            onProjectsChanged={onSessionsChanged}
+          />
           <button
             type="button"
             className={`full-access${alwaysAuthorize ? ' on' : ''}`}
@@ -321,6 +344,7 @@ export function ChatWorkspace({
       setMode(detail.mode)
       setPaused(detail.paused)
       setBusy(detail.runStatus === 'running')
+      setBoundProjectId(detail.projectId ?? null)
       setStatus('')
       setLastResult(null)
       setMessages(
@@ -570,6 +594,27 @@ export function ChatWorkspace({
   const onSend = async (): Promise<void> => {
     const text = draft.trim()
     if (!text || busy || !sessionId) return
+    const detail = await window.shy.getSession(sessionId)
+    const hasUser = detail?.messages.some((m) => m.role === 'user') ?? false
+    const boundId = detail?.projectId ?? boundProjectId
+    if (
+      shouldBindOnSend({
+        hasUserMessages: hasUser,
+        boundProjectId: boundId,
+        pendingProjectId
+      })
+    ) {
+      const r = await window.shy.bindSessionProject({
+        sessionId,
+        projectId: pendingProjectId as string
+      })
+      if (!r.ok) {
+        setStatus(BIND_ERROR_LABEL[r.error])
+        return
+      }
+      setBoundProjectId(pendingProjectId)
+      onSessionsChanged?.()
+    }
     setDraft('')
     setBusy(true)
     setPaused(false)
@@ -619,7 +664,24 @@ export function ChatWorkspace({
   return (
     <div className="main chat-column">
       <div className="topbar">
-        <div className="topbar-title">对话</div>
+        <div className="topbar-title">
+          {boundProjectId ? (
+            <select
+              className="session-switcher"
+              aria-label="同项目会话"
+              value={sessionId}
+              onChange={(e) => onSelectSession?.(e.target.value)}
+            >
+              {sameProjectSessions(sessions, boundProjectId).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title || '未命名会话'}
+                </option>
+              ))}
+            </select>
+          ) : (
+            '对话'
+          )}
+        </div>
         <div className="top-actions">
           {runningCls ? (
             <div className={`status ${runningCls}`}>

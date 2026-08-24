@@ -246,6 +246,11 @@ function App(): React.JSX.Element {
           <ChatWorkspace
             notice={notice}
             sessionId={sessionId}
+            sessions={sessions}
+            onSelectSession={(id) => {
+              const s = sessions.find((x) => x.id === id)
+              if (s) onSelectSession(s)
+            }}
             onSessionsChanged={() => void refreshSessions()}
             onConversationState={setChatHasConversation}
           />

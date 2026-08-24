@@ -1,18 +1,35 @@
 import { forwardRef, type KeyboardEvent } from 'react'
 import type { ModeKey } from '../ModeToggle'
+import { ProjectPicker } from '../ProjectPicker'
 
 type Props = {
   mode: ModeKey
   draft: string
   verifyCommand: string
   busy: boolean
+  projectId: string | null
+  projectPickerDisabled: boolean
   onDraftChange: (v: string) => void
   onVerifyChange: (v: string) => void
+  onProjectChange: (projectId: string | null) => void
+  onProjectsChanged?: () => void
   onSend: () => void
 }
 
 export const Composer = forwardRef<HTMLTextAreaElement, Props>(function Composer(
-  { mode, draft, verifyCommand, busy, onDraftChange, onVerifyChange, onSend },
+  {
+    mode,
+    draft,
+    verifyCommand,
+    busy,
+    projectId,
+    projectPickerDisabled,
+    onDraftChange,
+    onVerifyChange,
+    onProjectChange,
+    onProjectsChanged,
+    onSend
+  },
   ref
 ) {
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -43,9 +60,17 @@ export const Composer = forwardRef<HTMLTextAreaElement, Props>(function Composer
           disabled={busy}
         />
       )}
-      <button type="button" className="btn-send" onClick={() => void onSend()} disabled={busy}>
-        发送
-      </button>
+      <div className="composer-bar">
+        <ProjectPicker
+          value={projectId}
+          disabled={projectPickerDisabled}
+          onChange={onProjectChange}
+          onProjectsChanged={onProjectsChanged}
+        />
+        <button type="button" className="btn-send" onClick={() => void onSend()} disabled={busy}>
+          发送
+        </button>
+      </div>
     </div>
   )
 })
