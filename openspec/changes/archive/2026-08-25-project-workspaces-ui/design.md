@@ -45,9 +45,9 @@ shy 是 Electron + React + Vite 桌面 Agent。当前壳是 `Sidebar`（宽栏�
 - **选择**：选择器菜单：不选 / 已有项目列表 / 「添加项目…」。添加 = 选 `code|material` + `dialog.showOpenDialog({ properties: ['openDirectory'] })`。默认名 = 文件夹 basename。同路径已存在则报错不创建。
 - **理由**：用户指定输入框左下角；项目因会话而存在，避免空项目。
 
-### D5：代码工作区 = 文件树替换二级栏 + 中间 Monaco
-- **选择**：main 进程递归列出 `rootPath`（忽略 `node_modules` `.git` `dist` `out` `.next` `coverage` `.shy`）。renderer 用 `@monaco-editor/react`；保存走 `fs.writeFile` IPC（受 `rootPath` 约束，禁止写出目录）。打开文件的 mtime 与 `session_files` 轮询对比，Agent 写过则 reload。右侧复用 `ChatWorkspace` 线程+composer（变窄约 320px），头部下拉同项目其它会话。
-- **理由**：用户要可用编辑器而非只读预览；忽略规则避免树卡死。
+### D5：代码工作区 = 主区内文件树 + Monaco
+- **选择**：main 进程递归列出 `rootPath`（忽略 `node_modules` `.git` `dist` `out` `.next` `coverage` `.shy`）。renderer 用 `@monaco-editor/react`；保存走 `fs.writeFile` IPC（受 `rootPath` 约束，禁止写出目录）。打开文件的 mtime 与 `session_files` 轮询对比，Agent 写过则 reload。文件树放在代码主区左侧，不占用导航二级栏。右侧复用 `ChatWorkspace` 线程+composer（变窄约 320px），头部下拉同项目其它会话。
+- **理由**：用户要可用编辑器而非只读预览；忽略规则避免树卡死；导航栏需始终承载会话历史。
 - **已考虑 alternative**：只读预览 / 先做壳 → 用户选 Monaco。
 
 ### D6：素材 = 文件系统为真相源 + `MaterialItem` 适配层
@@ -56,8 +56,8 @@ shy 是 Electron + React + Vite 桌面 Agent。当前壳是 `Sidebar`（宽栏�
 - **已考虑 alternative**：v1 就建 `materials` 表 → 过早；纯 readdir 无类型 → 无法挂编辑器，拒绝。
 
 ### D7：导航混合方案
-- **选择**：`app-shell` 改为 `[IconRail 64px][SecondarySidebar][Main][Optional right]`。轨上：项目（默认）、技能、日历、设置。二级栏：项目分组会话；代码布局下二级栏改为文件树。未选择项目：Main=对话，Right=Inspector 两 tab。
-- **理由**：用户选 hybrid；文件树需要稳定宽度。
+- **选择**：`app-shell` 为 `[单列 Sidebar][Main][Optional right]`。展开时侧栏与旧版一致：shy 品牌、「新建任务」、定时任务/技能、按项目分组的会话历史、底部账户。收起时整栏缩成图标、不展示会话历史。代码文件树在代码主区内。未选择项目：Main=对话，Right=Inspector 两 tab。已绑定会话的右侧输入区不展示项目选择器。
+- **理由**：红色框内的新建任务与会话历史应在最左侧同一条导航里，而不是图标轨旁边再开一列。
 
 ### D8：普通对话右侧两 tab
 - **选择**：`InspectorPanel` tab 改为 `details` / `browser`。详情：标题、创建时间、模型名、消息数、本会话 `listSessionFiles` 产物列表（可 reveal）。去掉任务与 diff tab。代码/素材布局不渲染 Inspector（聊天已在右侧）。

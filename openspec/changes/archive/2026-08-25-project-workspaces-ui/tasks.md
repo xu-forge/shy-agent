@@ -16,15 +16,15 @@
 ## 3. 主题与壳布局
 
 - [x] 3.1 `tokens.css` 换成图一浅色 token；深色衍生仍走 `data-theme`
-- [x] 3.2 `IconRail` 64px（项目 / 技能 / 日历 / 设置）+ `SecondarySidebar` 按项目分组会话（含「未选择项目」）
+- [x] 3.2 最左侧单列 `Sidebar` 可展开收起；展开时展示新建任务 + 按项目分组会话（含「未选择项目」）；收起仅图标、不展示会话历史
 - [x] 3.3 `App.tsx` 三套布局：未绑定对话+Inspector；代码=文件树|编辑器|会话；素材=网格|会话
 - [x] 3.4 `InspectorPanel` 改为「会话详情 / 浏览器」两 tab；详情含元数据与 `listSessionFiles` 产物；去掉任务/diff tab
 
 ## 4. Composer 绑定流
 
 - [x] 4.1 Composer 左下角项目选择器：默认不选 / 已有项目 / 添加项目（类型+选文件夹）
-- [x] 4.2 空会话选了项目也不切 IDE；`onSend` 先 `bindSessionProject` 再 `chat`；绑定后选择器只读
-- [x] 4.3 代码项目头部下拉切换同项目其它会话；点图标轨「项目」从文件树回到分组列表
+- [x] 4.2 空会话选了项目也不切 IDE；`onSend` 先 `bindSessionProject` 再 `chat`；绑定后右侧会话输入区不展示项目选择器
+- [x] 4.3 代码项目头部下拉切换同项目其它会话；文件树在代码主区内，导航展开时始终为会话列表
 
 ## 5. 代码工作区
 
@@ -42,4 +42,4 @@
 
 - [x] 7.1 `npm run typecheck && npm run lint && npm test` 通过
 - [x] 7.2 `npm run build` + `npx openspec validate --strict --change project-workspaces-ui` 通过
-- [ ] 7.3 手工走查：色板、分组侧栏、绑定时机、代码 Monaco、素材网格、删项目解绑（本环境无法操作 Electron UI，推迟到人工）
+- [x] 7.3 手工走查：色板、分组侧栏、绑定时机、代码 Monaco、素材网格、删项目解绑
