@@ -13,6 +13,7 @@ import { PlaceholderView } from './components/PlaceholderView'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import {
   groupSessionsByProject,
+  resolveChatHostClass,
   resolveShellLayout,
   resolveWorkspaceKind,
   type NavKey,
@@ -233,23 +234,15 @@ function App(): React.JSX.Element {
           setSettingsOpen(true)
         }}
       />
-      <div className="main-column">
+      <div className={`main-column${layout.main === 'chat' ? ' main-collapsed' : ''}`}>
         {nav !== 'projects' ? <Header title={NAV_TITLES[nav]} /> : null}
-        {layout.main === 'chat' ? (
-          <ChatWorkspace
-            notice={notice}
-            sessionId={sessionId}
-            onSessionsChanged={() => void refreshSessions()}
-            onConversationState={setChatHasConversation}
-          />
-        ) : null}
         {layout.main === 'code' ? <PlaceholderView title="代码工作区" /> : null}
         {layout.main === 'material' ? <PlaceholderView title="素材工作区" /> : null}
         {layout.main === 'skills' ? <SkillsView /> : null}
         {layout.main === 'calendar' ? <CalendarView /> : null}
       </div>
-      {layout.showChatAside && sessionId ? (
-        <div className="chat-aside">
+      {sessionId ? (
+        <div key="chat-workspace-host" className={resolveChatHostClass(nav, workspaceKind)}>
           <ChatWorkspace
             notice={notice}
             sessionId={sessionId}

@@ -6713,9 +6713,10 @@
   background: var(--danger);
 }
 
-.secondary-sidebar {
+.sidebar.secondary-sidebar {
   padding-top: 12px;
   -webkit-app-region: no-drag;
+  min-width: 220px;
 }
 
 .sb-group {
@@ -6762,17 +6763,37 @@
   line-height: 1.6;
 }
 
+.main-column.main-collapsed {
+  display: none;
+}
+
+.chat-main,
+.chat-aside {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.chat-main {
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg);
+}
+
 .chat-aside {
   width: 320px;
   min-width: 280px;
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
   border-left: 1px solid var(--border);
   background: var(--bg-panel);
 }
 
+.chat-hidden {
+  display: none;
+}
+
+.chat-main > .main,
 .chat-aside > .main {
   flex: 1;
   min-height: 0;

@@ -8,6 +8,8 @@ export type SecondaryMode = 'sessions' | 'files'
 
 export type WorkspaceKind = 'unbound' | 'code' | 'material'
 
+export type ChatHostClass = 'chat-main' | 'chat-aside' | 'chat-hidden'
+
 export type SessionGroup = {
   id: string | null
   title: string
@@ -95,4 +97,11 @@ export function resolveShellLayout(opts: {
     showInspector: opts.hasConversation,
     showChatAside: false
   }
+}
+
+/** 同一 DOM 宿主只换 class，避免 unbound ↔ code/material 卸载 ChatWorkspace。 */
+export function resolveChatHostClass(nav: NavKey, workspaceKind: WorkspaceKind): ChatHostClass {
+  if (nav !== 'projects') return 'chat-hidden'
+  if (workspaceKind === 'unbound') return 'chat-main'
+  return 'chat-aside'
 }

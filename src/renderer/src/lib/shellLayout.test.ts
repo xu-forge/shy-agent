@@ -3,6 +3,7 @@ import type { Project, SessionSummary } from '../../../shared/ipc'
 import {
   UNSELECTED_PROJECT_GROUP,
   groupSessionsByProject,
+  resolveChatHostClass,
   resolveShellLayout,
   resolveWorkspaceKind
 } from './shellLayout'
@@ -197,5 +198,18 @@ describe('resolveShellLayout', () => {
         hasConversation: true
       }).main
     ).toBe('calendar')
+  })
+})
+
+describe('resolveChatHostClass', () => {
+  it('未绑定项目视图用 chat-main，代码/素材用 chat-aside（同一宿主，只换 class）', () => {
+    expect(resolveChatHostClass('projects', 'unbound')).toBe('chat-main')
+    expect(resolveChatHostClass('projects', 'code')).toBe('chat-aside')
+    expect(resolveChatHostClass('projects', 'material')).toBe('chat-aside')
+  })
+
+  it('技能/日历隐藏宿主但不卸载（chat-hidden）', () => {
+    expect(resolveChatHostClass('skills', 'unbound')).toBe('chat-hidden')
+    expect(resolveChatHostClass('calendar', 'code')).toBe('chat-hidden')
   })
 })
