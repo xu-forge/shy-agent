@@ -4,8 +4,10 @@ import {
   BIND_ERROR_LABEL,
   INSPECTOR_TABS,
   artifactFiles,
+  chatStatusTone,
   isProjectPickerLocked,
   normalizeInspectorTab,
+  resolveBoundProjectId,
   sameProjectSessions,
   shouldBindOnSend
 } from './projectBind'
@@ -125,5 +127,52 @@ describe('sameProjectSessions', () => {
       }
     ]
     expect(sameProjectSessions(sessions, 'p1').map((s) => s.id)).toEqual(['s1', 's3'])
+  })
+})
+
+describe('resolveBoundProjectId', () => {
+  it('服务端 null / undefined / 空串视为未绑定，不回落到上一会话', () => {
+    expect(resolveBoundProjectId(null)).toBeNull()
+    expect(resolveBoundProjectId(undefined)).toBeNull()
+    expect(resolveBoundProjectId('')).toBeNull()
+  })
+
+  it('有值时原样返回', () => {
+    expect(resolveBoundProjectId('p1')).toBe('p1')
+  })
+})
+
+describe('chatStatusTone', () => {
+  it('idle 时 bind 错误仍显示 err，不因未 busy/paused 而隐藏', () => {
+    expect(
+      chatStatusTone({
+        busy: false,
+        paused: false,
+        status: BIND_ERROR_LABEL.has_messages
+      })
+    ).toBe('err')
+    expect(
+      chatStatusTone({
+        busy: false,
+        paused: false,
+        status: BIND_ERROR_LABEL.already_bound
+      })
+    ).toBe('err')
+    expect(
+      chatStatusTone({
+        busy: false,
+        paused: false,
+        status: BIND_ERROR_LABEL.not_found
+      })
+    ).toBe('err')
+  })
+
+  it('无 status 且未运行则不显示', () => {
+    expect(chatStatusTone({ busy: false, paused: false, status: '' })).toBe('')
+  })
+
+  it('busy / paused 优先', () => {
+    expect(chatStatusTone({ busy: true, paused: false, status: '' })).toBe('busy')
+    expect(chatStatusTone({ busy: false, paused: true, status: '' })).toBe('warn')
   })
 })

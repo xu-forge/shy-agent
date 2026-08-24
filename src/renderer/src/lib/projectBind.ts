@@ -32,6 +32,27 @@ export function shouldBindOnSend(opts: {
   return !opts.hasUserMessages && !opts.boundProjectId && Boolean(opts.pendingProjectId)
 }
 
+/** 只信服务端 projectId；null / 空串视为未绑定，禁止回落到上一会话。 */
+export function resolveBoundProjectId(serverProjectId?: string | null): string | null {
+  return serverProjectId ? serverProjectId : null
+}
+
+export type ChatStatusTone = 'busy' | 'warn' | 'err' | ''
+
+const BIND_ERROR_TEXTS = new Set<string>(Object.values(BIND_ERROR_LABEL))
+
+/** idle 下 bind 失败等错误仍要有 tone，不能只在 busy/paused 时显示。 */
+export function chatStatusTone(opts: {
+  busy: boolean
+  paused: boolean
+  status: string
+}): ChatStatusTone {
+  if (opts.busy) return 'busy'
+  if (opts.paused) return 'warn'
+  if (!opts.status) return ''
+  return BIND_ERROR_TEXTS.has(opts.status) ? 'err' : 'warn'
+}
+
 export function artifactFiles(files: SessionFileRecord[]): SessionFileRecord[] {
   return files.filter((f) => f.op === 'write')
 }

@@ -9,7 +9,9 @@ import { SlashMenu, type SlashItem } from './chat/SlashMenu'
 import { ProjectPicker } from './ProjectPicker'
 import {
   BIND_ERROR_LABEL,
+  chatStatusTone,
   isProjectPickerLocked,
+  resolveBoundProjectId,
   sameProjectSessions,
   shouldBindOnSend
 } from '../lib/projectBind'
@@ -102,7 +104,6 @@ export function ChatWorkspace({
   const currentSessionIdRef = useRef(sessionId)
   useEffect(() => {
     currentSessionIdRef.current = sessionId
-    setPendingProjectId(null)
   }, [sessionId])
 
   // 加载：设置(始终授权/模型)、技能、会话文件
@@ -338,13 +339,16 @@ export function ChatWorkspace({
   )
 
   useLayoutEffect(() => {
+    currentSessionIdRef.current = sessionId
+    setPendingProjectId(null)
+    setBoundProjectId(null)
     let alive = true
     window.shy.getSession(sessionId).then((detail) => {
       if (!alive || currentSessionIdRef.current !== sessionId || !detail) return
       setMode(detail.mode)
       setPaused(detail.paused)
       setBusy(detail.runStatus === 'running')
-      setBoundProjectId(detail.projectId ?? null)
+      setBoundProjectId(resolveBoundProjectId(detail.projectId))
       setStatus('')
       setLastResult(null)
       setMessages(
@@ -596,7 +600,7 @@ export function ChatWorkspace({
     if (!text || busy || !sessionId) return
     const detail = await window.shy.getSession(sessionId)
     const hasUser = detail?.messages.some((m) => m.role === 'user') ?? false
-    const boundId = detail?.projectId ?? boundProjectId
+    const boundId = resolveBoundProjectId(detail?.projectId)
     if (
       shouldBindOnSend({
         hasUserMessages: hasUser,
@@ -651,14 +655,14 @@ export function ChatWorkspace({
     await window.shy.resume(sessionId)
   }
 
-  let runningCls = ''
+  const runningCls = chatStatusTone({ busy, paused, status })
   let runningText = ''
   if (busy) {
-    runningCls = 'busy'
     runningText = status || '思考中…'
   } else if (paused) {
-    runningCls = 'warn'
     runningText = status || '已暂停'
+  } else {
+    runningText = status
   }
 
   return (
