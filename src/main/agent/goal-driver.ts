@@ -3,7 +3,8 @@ import { join } from 'path'
 import type { GoalChecklistItem, RunStatus } from '../../shared/ipc'
 import { getSession, updateSessionRuntime, appendMessage, getCheckpoint } from '../sessions/store'
 import { getSettings } from '../settings/store'
-import { getShyPaths, getSessionWorkspace } from '../paths'
+import { getShyPaths } from '../paths'
+import { resolveAgentWorkspace } from '../projects/workspace'
 import type { AgentEvent } from './service'
 import type { CheckRunResult } from './checks'
 import { runCheckCommand } from './checks'
@@ -599,7 +600,7 @@ async function defaultRunBurst(opts: {
     },
     confirmHighRisk: waitConfirm,
     sessionId,
-    workspaceDir: getSessionWorkspace(sessionId)
+    workspaceDir: resolveAgentWorkspace(sessionId)
   }
 
   const goalTools = buildGoalTools({
