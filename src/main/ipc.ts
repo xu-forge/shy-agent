@@ -296,7 +296,8 @@ export function registerCoreIpc(): void {
     const project = getProject(projectId)
     if (!project) return { ok: false as const, error: 'not_found' as const }
     const writes = collectProjectMaterialWrites(listSessions(), projectId, listSessionFiles)
-    return { ok: true as const, items: listMaterials(project.rootPath, writes) }
+    const { items, truncated } = listMaterials(project.rootPath, writes)
+    return { ok: true as const, items, truncated }
   })
   ipcMain.handle(
     IPC.projectMaterialsImport,

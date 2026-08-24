@@ -124,15 +124,17 @@ export function listProjectTree(rootPath: string): { tree: TreeNode[]; truncated
 export function listMaterials(
   rootPath: string,
   writes?: Array<{ path: string; sessionId: string }>
-): MaterialItem[] {
+): { items: MaterialItem[]; truncated: boolean } {
   const root = resolve(rootPath)
   const writeByAbs = new Map<string, string>()
   for (const w of writes ?? []) {
     writeByAbs.set(resolve(w.path), w.sessionId)
   }
   const items: MaterialItem[] = []
+  let truncated = false
 
   function walk(dir: string): void {
+    if (truncated) return
     let entries
     try {
       entries = readdirSync(dir, { withFileTypes: true })
@@ -140,6 +142,7 @@ export function listMaterials(
       return
     }
     for (const entry of entries) {
+      if (truncated) return
       if (TREE_IGNORE.includes(entry.name)) continue
       const abs = join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -147,13 +150,17 @@ export function listMaterials(
         continue
       }
       if (!entry.isFile()) continue
+      if (items.length >= TREE_NODE_LIMIT) {
+        truncated = true
+        return
+      }
       const resolved = resolve(abs)
       items.push(toMaterialItem(root, resolved, writeByAbs.get(resolved)))
     }
   }
 
   walk(root)
-  return items
+  return { items, truncated }
 }
 
 function uniqueImportDest(rootPath: string, sourceAbsPath: string): string {

@@ -11,6 +11,7 @@ type Props = {
   onSelectSession: (session: SessionSummary) => void
   onNewSession: () => void
   onDeleteSession: (id: string, title: string) => void
+  onDeleteProject: (id: string, title: string) => void
   projectId?: string | null
   rootPath?: string | null
   activeFilePath?: string | null
@@ -49,6 +50,7 @@ export function SecondarySidebar({
   onSelectSession,
   onNewSession,
   onDeleteSession,
+  onDeleteProject,
   projectId,
   rootPath,
   activeFilePath,
@@ -120,8 +122,24 @@ export function SecondarySidebar({
             {groups.map((group) => (
               <div key={group.id ?? 'unselected'} className="sb-group">
                 <div className="sb-group-head">
-                  {group.title}
-                  <span className="sb-section-count">{group.sessions.length}</span>
+                  <span className="sb-group-head-label">
+                    {group.title}
+                    <span className="sb-section-count">{group.sessions.length}</span>
+                  </span>
+                  {group.id ? (
+                    <span
+                      className="session-delete"
+                      role="button"
+                      aria-label="删除项目"
+                      title="删除项目"
+                      onClick={() => {
+                        const id = group.id
+                        if (id) onDeleteProject(id, group.title)
+                      }}
+                    >
+                      {TRASH_ICON}
+                    </span>
+                  ) : null}
                 </div>
                 {group.sessions.length === 0 ? (
                   group.id === null && groups.every((g) => g.sessions.length === 0) ? (

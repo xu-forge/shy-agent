@@ -63,3 +63,8 @@ export function sameProjectSessions(
 ): SessionSummary[] {
   return sessions.filter((s) => s.projectId === projectId)
 }
+
+/** 删除项目确认文案：只解绑会话，不删磁盘文件。 */
+export function projectDeleteConfirmDetail(projectName: string): string {
+  return `「${projectName}」将从列表中移除，已绑定会话会解绑。不会删除磁盘上的项目文件。`
+}

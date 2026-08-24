@@ -6730,10 +6730,33 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
   padding: 4px 8px 6px;
+}
+
+.sb-group-head-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sb-group-head .session-delete {
+  position: static;
+  top: auto;
+  right: auto;
+  transform: none;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.sb-group-head:hover .session-delete,
+.sb-group-head:focus-within .session-delete {
+  opacity: 1;
+  visibility: visible;
 }
 
 .file-tree-stub {

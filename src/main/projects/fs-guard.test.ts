@@ -125,7 +125,8 @@ describe('listMaterials', () => {
     writeFileSync(join(root, 'node_modules', 'skip.bin'), 'x')
 
     const outAbs = resolve(join(root, 'out.png'))
-    const items = listMaterials(root, [{ path: outAbs, sessionId: 'sess-1' }])
+    const { items, truncated } = listMaterials(root, [{ path: outAbs, sessionId: 'sess-1' }])
+    expect(truncated).toBe(false)
     const ids = items.map((i) => i.id)
     expect(ids).toContain('out.png')
     expect(ids).toContain('docs/note.md')
@@ -141,6 +142,15 @@ describe('listMaterials', () => {
     const md = items.find((i) => i.id === 'docs/note.md')
     expect(md?.kind).toBe('doc')
     expect(md?.sourceSessionId).toBeUndefined()
+  })
+
+  it('truncates when files exceed TREE_NODE_LIMIT', () => {
+    for (let i = 0; i < TREE_NODE_LIMIT + 1; i++) {
+      writeFileSync(join(root, `m${String(i).padStart(4, '0')}.txt`), '')
+    }
+    const { items, truncated } = listMaterials(root)
+    expect(truncated).toBe(true)
+    expect(items.length).toBe(TREE_NODE_LIMIT)
   })
 })
 

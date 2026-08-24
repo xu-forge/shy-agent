@@ -16,6 +16,7 @@ type Props = {
   onSelectSession: (session: SessionSummary) => void
   onNewSession: () => void
   onDeleteSession: (id: string, title: string) => void
+  onDeleteProject: (id: string, title: string) => void
   ipcOk: boolean | null
   onOpenSettings: (tab?: SettingsTab) => void
   codeProjectId?: string | null
@@ -35,6 +36,7 @@ export function Sidebar({
   onSelectSession,
   onNewSession,
   onDeleteSession,
+  onDeleteProject,
   ipcOk,
   onOpenSettings,
   codeProjectId,
@@ -58,6 +60,7 @@ export function Sidebar({
           onSelectSession={onSelectSession}
           onNewSession={onNewSession}
           onDeleteSession={onDeleteSession}
+          onDeleteProject={onDeleteProject}
           projectId={codeProjectId}
           rootPath={codeRootPath}
           activeFilePath={openFilePath}

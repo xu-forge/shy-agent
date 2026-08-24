@@ -16,6 +16,7 @@ type Props = {
 
 export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Element {
   const [items, setItems] = useState<MaterialItem[]>([])
+  const [truncated, setTruncated] = useState(false)
   const [filter, setFilter] = useState<KindFilter>('all')
   const [selected, setSelected] = useState<MaterialItem | null>(null)
   const [error, setError] = useState('')
@@ -25,10 +26,12 @@ export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Elem
     if (!r.ok) {
       setError('无法加载素材库')
       setItems([])
+      setTruncated(false)
       return
     }
     setError('')
     setItems(r.items)
+    setTruncated(r.truncated)
     setSelected((cur) => (cur ? (r.items.find((i) => i.id === cur.id) ?? null) : null))
   }, [projectId])
 
@@ -36,6 +39,7 @@ export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Elem
     setFilter('all')
     setSelected(null)
     setItems([])
+    setTruncated(false)
     setError('')
   }, [projectId])
 
@@ -93,6 +97,7 @@ export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Elem
         </button>
       </div>
       {error ? <p className="history-empty">{error}</p> : null}
+      {truncated ? <p className="file-tree-truncated">素材列表已截断（超过上限）</p> : null}
       {selected ? (
         <MaterialViewer projectId={projectId} item={selected} onClose={() => setSelected(null)} />
       ) : (

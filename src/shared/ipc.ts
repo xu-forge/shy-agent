@@ -230,7 +230,7 @@ export type ProjectFileWriteResult =
   { ok: true } | { ok: false; error: 'path_escape' | 'not_found' }
 
 export type ProjectMaterialsListResult =
-  { ok: true; items: MaterialItem[] } | { ok: false; error: 'not_found' }
+  { ok: true; items: MaterialItem[]; truncated: boolean } | { ok: false; error: 'not_found' }
 
 export type ProjectMaterialsImportResult =
   { ok: true; item: MaterialItem } | { ok: false; error: 'path_escape' | 'not_found' }

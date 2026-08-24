@@ -22,6 +22,7 @@ import {
   type SecondaryMode
 } from './lib/shellLayout'
 import { nextOpenFileRequest, type OpenFileRequest } from './lib/codeWorkspace'
+import { projectDeleteConfirmDetail } from './lib/projectBind'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/ui.css'
@@ -51,6 +52,7 @@ function App(): React.JSX.Element {
   const [ipcOk, setIpcOk] = useState<boolean | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState>(null)
   const [deleteSession, setDeleteSession] = useState<{ id: string; title: string } | null>(null)
+  const [deleteProject, setDeleteProject] = useState<{ id: string; title: string } | null>(null)
   const [notice, setNotice] = useState('')
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -207,6 +209,10 @@ function App(): React.JSX.Element {
     setDeleteSession({ id, title })
   }
 
+  const onDeleteProject = (id: string, title: string): void => {
+    setDeleteProject({ id, title })
+  }
+
   const confirmDeleteSession = async (id: string): Promise<void> => {
     await window.shy.deleteSession(id)
     const list = await refreshSessions()
@@ -225,6 +231,11 @@ function App(): React.JSX.Element {
     }
   }
 
+  const confirmDeleteProject = async (id: string): Promise<void> => {
+    await window.shy.deleteProject(id)
+    await refreshSessions()
+  }
+
   return (
     <div className="app-shell">
       <Sidebar
@@ -237,6 +248,7 @@ function App(): React.JSX.Element {
         onSelectSession={onSelectSession}
         onNewSession={() => void onNewSession()}
         onDeleteSession={(id, title) => onDeleteSession(id, title)}
+        onDeleteProject={(id, title) => onDeleteProject(id, title)}
         ipcOk={ipcOk}
         onOpenSettings={(tab) => {
           setSettingsTab(tab ?? 'general')
@@ -311,6 +323,17 @@ function App(): React.JSX.Element {
             setDeleteSession(null)
             if (approved) void confirmDeleteSession(id).then(() => undefined)
             void target
+          }}
+        />
+      ) : null}
+      {deleteProject ? (
+        <ConfirmDialog
+          action="删除项目"
+          detail={projectDeleteConfirmDetail(deleteProject.title)}
+          requestId={deleteProject.id}
+          onResolve={(id, approved) => {
+            setDeleteProject(null)
+            if (approved) void confirmDeleteProject(id)
           }}
         />
       ) : null}

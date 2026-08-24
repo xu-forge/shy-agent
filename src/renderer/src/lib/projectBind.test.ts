@@ -7,6 +7,7 @@ import {
   chatStatusTone,
   isProjectPickerLocked,
   normalizeInspectorTab,
+  projectDeleteConfirmDetail,
   resolveBoundProjectId,
   sameProjectSessions,
   shouldBindOnSend
@@ -139,6 +140,15 @@ describe('resolveBoundProjectId', () => {
 
   it('有值时原样返回', () => {
     expect(resolveBoundProjectId('p1')).toBe('p1')
+  })
+})
+
+describe('projectDeleteConfirmDetail', () => {
+  it('names the project and says disk files are not deleted', () => {
+    const detail = projectDeleteConfirmDetail('demo-repo')
+    expect(detail).toContain('demo-repo')
+    expect(detail).toMatch(/不会删除.*文件|不删除.*文件/)
+    expect(detail).toMatch(/解绑/)
   })
 })
 

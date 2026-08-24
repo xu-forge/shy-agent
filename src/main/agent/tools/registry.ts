@@ -6,7 +6,7 @@ export type ToolContext = {
   confirmHighRisk: (action: string, detail: string) => Promise<boolean>
   /** 当前会话 id；用于文件追踪埋点（shell-session-side-panel） */
   sessionId: string
-  /** 会话工作区：文件工具与 shell_exec 相对路径的解析基准（~/.shy/sessions/{id}/workspace） */
+  /** 当前工作区：文件工具与 shell_exec 相对路径的解析基准（已绑定项目则为项目根目录，否则为会话 workspace） */
   workspaceDir: string
 }
 
