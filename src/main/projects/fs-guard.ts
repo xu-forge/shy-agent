@@ -1,4 +1,4 @@
-import { copyFileSync, readdirSync, statSync, existsSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'path'
 import type { MaterialItem, MaterialKind, TreeNode } from '../../shared/ipc'
 
@@ -174,4 +174,10 @@ export function importMaterial(rootPath: string, sourceAbsPath: string): Materia
   const dest = assertInsideRoot(root, uniqueImportDest(root, sourceAbsPath))
   copyFileSync(sourceAbsPath, dest)
   return toMaterialItem(root, dest)
+}
+
+export function readFileAsDataUrl(rootPath: string, relativePath: string): string {
+  const abs = assertInsideRoot(rootPath, join(rootPath, relativePath))
+  const buf = readFileSync(abs)
+  return `data:${mimeFromName(basename(abs))};base64,${buf.toString('base64')}`
 }

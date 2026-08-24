@@ -41,9 +41,12 @@ export const IPC = {
   projectsDelete: 'shy:projects-delete',
   sessionsBindProject: 'shy:sessions-bind-project',
   projectPickFolder: 'shy:project-pick-folder',
+  projectPickFile: 'shy:project-pick-file',
   projectTreeList: 'shy:project-tree-list',
   projectFileRead: 'shy:project-file-read',
+  projectFileReadDataUrl: 'shy:project-file-read-data-url',
   projectFileWrite: 'shy:project-file-write',
+  projectReveal: 'shy:project-reveal',
   projectMaterialsList: 'shy:project-materials-list',
   projectMaterialsImport: 'shy:project-materials-import',
   events: 'shy:events',
@@ -205,6 +208,14 @@ export type BindSessionProjectResult =
   { ok: true } | { ok: false; error: 'already_bound' | 'has_messages' | 'not_found' }
 
 export type ProjectPickFolderResult = { ok: true; path: string } | { ok: false }
+
+export type ProjectPickFileResult = ProjectPickFolderResult
+
+export type ProjectRevealResult =
+  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type ProjectFileReadDataUrlResult =
+  { ok: true; dataUrl: string } | { ok: false; error: 'path_escape' | 'not_found' }
 
 export type ProjectCreateResult =
   { ok: true; project: Project } | { ok: false; error: 'root_path_taken' }

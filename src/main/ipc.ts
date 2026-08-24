@@ -45,7 +45,13 @@ import {
   getProject,
   listProjects
 } from './projects/store'
-import { importMaterial, listMaterials, listProjectTree } from './projects/fs-guard'
+import {
+  assertInsideRoot,
+  importMaterial,
+  listMaterials,
+  listProjectTree,
+  readFileAsDataUrl
+} from './projects/fs-guard'
 import {
   asIpcFailure,
   collectProjectMaterialWrites,
@@ -211,6 +217,43 @@ export function registerCoreIpc(): void {
     if (result.canceled || result.filePaths.length === 0) return { ok: false as const }
     return { ok: true as const, path: result.filePaths[0] }
   })
+  ipcMain.handle(IPC.projectPickFile, async () => {
+    if (!mainWindow) return { ok: false as const }
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
+    if (result.canceled || result.filePaths.length === 0) return { ok: false as const }
+    return { ok: true as const, path: result.filePaths[0] }
+  })
+  ipcMain.handle(
+    IPC.projectReveal,
+    async (_e, input: { projectId: string; absPath: string }) => {
+      const project = getProject(input.projectId)
+      if (!project) return { ok: false as const, error: 'not_found' as const }
+      try {
+        const abs = assertInsideRoot(project.rootPath, input.absPath)
+        await shell.openPath(abs)
+        return { ok: true as const }
+      } catch (err) {
+        const mapped = asIpcFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+  ipcMain.handle(
+    IPC.projectFileReadDataUrl,
+    async (_e, input: { projectId: string; relativePath: string }) => {
+      const project = getProject(input.projectId)
+      if (!project) return { ok: false as const, error: 'not_found' as const }
+      try {
+        const dataUrl = readFileAsDataUrl(project.rootPath, input.relativePath)
+        return { ok: true as const, dataUrl }
+      } catch (err) {
+        const mapped = asIpcFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
   ipcMain.handle(IPC.projectTreeList, async (_e, projectId: string) => {
     const project = getProject(projectId)
     if (!project) return { ok: false as const, error: 'not_found' as const }

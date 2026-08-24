@@ -93,4 +93,19 @@ describe('project preload API', () => {
       [IPC.projectMaterialsImport, importInput]
     ])
   })
+
+  it('exposes file picker, reveal, and binary data-url read', () => {
+    const revealInput = { projectId: 'p1', absPath: '/proj/a.png' }
+    const dataUrlInput = { projectId: 'p1', relativePath: 'a.png' }
+
+    exposed.pickFile()
+    exposed.projectReveal(revealInput as never)
+    exposed.projectFileReadDataUrl(dataUrlInput as never)
+
+    expect(invoke.mock.calls).toEqual([
+      [IPC.projectPickFile],
+      [IPC.projectReveal, revealInput],
+      [IPC.projectFileReadDataUrl, dataUrlInput]
+    ])
+  })
 })

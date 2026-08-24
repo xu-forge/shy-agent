@@ -10,6 +10,7 @@ import {
   kindFromName,
   listMaterials,
   listProjectTree,
+  readFileAsDataUrl,
   type TreeNode
 } from './fs-guard'
 
@@ -165,5 +166,17 @@ describe('importMaterial', () => {
     expect(basename(item.absPath)).toBe('x-1.png')
     expect(readFileSync(join(root, 'x.png'), 'utf8')).toBe('old')
     expect(readFileSync(item.absPath, 'utf8')).toBe('new')
+  })
+})
+
+describe('readFileAsDataUrl', () => {
+  it('returns a data URL for a file inside root', () => {
+    writeFileSync(join(root, 'tiny.png'), 'PNGDATA')
+    const url = readFileAsDataUrl(root, 'tiny.png')
+    expect(url).toBe(`data:image/png;base64,${Buffer.from('PNGDATA').toString('base64')}`)
+  })
+
+  it('throws path_escape when the relative path walks out', () => {
+    expect(() => readFileAsDataUrl(root, join('..', 'secret.png'))).toThrow(/path_escape/)
   })
 })

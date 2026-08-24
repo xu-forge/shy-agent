@@ -13,7 +13,10 @@ import type {
   ProjectFileWriteResult,
   ProjectMaterialsImportResult,
   ProjectMaterialsListResult,
+  ProjectFileReadDataUrlResult,
+  ProjectPickFileResult,
   ProjectPickFolderResult,
+  ProjectRevealResult,
   ProjectTreeListResult,
   ProjectType,
   ScheduleOccurrence,
@@ -111,6 +114,15 @@ export interface ShyApi {
     projectId: string
   }) => Promise<BindSessionProjectResult>
   pickFolder: () => Promise<ProjectPickFolderResult>
+  pickFile: () => Promise<ProjectPickFileResult>
+  projectReveal: (input: {
+    projectId: string
+    absPath: string
+  }) => Promise<ProjectRevealResult>
+  projectFileReadDataUrl: (input: {
+    projectId: string
+    relativePath: string
+  }) => Promise<ProjectFileReadDataUrlResult>
   projectTreeList: (projectId: string) => Promise<ProjectTreeListResult>
   projectFileRead: (input: {
     projectId: string

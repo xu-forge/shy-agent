@@ -11,6 +11,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
 import { PlaceholderView } from './components/PlaceholderView'
 import { CodeWorkspace } from './components/code/CodeWorkspace'
+import { MaterialLibrary } from './components/material/MaterialLibrary'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import {
   groupSessionsByProject,
@@ -259,7 +260,12 @@ function App(): React.JSX.Element {
           />
         ) : null}
         {layout.main === 'code' && !boundProject ? <PlaceholderView title="代码工作区" /> : null}
-        {layout.main === 'material' ? <PlaceholderView title="素材工作区" /> : null}
+        {layout.main === 'material' && boundProject ? (
+          <MaterialLibrary projectId={boundProject.id} sessionId={sessionId} />
+        ) : null}
+        {layout.main === 'material' && !boundProject ? (
+          <PlaceholderView title="素材工作区" />
+        ) : null}
         {layout.main === 'skills' ? <SkillsView /> : null}
         {layout.main === 'calendar' ? <CalendarView /> : null}
       </div>
