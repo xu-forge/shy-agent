@@ -175,6 +175,20 @@ export type Project = {
   updatedAt: string
 }
 
+export type MaterialKind = 'image' | 'video' | 'audio' | 'doc' | 'other'
+
+export type MaterialItem = {
+  id: string
+  relativePath: string
+  absPath: string
+  kind: MaterialKind
+  mime: string
+  mtimeMs: number
+  size: number
+  sourceSessionId?: string
+  derivedFrom?: string
+}
+
 /* ────────── session files & tasks（shell-session-side-panel） ────────── */
 
 export type FileOp = 'read' | 'write' | 'delete'
