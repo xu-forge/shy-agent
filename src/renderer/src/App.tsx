@@ -14,14 +14,14 @@ import { CodeWorkspace } from './components/code/CodeWorkspace'
 import { MaterialLibrary } from './components/material/MaterialLibrary'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import {
+  NAV_EXPANDED_KEY,
   groupSessionsByProject,
+  parseNavExpanded,
   resolveChatHostClass,
   resolveShellLayout,
   resolveWorkspaceKind,
-  type NavKey,
-  type SecondaryMode
+  type NavKey
 } from './lib/shellLayout'
-import { nextOpenFileRequest, type OpenFileRequest } from './lib/codeWorkspace'
 import { projectDeleteConfirmDetail } from './lib/projectBind'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -46,6 +46,14 @@ function readNav(): NavKey {
   }
 }
 
+function readNavExpanded(): boolean {
+  try {
+    return parseNavExpanded(localStorage.getItem(NAV_EXPANDED_KEY))
+  } catch {
+    return true
+  }
+}
+
 function App(): React.JSX.Element {
   const [nav, setNav] = useState<NavKey>(readNav)
   const [theme, setTheme] = useState<Theme>(readTheme)
@@ -57,12 +65,11 @@ function App(): React.JSX.Element {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [sessionId, setSessionId] = useState('')
-  const [secondaryMode, setSecondaryMode] = useState<SecondaryMode>('sessions')
+  const [navExpanded, setNavExpanded] = useState(readNavExpanded)
   const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
-  const [openFile, setOpenFile] = useState<OpenFileRequest | null>(null)
 
   // 主题：应用 + 持久化
   useEffect(() => {
@@ -78,6 +85,14 @@ function App(): React.JSX.Element {
       /* ignore */
     }
   }, [nav])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAV_EXPANDED_KEY, navExpanded ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [navExpanded])
 
   const refreshProjects = useCallback(async () => {
     const list = await window.shy.listProjects()
@@ -118,13 +133,11 @@ function App(): React.JSX.Element {
       setProjects(projectList)
       if (list[0]) {
         setSessionId(list[0].id)
-        if (resolveWorkspaceKind(list[0], projectList) === 'code') setSecondaryMode('files')
       } else {
         const created = await window.shy.createSession({ mode: 'interactive' })
         if (!alive) return
         setSessions([created])
         setSessionId(created.id)
-        setSecondaryMode('sessions')
       }
     })()
     return () => {
@@ -172,7 +185,6 @@ function App(): React.JSX.Element {
   const workspaceKind = resolveWorkspaceKind(activeSession, projects)
   const layout = resolveShellLayout({
     nav,
-    secondaryMode,
     workspaceKind,
     hasConversation: chatHasConversation
   })
@@ -181,20 +193,14 @@ function App(): React.JSX.Element {
     [sessions, projects]
   )
 
-  useEffect(() => {
-    setOpenFile(null)
-  }, [boundProject?.id])
-
   const onNavChange = (key: NavKey): void => {
-    if (key === 'projects') setSecondaryMode('sessions')
     setNav(key)
+    if (key === 'projects' && !navExpanded) setNavExpanded(true)
   }
 
   const onSelectSession = (session: SessionSummary): void => {
     setSessionId(session.id)
     setNav('projects')
-    const kind = resolveWorkspaceKind(session, projects)
-    setSecondaryMode(kind === 'code' ? 'files' : 'sessions')
   }
 
   const onNewSession = async (): Promise<void> => {
@@ -202,7 +208,7 @@ function App(): React.JSX.Element {
     await refreshSessions()
     setSessionId(created.id)
     setNav('projects')
-    setSecondaryMode('sessions')
+    if (!navExpanded) setNavExpanded(true)
   }
 
   const onDeleteSession = (id: string, title: string): void => {
@@ -219,14 +225,10 @@ function App(): React.JSX.Element {
     if (id === sessionId) {
       if (list[0]) {
         setSessionId(list[0].id)
-        setSecondaryMode(
-          resolveWorkspaceKind(list[0], projects) === 'code' ? 'files' : 'sessions'
-        )
       } else {
         const created = await window.shy.createSession({ mode: 'interactive' })
         await refreshSessions()
         setSessionId(created.id)
-        setSecondaryMode('sessions')
       }
     }
   }
@@ -241,8 +243,8 @@ function App(): React.JSX.Element {
       <Sidebar
         active={nav}
         onChange={onNavChange}
-        showSecondary={layout.showSecondary}
-        secondaryMode={layout.secondaryContent}
+        expanded={navExpanded}
+        onToggleExpanded={() => setNavExpanded((v) => !v)}
         groups={groups}
         activeSessionId={sessionId}
         onSelectSession={onSelectSession}
@@ -254,10 +256,6 @@ function App(): React.JSX.Element {
           setSettingsTab(tab ?? 'general')
           setSettingsOpen(true)
         }}
-        codeProjectId={layout.main === 'code' ? boundProject?.id ?? null : null}
-        codeRootPath={layout.main === 'code' ? boundProject?.rootPath ?? null : null}
-        openFilePath={openFile?.path ?? null}
-        onOpenFile={(path) => setOpenFile((prev) => nextOpenFileRequest(prev, path))}
       />
       <div className={`main-column${layout.main === 'chat' ? ' main-collapsed' : ''}`}>
         {nav !== 'projects' ? <Header title={NAV_TITLES[nav]} /> : null}
@@ -266,8 +264,6 @@ function App(): React.JSX.Element {
             projectId={boundProject.id}
             rootPath={boundProject.rootPath}
             sessionId={sessionId}
-            openPath={openFile?.path ?? null}
-            openSeq={openFile?.seq ?? 0}
             theme={theme}
           />
         ) : null}

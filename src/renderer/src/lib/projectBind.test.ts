@@ -10,7 +10,8 @@ import {
   projectDeleteConfirmDetail,
   resolveBoundProjectId,
   sameProjectSessions,
-  shouldBindOnSend
+  shouldBindOnSend,
+  shouldShowProjectPicker
 } from './projectBind'
 
 describe('INSPECTOR_TABS', () => {
@@ -38,6 +39,14 @@ describe('isProjectPickerLocked', () => {
   it('已有用户消息或已绑定则只读', () => {
     expect(isProjectPickerLocked({ hasUserMessages: true, projectId: null })).toBe(true)
     expect(isProjectPickerLocked({ hasUserMessages: false, projectId: 'p1' })).toBe(true)
+  })
+})
+
+describe('shouldShowProjectPicker', () => {
+  it('未绑定主对话展示，已绑定（右侧会话）不展示', () => {
+    expect(shouldShowProjectPicker(null)).toBe(true)
+    expect(shouldShowProjectPicker(undefined)).toBe(true)
+    expect(shouldShowProjectPicker('p1')).toBe(false)
   })
 })
 

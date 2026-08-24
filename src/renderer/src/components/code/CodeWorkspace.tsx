@@ -9,6 +9,7 @@ import {
   languageFromPath,
   monacoThemeFromDataset
 } from '../../lib/codeWorkspace'
+import { FileTree } from './FileTree'
 import type { Theme } from '../../lib/theme'
 
 type TabState = {
@@ -23,8 +24,6 @@ type Props = {
   projectId: string
   rootPath: string
   sessionId: string
-  openPath: string | null
-  openSeq: number
   theme: Theme
 }
 
@@ -32,8 +31,6 @@ export function CodeWorkspace({
   projectId,
   rootPath,
   sessionId,
-  openPath,
-  openSeq,
   theme
 }: Props): React.JSX.Element {
   const [tabs, setTabs] = useState<TabState[]>([])
@@ -78,10 +75,6 @@ export function CodeWorkspace({
     setLoadError('')
     lastSeenIdRef.current = null
   }, [projectId])
-
-  useEffect(() => {
-    if (openPath) void openFile(openPath)
-  }, [openPath, openSeq, openFile])
 
   const saveTab = useCallback(
     async (relativePath: string): Promise<void> => {
@@ -200,75 +193,85 @@ export function CodeWorkspace({
 
   return (
     <div className="code-workspace">
-      <div className="code-tabs" role="tablist">
-        {tabs.map((t) => (
-          <div
-            key={t.relativePath}
-            className={`code-tab${t.relativePath === activePath ? ' active' : ''}`}
-            role="tab"
-            aria-selected={t.relativePath === activePath}
-          >
-            <button type="button" className="code-tab-main" onClick={() => setActivePath(t.relativePath)}>
-              {fileName(t.relativePath)}
-              {t.dirty ? <span className="code-tab-dirty" aria-label="未保存">●</span> : null}
-            </button>
-            <button
-              type="button"
-              className="code-tab-close"
-              aria-label={`关闭 ${fileName(t.relativePath)}`}
-              onClick={() => closeTab(t.relativePath)}
+      <aside className="code-tree-pane">
+        <FileTree
+          projectId={projectId}
+          rootPath={rootPath}
+          activePath={activePath}
+          onOpenFile={(path) => void openFile(path)}
+        />
+      </aside>
+      <div className="code-workspace-main">
+        <div className="code-tabs" role="tablist">
+          {tabs.map((t) => (
+            <div
+              key={t.relativePath}
+              className={`code-tab${t.relativePath === activePath ? ' active' : ''}`}
+              role="tab"
+              aria-selected={t.relativePath === activePath}
             >
-              ×
+              <button type="button" className="code-tab-main" onClick={() => setActivePath(t.relativePath)}>
+                {fileName(t.relativePath)}
+                {t.dirty ? <span className="code-tab-dirty" aria-label="未保存">●</span> : null}
+              </button>
+              <button
+                type="button"
+                className="code-tab-close"
+                aria-label={`关闭 ${fileName(t.relativePath)}`}
+                onClick={() => closeTab(t.relativePath)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {active ? (
+            <button type="button" className="code-save" onClick={() => void saveTab(active.relativePath)}>
+              保存
+            </button>
+          ) : null}
+        </div>
+        {active?.conflict ? (
+          <div className="code-conflict-bar" role="status">
+            <span>{AGENT_CONFLICT_HINT}</span>
+            <button type="button" onClick={() => void reloadTab(active.relativePath)}>
+              加载磁盘版本
             </button>
           </div>
-        ))}
-        {active ? (
-          <button type="button" className="code-save" onClick={() => void saveTab(active.relativePath)}>
-            保存
-          </button>
         ) : null}
-      </div>
-      {active?.conflict ? (
-        <div className="code-conflict-bar" role="status">
-          <span>{AGENT_CONFLICT_HINT}</span>
-          <button type="button" onClick={() => void reloadTab(active.relativePath)}>
-            加载磁盘版本
-          </button>
-        </div>
-      ) : null}
-      {loadError ? (
-        <div className="code-conflict-bar" role="alert">
-          {loadError}
-        </div>
-      ) : null}
-      <div className="code-editor-host">
-        {active ? (
-          <Editor
-            path={active.relativePath}
-            language={languageFromPath(active.relativePath)}
-            theme={monacoTheme}
-            value={active.content}
-            onChange={(value) => {
-              const next = value ?? ''
-              setTabs((prev) =>
-                prev.map((t) =>
-                  t.relativePath === active.relativePath
-                    ? { ...t, content: next, dirty: next !== t.savedContent }
-                    : t
+        {loadError ? (
+          <div className="code-conflict-bar" role="alert">
+            {loadError}
+          </div>
+        ) : null}
+        <div className="code-editor-host">
+          {active ? (
+            <Editor
+              path={active.relativePath}
+              language={languageFromPath(active.relativePath)}
+              theme={monacoTheme}
+              value={active.content}
+              onChange={(value) => {
+                const next = value ?? ''
+                setTabs((prev) =>
+                  prev.map((t) =>
+                    t.relativePath === active.relativePath
+                      ? { ...t, content: next, dirty: next !== t.savedContent }
+                      : t
+                  )
                 )
-              )
-            }}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 13,
-              wordWrap: 'on',
-              automaticLayout: true,
-              scrollBeyondLastLine: false
-            }}
-          />
-        ) : (
-          <div className="code-editor-empty">从文件树打开文件</div>
-        )}
+              }}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 13,
+                wordWrap: 'on',
+                automaticLayout: true,
+                scrollBeyondLastLine: false
+              }}
+            />
+          ) : (
+            <div className="code-editor-empty">从文件树打开文件</div>
+          )}
+        </div>
       </div>
     </div>
   )

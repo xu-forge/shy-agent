@@ -13,7 +13,8 @@ import {
   isProjectPickerLocked,
   resolveBoundProjectId,
   sameProjectSessions,
-  shouldBindOnSend
+  shouldBindOnSend,
+  shouldShowProjectPicker
 } from '../lib/projectBind'
 
 type Props = {
@@ -280,15 +281,17 @@ export function ChatWorkspace({
       ) : null}
       <div className="composer-bar">
         <div className="composer-options">
-          <ProjectPicker
-            value={boundProjectId ?? pendingProjectId}
-            disabled={isProjectPickerLocked({
-              hasUserMessages: messages.some((m) => m.role === 'user'),
-              projectId: boundProjectId
-            })}
-            onChange={setPendingProjectId}
-            onProjectsChanged={onSessionsChanged}
-          />
+          {shouldShowProjectPicker(boundProjectId) ? (
+            <ProjectPicker
+              value={boundProjectId ?? pendingProjectId}
+              disabled={isProjectPickerLocked({
+                hasUserMessages: messages.some((m) => m.role === 'user'),
+                projectId: boundProjectId
+              })}
+              onChange={setPendingProjectId}
+              onProjectsChanged={onSessionsChanged}
+            />
+          ) : null}
           <button
             type="button"
             className={`full-access${alwaysAuthorize ? ' on' : ''}`}

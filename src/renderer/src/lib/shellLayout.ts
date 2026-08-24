@@ -4,11 +4,13 @@ export const UNSELECTED_PROJECT_GROUP = '未选择项目'
 
 export type NavKey = 'projects' | 'skills' | 'calendar'
 
-export type SecondaryMode = 'sessions' | 'files'
-
 export type WorkspaceKind = 'unbound' | 'code' | 'material'
 
 export type ChatHostClass = 'chat-main' | 'chat-aside' | 'chat-hidden'
+
+export const NAV_EXPANDED_KEY = 'shy.nav-expanded'
+export const NAV_GROUP_COLLAPSED_KEY = 'shy.nav-group-collapsed'
+export const UNSELECTED_GROUP_KEY = 'unselected'
 
 export type SessionGroup = {
   id: string | null
@@ -17,11 +19,33 @@ export type SessionGroup = {
 }
 
 export type ShellLayout = {
-  showSecondary: boolean
-  secondaryContent: SecondaryMode
   main: 'chat' | 'code' | 'material' | 'skills' | 'calendar'
   showInspector: boolean
   showChatAside: boolean
+}
+
+/** 缺省展开；仅显式 `'0'` / `'false'` 视为收起。 */
+export function parseNavExpanded(raw: string | null): boolean {
+  return raw !== '0' && raw !== 'false'
+}
+
+export function groupStorageKey(id: string | null): string {
+  return id ?? UNSELECTED_GROUP_KEY
+}
+
+export function parseCollapsedGroups(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is string => typeof item === 'string')
+  } catch {
+    return []
+  }
+}
+
+export function toggleCollapsedGroup(collapsed: readonly string[], key: string): string[] {
+  return collapsed.includes(key) ? collapsed.filter((item) => item !== key) : [...collapsed, key]
 }
 
 export function groupSessionsByProject(
@@ -56,14 +80,11 @@ export function resolveWorkspaceKind(
 
 export function resolveShellLayout(opts: {
   nav: NavKey
-  secondaryMode: SecondaryMode
   workspaceKind: WorkspaceKind
   hasConversation: boolean
 }): ShellLayout {
   if (opts.nav === 'skills' || opts.nav === 'calendar') {
     return {
-      showSecondary: false,
-      secondaryContent: 'sessions',
       main: opts.nav,
       showInspector: false,
       showChatAside: false
@@ -72,8 +93,6 @@ export function resolveShellLayout(opts: {
 
   if (opts.workspaceKind === 'code') {
     return {
-      showSecondary: true,
-      secondaryContent: opts.secondaryMode,
       main: 'code',
       showInspector: false,
       showChatAside: true
@@ -82,8 +101,6 @@ export function resolveShellLayout(opts: {
 
   if (opts.workspaceKind === 'material') {
     return {
-      showSecondary: true,
-      secondaryContent: 'sessions',
       main: 'material',
       showInspector: false,
       showChatAside: true
@@ -91,8 +108,6 @@ export function resolveShellLayout(opts: {
   }
 
   return {
-    showSecondary: true,
-    secondaryContent: 'sessions',
     main: 'chat',
     showInspector: opts.hasConversation,
     showChatAside: false

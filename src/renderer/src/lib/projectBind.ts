@@ -24,6 +24,11 @@ export function isProjectPickerLocked(opts: {
   return Boolean(opts.hasUserMessages || opts.projectId)
 }
 
+/** 仅未绑定的主对话需要选择器；右侧已绑定会话输入区不展示项目。 */
+export function shouldShowProjectPicker(boundProjectId?: string | null): boolean {
+  return !boundProjectId
+}
+
 export function shouldBindOnSend(opts: {
   hasUserMessages: boolean
   boundProjectId?: string | null

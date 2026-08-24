@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { Project, SessionSummary } from '../../../shared/ipc'
 import {
+  UNSELECTED_GROUP_KEY,
   UNSELECTED_PROJECT_GROUP,
   groupSessionsByProject,
+  groupStorageKey,
+  parseCollapsedGroups,
+  parseNavExpanded,
   resolveChatHostClass,
   resolveShellLayout,
-  resolveWorkspaceKind
+  resolveWorkspaceKind,
+  toggleCollapsedGroup
 } from './shellLayout'
 
 function session(partial: Partial<SessionSummary> & { id: string; title: string }): SessionSummary {
@@ -100,18 +105,44 @@ describe('resolveWorkspaceKind', () => {
   })
 })
 
+describe('parseNavExpanded', () => {
+  it('缺省展开，仅 0/false 收起', () => {
+    expect(parseNavExpanded(null)).toBe(true)
+    expect(parseNavExpanded('1')).toBe(true)
+    expect(parseNavExpanded('0')).toBe(false)
+    expect(parseNavExpanded('false')).toBe(false)
+  })
+})
+
+describe('group collapse', () => {
+  it('未选择项目用稳定 key', () => {
+    expect(groupStorageKey(null)).toBe(UNSELECTED_GROUP_KEY)
+    expect(groupStorageKey('p-be')).toBe('p-be')
+  })
+
+  it('解析收起列表，坏 JSON 当空', () => {
+    expect(parseCollapsedGroups(null)).toEqual([])
+    expect(parseCollapsedGroups('["unselected","p-be"]')).toEqual(['unselected', 'p-be'])
+    expect(parseCollapsedGroups('not-json')).toEqual([])
+    expect(parseCollapsedGroups('{"a":1}')).toEqual([])
+  })
+
+  it('toggle 加入或移除', () => {
+    expect(toggleCollapsedGroup([], 'unselected')).toEqual(['unselected'])
+    expect(toggleCollapsedGroup(['unselected'], 'unselected')).toEqual([])
+    expect(toggleCollapsedGroup(['unselected'], 'p-be')).toEqual(['unselected', 'p-be'])
+  })
+})
+
 describe('resolveShellLayout', () => {
-  it('未绑定且有对话：会话侧栏 + 对话主区 + Inspector', () => {
+  it('未绑定且有对话：对话主区 + Inspector', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
-        secondaryMode: 'sessions',
         workspaceKind: 'unbound',
         hasConversation: true
       })
     ).toEqual({
-      showSecondary: true,
-      secondaryContent: 'sessions',
       main: 'chat',
       showInspector: true,
       showChatAside: false
@@ -122,70 +153,48 @@ describe('resolveShellLayout', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
-        secondaryMode: 'sessions',
         workspaceKind: 'unbound',
         hasConversation: false
       }).showInspector
     ).toBe(false)
   })
 
-  it('代码项目：文件树侧栏 + 代码主区 + 右侧对话，无 Inspector', () => {
+  it('代码项目：代码主区 + 右侧对话，无 Inspector', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
-        secondaryMode: 'files',
         workspaceKind: 'code',
         hasConversation: true
       })
     ).toEqual({
-      showSecondary: true,
-      secondaryContent: 'files',
       main: 'code',
       showInspector: false,
       showChatAside: true
     })
   })
 
-  it('代码项目点轨上「项目」后侧栏回到会话列表，主区仍为代码', () => {
-    const layout = resolveShellLayout({
-      nav: 'projects',
-      secondaryMode: 'sessions',
-      workspaceKind: 'code',
-      hasConversation: true
-    })
-    expect(layout.secondaryContent).toBe('sessions')
-    expect(layout.main).toBe('code')
-    expect(layout.showInspector).toBe(false)
-  })
-
-  it('素材项目：会话侧栏 + 素材主区 + 右侧对话，无 Inspector', () => {
+  it('素材项目：素材主区 + 右侧对话，无 Inspector', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
-        secondaryMode: 'files',
         workspaceKind: 'material',
         hasConversation: true
       })
     ).toEqual({
-      showSecondary: true,
-      secondaryContent: 'sessions',
       main: 'material',
       showInspector: false,
       showChatAside: true
     })
   })
 
-  it('技能 / 日历隐藏二级栏与 Inspector', () => {
+  it('技能 / 日历无 Inspector，主区切走', () => {
     expect(
       resolveShellLayout({
         nav: 'skills',
-        secondaryMode: 'files',
         workspaceKind: 'code',
         hasConversation: true
       })
     ).toEqual({
-      showSecondary: false,
-      secondaryContent: 'sessions',
       main: 'skills',
       showInspector: false,
       showChatAside: false
@@ -193,7 +202,6 @@ describe('resolveShellLayout', () => {
     expect(
       resolveShellLayout({
         nav: 'calendar',
-        secondaryMode: 'sessions',
         workspaceKind: 'unbound',
         hasConversation: true
       }).main
