@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { basename } from 'path'
 import type { Project, ProjectType } from '../../shared/ipc'
 import { getDb } from '../memory/db'
+import { ensureSessionTables } from '../sessions/store'
 
 export type { Project, ProjectType }
 
@@ -87,8 +88,45 @@ export function getProject(id: string): Project | null {
   return rowToProject(row)
 }
 
+export function countUserMessages(sessionId: string): number {
+  ensureSessionTables()
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM session_messages WHERE session_id = ? AND role = 'user'`
+    )
+    .get(sessionId) as { n: number }
+  return row.n
+}
+
+export function bindSessionProject(
+  sessionId: string,
+  projectId: string | null
+): { ok: true } | { ok: false; error: 'already_bound' | 'has_messages' | 'not_found' } {
+  ensureProjectTables()
+  ensureSessionTables()
+  const session = getDb()
+    .prepare(`SELECT project_id FROM sessions WHERE id = ?`)
+    .get(sessionId) as { project_id?: string | null } | undefined
+  if (!session) return { ok: false, error: 'not_found' }
+  if (session.project_id != null && session.project_id !== '') {
+    return { ok: false, error: 'already_bound' }
+  }
+  if (countUserMessages(sessionId) > 0) {
+    return { ok: false, error: 'has_messages' }
+  }
+  if (projectId === null) return { ok: true }
+  if (!getProject(projectId)) return { ok: false, error: 'not_found' }
+  getDb()
+    .prepare(`UPDATE sessions SET project_id = ?, updated_at = ? WHERE id = ?`)
+    .run(projectId, now(), sessionId)
+  return { ok: true }
+}
+
 export function deleteProject(id: string): { ok: boolean } {
   ensureProjectTables()
-  const info = getDb().prepare(`DELETE FROM projects WHERE id = ?`).run(id)
+  ensureSessionTables()
+  const db = getDb()
+  db.prepare(`UPDATE sessions SET project_id = NULL WHERE project_id = ?`).run(id)
+  const info = db.prepare(`DELETE FROM projects WHERE id = ?`).run(id)
   return { ok: info.changes > 0 }
 }

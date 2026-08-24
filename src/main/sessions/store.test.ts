@@ -129,6 +129,16 @@ describe('sessions runStatus', () => {
     expect(store.getSession(s.id)).toMatchObject({ runStatus: 'paused', paused: true })
   })
 
+  it('rowToSummary 包含 projectId', async () => {
+    const { getDb } = await import('../memory/db')
+    const store = await import('./store')
+    store.ensureSessionTables()
+    const s = store.createSession('interactive', 'proj')
+    getDb().prepare(`UPDATE sessions SET project_id = ? WHERE id = ?`).run('proj-1', s.id)
+    expect(store.getSession(s.id)?.projectId).toBe('proj-1')
+    expect(store.listSessions().find((x) => x.id === s.id)?.projectId).toBe('proj-1')
+  })
+
   it('按 runStatus 仅列出 goal 会话', async () => {
     const store = await import('./store')
     const running = store.createSession('goal', 'running')

@@ -152,6 +152,7 @@ export type SessionSummary = {
   goal?: string
   runStatus?: RunStatus
   verifyCommand?: string
+  projectId?: string | null
 }
 
 export type SessionDetail = SessionSummary & {

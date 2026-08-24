@@ -37,4 +37,35 @@ describe('projects store', () => {
     createProject({ type: 'code', rootPath: rootA })
     expect(() => createProject({ type: 'material', rootPath: rootA })).toThrow(/root_path_taken/)
   })
+
+  it('首条消息前可绑定，绑定后拒绝再绑', async () => {
+    const sessions = await import('../sessions/store')
+    const { createProject, bindSessionProject } = await import('./store')
+    const s = sessions.createSession('interactive', 't')
+    const p = createProject({ type: 'code', rootPath: rootA })
+    expect(bindSessionProject(s.id, p.id).ok).toBe(true)
+    expect(bindSessionProject(s.id, p.id).ok).toBe(false)
+  })
+
+  it('已有用户消息则拒绝绑定', async () => {
+    const sessions = await import('../sessions/store')
+    const { createProject, bindSessionProject } = await import('./store')
+    const s = sessions.createSession('interactive', 't')
+    sessions.appendMessage(s.id, 'user', 'hi')
+    const p = createProject({ type: 'code', rootPath: rootA })
+    expect(bindSessionProject(s.id, p.id)).toEqual({ ok: false, error: 'has_messages' })
+  })
+
+  it('删项目后会话 projectId 为空且消息仍在', async () => {
+    const sessions = await import('../sessions/store')
+    const { createProject, bindSessionProject, deleteProject } = await import('./store')
+    const s = sessions.createSession('interactive', 't')
+    const p = createProject({ type: 'code', rootPath: rootA })
+    bindSessionProject(s.id, p.id)
+    sessions.appendMessage(s.id, 'user', 'hi')
+    deleteProject(p.id)
+    const d = sessions.getSession(s.id)
+    expect(d?.projectId ?? null).toBeNull()
+    expect(d?.messages.some((m) => m.role === 'user')).toBe(true)
+  })
 })
