@@ -124,13 +124,13 @@ export class EmbeddedBrowserManager {
 
   private newTab(url?: string): Tab {
     const tabId = randomUUID()
-    let tab!: Tab
+    const snapshots = new SnapshotStore()
     const view = this.createView((u) => {
       // 主文档导航 → 该 tab 的元素 ref 全部失效
-      tab?.snapshots.invalidate()
+      snapshots.invalidate()
       this.events.onNavigated?.(tabId, u)
     })
-    tab = { tabId, view, cdp: new CDPHelper(view.debugger), snapshots: new SnapshotStore(), visible: false }
+    const tab: Tab = { tabId, view, cdp: new CDPHelper(view.debugger), snapshots, visible: false }
     this.tabs.set(tabId, tab)
     this.currentTabId = tabId
     if (url) void view.loadURL(url).catch(() => {})
