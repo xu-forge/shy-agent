@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
-import { Sidebar, type NavKey } from './components/Sidebar'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Project, ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
+import { Sidebar } from './components/Sidebar'
 import { Header } from './components/Header'
 import { ChatWorkspace } from './components/ChatWorkspace'
 import { SkillsView } from './components/SkillsView'
@@ -9,17 +9,25 @@ import { InspectorPanel } from './components/InspectorPanel'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
+import { PlaceholderView } from './components/PlaceholderView'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
+import {
+  groupSessionsByProject,
+  resolveShellLayout,
+  resolveWorkspaceKind,
+  type NavKey,
+  type SecondaryMode
+} from './lib/shellLayout'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/ui.css'
 
 type ConfirmState = { action: string; detail: string; requestId: string } | null
 
-const NAV_KEY = '***'
+const NAV_KEY = 'shy.nav'
 
 const NAV_TITLES: Record<NavKey, string> = {
-  chat: '对话',
+  projects: '项目',
   skills: '技能管理',
   calendar: '定时任务'
 }
@@ -27,9 +35,9 @@ const NAV_TITLES: Record<NavKey, string> = {
 function readNav(): NavKey {
   try {
     const v = localStorage.getItem(NAV_KEY)
-    return v === 'skills' || v === 'calendar' ? v : 'chat'
+    return v === 'skills' || v === 'calendar' ? v : 'projects'
   } catch {
-    return 'chat'
+    return 'projects'
   }
 }
 
@@ -41,7 +49,9 @@ function App(): React.JSX.Element {
   const [deleteSession, setDeleteSession] = useState<{ id: string; title: string } | null>(null)
   const [notice, setNotice] = useState('')
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [sessionId, setSessionId] = useState('')
+  const [secondaryMode, setSecondaryMode] = useState<SecondaryMode>('sessions')
   const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -62,11 +72,17 @@ function App(): React.JSX.Element {
     }
   }, [nav])
 
-  const refreshSessions = useCallback(async () => {
-    const list = await window.shy.listSessions()
-    setSessions(list)
+  const refreshProjects = useCallback(async () => {
+    const list = await window.shy.listProjects()
+    setProjects(list)
     return list
   }, [])
+
+  const refreshSessions = useCallback(async () => {
+    const [list] = await Promise.all([window.shy.listSessions(), refreshProjects()])
+    setSessions(list)
+    return list
+  }, [refreshProjects])
 
   useEffect(() => {
     let cancelled = false
@@ -86,15 +102,22 @@ function App(): React.JSX.Element {
   useEffect(() => {
     let alive = true
     void (async () => {
-      const list = await window.shy.listSessions()
+      const [list, projectList] = await Promise.all([
+        window.shy.listSessions(),
+        window.shy.listProjects()
+      ])
       if (!alive) return
       setSessions(list)
-      if (list[0]) setSessionId(list[0].id)
-      else {
+      setProjects(projectList)
+      if (list[0]) {
+        setSessionId(list[0].id)
+        if (resolveWorkspaceKind(list[0], projectList) === 'code') setSecondaryMode('files')
+      } else {
         const created = await window.shy.createSession({ mode: 'interactive' })
         if (!alive) return
         setSessions([created])
         setSessionId(created.id)
+        setSecondaryMode('sessions')
       }
     })()
     return () => {
@@ -137,11 +160,37 @@ function App(): React.JSX.Element {
     })
   }, [])
 
+  const activeSession = sessions.find((s) => s.id === sessionId)
+  const workspaceKind = resolveWorkspaceKind(activeSession, projects)
+  const layout = resolveShellLayout({
+    nav,
+    secondaryMode,
+    workspaceKind,
+    hasConversation: chatHasConversation
+  })
+  const groups = useMemo(
+    () => groupSessionsByProject(sessions, projects),
+    [sessions, projects]
+  )
+
+  const onNavChange = (key: NavKey): void => {
+    if (key === 'projects') setSecondaryMode('sessions')
+    setNav(key)
+  }
+
+  const onSelectSession = (session: SessionSummary): void => {
+    setSessionId(session.id)
+    setNav('projects')
+    const kind = resolveWorkspaceKind(session, projects)
+    setSecondaryMode(kind === 'code' ? 'files' : 'sessions')
+  }
+
   const onNewSession = async (): Promise<void> => {
     const created = await window.shy.createSession({ mode: 'interactive' })
     await refreshSessions()
     setSessionId(created.id)
-    setNav('chat')
+    setNav('projects')
+    setSecondaryMode('sessions')
   }
 
   const onDeleteSession = (id: string, title: string): void => {
@@ -152,11 +201,16 @@ function App(): React.JSX.Element {
     await window.shy.deleteSession(id)
     const list = await refreshSessions()
     if (id === sessionId) {
-      if (list[0]) setSessionId(list[0].id)
-      else {
+      if (list[0]) {
+        setSessionId(list[0].id)
+        setSecondaryMode(
+          resolveWorkspaceKind(list[0], projects) === 'code' ? 'files' : 'sessions'
+        )
+      } else {
         const created = await window.shy.createSession({ mode: 'interactive' })
         await refreshSessions()
         setSessionId(created.id)
+        setSecondaryMode('sessions')
       }
     }
   }
@@ -165,10 +219,12 @@ function App(): React.JSX.Element {
     <div className="app-shell">
       <Sidebar
         active={nav}
-        onChange={setNav}
-        sessions={sessions}
+        onChange={onNavChange}
+        showSecondary={layout.showSecondary}
+        secondaryMode={layout.secondaryContent}
+        groups={groups}
         activeSessionId={sessionId}
-        onSelectSession={setSessionId}
+        onSelectSession={onSelectSession}
         onNewSession={() => void onNewSession()}
         onDeleteSession={(id, title) => onDeleteSession(id, title)}
         ipcOk={ipcOk}
@@ -178,8 +234,8 @@ function App(): React.JSX.Element {
         }}
       />
       <div className="main-column">
-        {nav !== 'chat' ? <Header title={NAV_TITLES[nav]} /> : null}
-        {nav === 'chat' ? (
+        {nav !== 'projects' ? <Header title={NAV_TITLES[nav]} /> : null}
+        {layout.main === 'chat' ? (
           <ChatWorkspace
             notice={notice}
             sessionId={sessionId}
@@ -187,11 +243,22 @@ function App(): React.JSX.Element {
             onConversationState={setChatHasConversation}
           />
         ) : null}
-        {nav === 'skills' ? <SkillsView /> : null}
-        {nav === 'calendar' ? <CalendarView /> : null}
+        {layout.main === 'code' ? <PlaceholderView title="代码工作区" /> : null}
+        {layout.main === 'material' ? <PlaceholderView title="素材工作区" /> : null}
+        {layout.main === 'skills' ? <SkillsView /> : null}
+        {layout.main === 'calendar' ? <CalendarView /> : null}
       </div>
-      {/* 右侧「环境」面板 — 仅在 chat 且有对话时显示（空态不显示，对齐 MiniMax） */}
-      {nav === 'chat' && chatHasConversation ? <InspectorPanel sessionId={sessionId} /> : null}
+      {layout.showChatAside && sessionId ? (
+        <div className="chat-aside">
+          <ChatWorkspace
+            notice={notice}
+            sessionId={sessionId}
+            onSessionsChanged={() => void refreshSessions()}
+            onConversationState={setChatHasConversation}
+          />
+        </div>
+      ) : null}
+      {layout.showInspector && sessionId ? <InspectorPanel sessionId={sessionId} /> : null}
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
@@ -217,7 +284,6 @@ function App(): React.JSX.Element {
             const target = deleteSession
             setDeleteSession(null)
             if (approved) void confirmDeleteSession(id).then(() => undefined)
-            // 闭包变量 target 仅作类型提示
             void target
           }}
         />

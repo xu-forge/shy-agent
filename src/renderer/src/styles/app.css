@@ -2488,7 +2488,7 @@
 
 @media (max-width: 900px) {
   :root {
-    --rail-width: 200px;
+    --sidebar-width: 220px;
   }
 }
 
@@ -6627,4 +6627,154 @@
 .skills-view .pane-frame,
 .calendar-frame {
   background: var(--bg);
+}
+
+/* ══════════ IconRail 64px + 分组二级栏 + 三套布局骨架 ══════════ */
+
+.icon-rail {
+  width: var(--rail-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 36px 8px 12px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-rail);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.icon-rail button {
+  -webkit-app-region: no-drag;
+}
+
+.icon-rail-top,
+.icon-rail-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-rail-btn {
+  appearance: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    background 150ms var(--ease),
+    color 150ms var(--ease);
+}
+
+.icon-rail-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-rail-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.icon-rail-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.icon-rail-status {
+  width: 40px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.icon-rail-status .status-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.icon-rail-status.ok .status-dot {
+  background: var(--ok);
+}
+
+.icon-rail-status.err .status-dot {
+  background: var(--danger);
+}
+
+.secondary-sidebar {
+  padding-top: 12px;
+  -webkit-app-region: no-drag;
+}
+
+.sb-group {
+  margin-bottom: 12px;
+}
+
+.sb-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 4px 8px 6px;
+}
+
+.file-tree-stub {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+}
+
+.placeholder {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px;
+  gap: 8px;
+}
+
+.placeholder h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.placeholder p {
+  margin: 0;
+  max-width: 36em;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.chat-aside {
+  width: 320px;
+  min-width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.chat-aside > .main {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
