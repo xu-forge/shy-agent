@@ -163,6 +163,17 @@ export type SessionDetail = SessionSummary & {
   resultReportPath?: string
 }
 
+export type ProjectType = 'code' | 'material'
+
+export type Project = {
+  id: string
+  name: string
+  type: ProjectType
+  rootPath: string
+  createdAt: string
+  updatedAt: string
+}
+
 /* ────────── session files & tasks（shell-session-side-panel） ────────── */
 
 export type FileOp = 'read' | 'write' | 'delete'
