@@ -44,7 +44,20 @@ describe('projects store', () => {
     const s = sessions.createSession('interactive', 't')
     const p = createProject({ type: 'code', rootPath: rootA })
     expect(bindSessionProject(s.id, p.id).ok).toBe(true)
-    expect(bindSessionProject(s.id, p.id).ok).toBe(false)
+    expect(bindSessionProject(s.id, p.id)).toEqual({ ok: false, error: 'already_bound' })
+  })
+
+  it('会话不存在则返回 not_found', async () => {
+    const { createProject, bindSessionProject } = await import('./store')
+    const p = createProject({ type: 'code', rootPath: rootA })
+    expect(bindSessionProject('missing-session', p.id)).toEqual({ ok: false, error: 'not_found' })
+  })
+
+  it('项目不存在则返回 not_found', async () => {
+    const sessions = await import('../sessions/store')
+    const { bindSessionProject } = await import('./store')
+    const s = sessions.createSession('interactive', 't')
+    expect(bindSessionProject(s.id, 'missing-project')).toEqual({ ok: false, error: 'not_found' })
   })
 
   it('已有用户消息则拒绝绑定', async () => {
