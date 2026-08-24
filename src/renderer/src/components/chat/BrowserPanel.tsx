@@ -55,7 +55,7 @@ export function BrowserPanel({
     const el = slotRef.current
     const ro = el ? new ResizeObserver(() => applyBounds()) : null
     if (el && ro) ro.observe(el)
-    const onResize = () => applyBounds()
+    const onResize = (): void => applyBounds()
     window.addEventListener('resize', onResize)
     const off = window.shy.onEvent((payload) => {
       const e = payload as { type?: string; url?: string; path?: string }

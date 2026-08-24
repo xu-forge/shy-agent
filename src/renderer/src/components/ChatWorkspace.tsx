@@ -1,15 +1,27 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ModeKey } from './ModeToggle'
-import type { SessionFileRecord, SkillSummary } from '../../../shared/ipc'
+import type { SessionFileRecord, SessionSummary, SkillSummary } from '../../../shared/ipc'
 import { MarkdownBody } from './MarkdownBody'
 import { timeAgo } from '../lib/time'
 import { ReActContent } from './chat/ReActContent'
 import { ToolCallCard } from './chat/ToolCallCard'
 import { SlashMenu, type SlashItem } from './chat/SlashMenu'
+import { ProjectPicker } from './ProjectPicker'
+import {
+  BIND_ERROR_LABEL,
+  chatStatusTone,
+  isProjectPickerLocked,
+  resolveBoundProjectId,
+  sameProjectSessions,
+  shouldBindOnSend,
+  shouldShowProjectPicker
+} from '../lib/projectBind'
 
 type Props = {
   notice?: string
   sessionId: string
+  sessions?: SessionSummary[]
+  onSelectSession?: (sessionId: string) => void
   onSessionsChanged?: () => void
   onConversationState?: (has: boolean) => void
 }
@@ -63,6 +75,8 @@ const MODE_ITEMS: SlashItem[] = [
 export function ChatWorkspace({
   notice,
   sessionId,
+  sessions = [],
+  onSelectSession,
   onSessionsChanged,
   onConversationState
 }: Props): React.JSX.Element {
@@ -72,6 +86,8 @@ export function ChatWorkspace({
   const [paused, setPaused] = useState(false)
   const [status, setStatus] = useState('')
   const [messages, setMessages] = useState<Msg[]>([])
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null)
+  const [boundProjectId, setBoundProjectId] = useState<string | null>(null)
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [model, setModel] = useState('')
   const [alwaysAuthorize, setAlwaysAuthorize] = useState(false)
@@ -265,6 +281,17 @@ export function ChatWorkspace({
       ) : null}
       <div className="composer-bar">
         <div className="composer-options">
+          {shouldShowProjectPicker(boundProjectId) ? (
+            <ProjectPicker
+              value={boundProjectId ?? pendingProjectId}
+              disabled={isProjectPickerLocked({
+                hasUserMessages: messages.some((m) => m.role === 'user'),
+                projectId: boundProjectId
+              })}
+              onChange={setPendingProjectId}
+              onProjectsChanged={onSessionsChanged}
+            />
+          ) : null}
           <button
             type="button"
             className={`full-access${alwaysAuthorize ? ' on' : ''}`}
@@ -315,12 +342,16 @@ export function ChatWorkspace({
   )
 
   useLayoutEffect(() => {
+    currentSessionIdRef.current = sessionId
+    setPendingProjectId(null)
+    setBoundProjectId(null)
     let alive = true
     window.shy.getSession(sessionId).then((detail) => {
       if (!alive || currentSessionIdRef.current !== sessionId || !detail) return
       setMode(detail.mode)
       setPaused(detail.paused)
       setBusy(detail.runStatus === 'running')
+      setBoundProjectId(resolveBoundProjectId(detail.projectId))
       setStatus('')
       setLastResult(null)
       setMessages(
@@ -570,6 +601,27 @@ export function ChatWorkspace({
   const onSend = async (): Promise<void> => {
     const text = draft.trim()
     if (!text || busy || !sessionId) return
+    const detail = await window.shy.getSession(sessionId)
+    const hasUser = detail?.messages.some((m) => m.role === 'user') ?? false
+    const boundId = resolveBoundProjectId(detail?.projectId)
+    if (
+      shouldBindOnSend({
+        hasUserMessages: hasUser,
+        boundProjectId: boundId,
+        pendingProjectId
+      })
+    ) {
+      const r = await window.shy.bindSessionProject({
+        sessionId,
+        projectId: pendingProjectId as string
+      })
+      if (!r.ok) {
+        setStatus(BIND_ERROR_LABEL[r.error])
+        return
+      }
+      setBoundProjectId(pendingProjectId)
+      onSessionsChanged?.()
+    }
     setDraft('')
     setBusy(true)
     setPaused(false)
@@ -606,20 +658,37 @@ export function ChatWorkspace({
     await window.shy.resume(sessionId)
   }
 
-  let runningCls = ''
+  const runningCls = chatStatusTone({ busy, paused, status })
   let runningText = ''
   if (busy) {
-    runningCls = 'busy'
     runningText = status || '思考中…'
   } else if (paused) {
-    runningCls = 'warn'
     runningText = status || '已暂停'
+  } else {
+    runningText = status
   }
 
   return (
     <div className="main chat-column">
       <div className="topbar">
-        <div className="topbar-title">对话</div>
+        <div className="topbar-title">
+          {boundProjectId ? (
+            <select
+              className="session-switcher"
+              aria-label="同项目会话"
+              value={sessionId}
+              onChange={(e) => onSelectSession?.(e.target.value)}
+            >
+              {sameProjectSessions(sessions, boundProjectId).map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title || '未命名会话'}
+                </option>
+              ))}
+            </select>
+          ) : (
+            '对话'
+          )}
+        </div>
         <div className="top-actions">
           {runningCls ? (
             <div className={`status ${runningCls}`}>

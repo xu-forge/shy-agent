@@ -36,6 +36,19 @@ export const IPC = {
   logsAgentList: 'shy:logs-agent-list',
   logsAgentRead: 'shy:logs-agent-read',
   logsAgentReveal: 'shy:logs-agent-reveal',
+  projectsList: 'shy:projects-list',
+  projectsCreate: 'shy:projects-create',
+  projectsDelete: 'shy:projects-delete',
+  sessionsBindProject: 'shy:sessions-bind-project',
+  projectPickFolder: 'shy:project-pick-folder',
+  projectPickFile: 'shy:project-pick-file',
+  projectTreeList: 'shy:project-tree-list',
+  projectFileRead: 'shy:project-file-read',
+  projectFileReadDataUrl: 'shy:project-file-read-data-url',
+  projectFileWrite: 'shy:project-file-write',
+  projectReveal: 'shy:project-reveal',
+  projectMaterialsList: 'shy:project-materials-list',
+  projectMaterialsImport: 'shy:project-materials-import',
   events: 'shy:events',
   browserShow: 'shy:browser-show',
   browserHide: 'shy:browser-hide',
@@ -152,6 +165,7 @@ export type SessionSummary = {
   goal?: string
   runStatus?: RunStatus
   verifyCommand?: string
+  projectId?: string | null
 }
 
 export type SessionDetail = SessionSummary & {
@@ -162,6 +176,64 @@ export type SessionDetail = SessionSummary & {
   resultContent?: string
   resultReportPath?: string
 }
+
+export type ProjectType = 'code' | 'material'
+
+export type Project = {
+  id: string
+  name: string
+  type: ProjectType
+  rootPath: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type MaterialKind = 'image' | 'video' | 'audio' | 'doc' | 'other'
+
+export type MaterialItem = {
+  id: string
+  relativePath: string
+  absPath: string
+  kind: MaterialKind
+  mime: string
+  mtimeMs: number
+  size: number
+  sourceSessionId?: string
+  derivedFrom?: string
+}
+
+export type TreeNode = { name: string; path: string; type: 'file' | 'dir'; children?: TreeNode[] }
+
+export type BindSessionProjectResult =
+  { ok: true } | { ok: false; error: 'already_bound' | 'has_messages' | 'not_found' }
+
+export type ProjectPickFolderResult = { ok: true; path: string } | { ok: false }
+
+export type ProjectPickFileResult = ProjectPickFolderResult
+
+export type ProjectRevealResult =
+  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type ProjectFileReadDataUrlResult =
+  { ok: true; dataUrl: string } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type ProjectCreateResult =
+  { ok: true; project: Project } | { ok: false; error: 'root_path_taken' }
+
+export type ProjectTreeListResult =
+  { ok: true; tree: TreeNode[]; truncated: boolean } | { ok: false; error: 'not_found' }
+
+export type ProjectFileReadResult =
+  { ok: true; content: string } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type ProjectFileWriteResult =
+  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type ProjectMaterialsListResult =
+  { ok: true; items: MaterialItem[]; truncated: boolean } | { ok: false; error: 'not_found' }
+
+export type ProjectMaterialsImportResult =
+  { ok: true; item: MaterialItem } | { ok: false; error: 'path_escape' | 'not_found' }
 
 /* ────────── session files & tasks（shell-session-side-panel） ────────── */
 

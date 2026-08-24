@@ -203,7 +203,7 @@ export class SkillRegistry {
 
   /** fs.watch 热重载：debounce 300ms + max-wait 2s（notify 暴露给测试直接触发去抖） */
   watch(onChange: () => void): { close: () => void; notify: () => void } {
-    const schedule = () => {
+    const schedule = (): void => {
       this.pendingChange = true
       if (!this.watchTimer) {
         this.watchTimer = setTimeout(flush, 300)
@@ -212,7 +212,7 @@ export class SkillRegistry {
         this.watchMaxTimer = setTimeout(flush, 2000)
       }
     }
-    const flush = () => {
+    const flush = (): void => {
       if (this.watchTimer) clearTimeout(this.watchTimer)
       if (this.watchMaxTimer) clearTimeout(this.watchMaxTimer)
       this.watchTimer = null

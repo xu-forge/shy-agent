@@ -28,10 +28,13 @@ export function resolveShyHome(env: NodeJS.ProcessEnv = process.env): string {
   return join(homedir(), '.shy')
 }
 
-/** 会话工作区：工具相对路径的解析基准（~/.shy/sessions/{sessionId}/workspace） */
-export function getSessionWorkspace(sessionId: string, home = resolveShyHome()): string {
+/** 会话默认工作区：~/.shy/sessions/{sessionId}/workspace */
+export function getDefaultSessionWorkspace(sessionId: string, home = resolveShyHome()): string {
   return join(getShyPaths(home).sessionsDir, sessionId, 'workspace')
 }
+
+/** @deprecated 使用 resolveAgentWorkspace；保留别名供旧测试编译 */
+export const getSessionWorkspace = getDefaultSessionWorkspace
 
 export function getShyPaths(home = resolveShyHome()): ShyPaths {
   const configDir = join(home, 'config')

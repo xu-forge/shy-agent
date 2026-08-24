@@ -2,10 +2,23 @@ import type {
   AgentLogFileSummary,
   AgentMode,
   AppPaths,
+  BindSessionProjectResult,
   ChatRequest,
   CreateScheduleTaskInput,
   LongMemoryEntry,
   ModelSettings,
+  Project,
+  ProjectCreateResult,
+  ProjectFileReadResult,
+  ProjectFileWriteResult,
+  ProjectMaterialsImportResult,
+  ProjectMaterialsListResult,
+  ProjectFileReadDataUrlResult,
+  ProjectPickFileResult,
+  ProjectPickFolderResult,
+  ProjectRevealResult,
+  ProjectTreeListResult,
+  ProjectType,
   ScheduleOccurrence,
   ScheduleReminderEvent,
   ScheduleTask,
@@ -89,6 +102,42 @@ export interface ShyApi {
     limit?: number
   }) => Promise<{ name: string; content: string; truncated: boolean }>
   revealAgentLogsDir: () => Promise<{ ok: boolean }>
+  listProjects: () => Promise<Project[]>
+  createProject: (input: {
+    type: ProjectType
+    rootPath: string
+    name?: string
+  }) => Promise<ProjectCreateResult>
+  deleteProject: (id: string) => Promise<{ ok: boolean }>
+  bindSessionProject: (input: {
+    sessionId: string
+    projectId: string
+  }) => Promise<BindSessionProjectResult>
+  pickFolder: () => Promise<ProjectPickFolderResult>
+  pickFile: () => Promise<ProjectPickFileResult>
+  projectReveal: (input: {
+    projectId: string
+    absPath: string
+  }) => Promise<ProjectRevealResult>
+  projectFileReadDataUrl: (input: {
+    projectId: string
+    relativePath: string
+  }) => Promise<ProjectFileReadDataUrlResult>
+  projectTreeList: (projectId: string) => Promise<ProjectTreeListResult>
+  projectFileRead: (input: {
+    projectId: string
+    relativePath: string
+  }) => Promise<ProjectFileReadResult>
+  projectFileWrite: (input: {
+    projectId: string
+    relativePath: string
+    content: string
+  }) => Promise<ProjectFileWriteResult>
+  projectMaterialsList: (projectId: string) => Promise<ProjectMaterialsListResult>
+  projectMaterialsImport: (input: {
+    projectId: string
+    sourceAbsPath: string
+  }) => Promise<ProjectMaterialsImportResult>
   onEvent: (handler: (payload: unknown) => void) => () => void
   onEventByType: <T extends { type: string }>(type: T['type'], handler: (event: T) => void) => () => void
   onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void) => () => void

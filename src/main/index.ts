@@ -111,7 +111,7 @@ app.whenReady().then(() => {
       const file = join(home, rel)
       if (!file.startsWith(home)) return new Response('forbidden', { status: 403 })
       return net.fetch(pathToFileURL(file).toString())
-    } catch (err) {
+    } catch {
       return new Response('bad request', { status: 400 })
     }
   })

@@ -27,10 +27,17 @@ function isHighRiskOverwrite(path: string): boolean {
   return SENSITIVE_PATH.test(path) || /\.(exe|dll|sys|bat|cmd|ps1|sh)$/i.test(path)
 }
 
-/** 相对路径 → 会话工作区内绝对路径；绝对路径原样返回 */
+/** 相对路径 → 当前工作区内绝对路径；绝对路径原样返回 */
 export function resolveWorkspacePath(workspaceDir: string, path: string): string {
   if (isAbsolute(path)) return path
   return join(workspaceDir, path)
+}
+
+function workspaceCwdHint(workspaceDir: string): string {
+  return (
+    `相对路径以当前工作区（${workspaceDir}）为基准` +
+    `（已绑定项目则为项目根目录，否则为会话 workspace）`
+  )
 }
 
 export function registerBuiltinTools(): void {
@@ -42,8 +49,8 @@ export function registerBuiltinTools(): void {
       '何时不用：读取文件请用 fs_read（不要 cat 整个文件）；列文件请用 glob（不要 find / ls -R）；需要纯文本输出请用 printf 不要 echo -e。\n' +
       '高危命令（curl | sh、npm i -g、winget install、brew install、rm -rf /）会自动弹确认框 — 用户拒绝则取消。\n' +
       '超时 60 秒，输出上限 2MB；长输出请重定向到文件再读。\n' +
-      '相对路径/不传 cwd 时以会话工作区（~/.shy/sessions/{会话}/workspace）为基准。\n' +
-      '参数：`command` 必填（要执行的命令字符串）；`cwd` 可选（默认会话工作区）。',
+      `相对路径/不传 cwd 时${workspaceCwdHint(ctx.workspaceDir)}。\n` +
+      '参数：`command` 必填（要执行的命令字符串）；`cwd` 可选（默认当前工作区）。',
     schema: z.object({
       command: z.string(),
       cwd: z.string().optional()
@@ -88,8 +95,8 @@ export function registerBuiltinTools(): void {
       '何时不用：列出文件用 glob；搜内容用 grep（不要 cat 全文件再 grep）；读二进制用专用工具。\n' +
       '默认截断到 50000 字符；用 `maxChars` 调大或调小。文件不存在 / 权限不足会返回 ok=false。\n' +
       '文件操作会记录到 session_files 表（用于「文件侧栏」）。\n' +
-      '相对路径以会话工作区（~/.shy/sessions/{会话}/workspace）为基准。\n' +
-      '参数：`path` 必填（绝对路径或相对会话工作区）；`maxChars` 可选（默认 50000）。',
+      `${workspaceCwdHint(ctx.workspaceDir)}。\n` +
+      '参数：`path` 必填（绝对路径或相对当前工作区）；`maxChars` 可选（默认 50000）。',
     schema: z.object({ path: z.string(), maxChars: z.number().optional() }),
     run: async ({ path, maxChars }) => {
       const abs = resolveWorkspacePath(ctx.workspaceDir, path)
@@ -112,8 +119,8 @@ export function registerBuiltinTools(): void {
       '何时用：创建新文件、覆盖整个文件（不能增量编辑时）。\n' +
       '何时不用：改文件某几行用 fs_edit（待加）；追加内容用 cat << EOF 配合 shell_exec。\n' +
       '**安全：写入敏感路径（.ssh / .gnupg / shy settings）或可执行文件（.exe/.sh/.bat/.ps1）会弹确认框 — 用户拒绝则取消。**\n' +
-      '注意：是「覆盖」不是「合并」；误用会丢内容。相对路径以会话工作区为基准。\n' +
-      '参数：`path` 必填（写入位置，绝对路径或相对会话工作区）；`content` 必填（完整新内容）。',
+      `注意：是「覆盖」不是「合并」；误用会丢内容。${workspaceCwdHint(ctx.workspaceDir)}。\n` +
+      '参数：`path` 必填（写入位置，绝对路径或相对当前工作区）；`content` 必填（完整新内容）。',
     schema: z.object({ path: z.string(), content: z.string() }),
     run: async ({ path, content }) => {
       const abs = resolveWorkspacePath(ctx.workspaceDir, path)
@@ -138,8 +145,8 @@ export function registerBuiltinTools(): void {
       '何时不用：修改文件用 fs_edit；移走用 mv（shell_exec）；删整个项目目录用 git rm + commit。\n' +
       '**必须弹确认框**（不可跳过）— 任何删除操作都强制用户手动确认。\n' +
       '`recursive=true` 时会删整个目录（包括子目录）— 谨慎使用。\n' +
-      '不可恢复（不进回收站）；删错了只能从 git/restore 找回。相对路径以会话工作区为基准。\n' +
-      '参数：`path` 必填（绝对路径或相对会话工作区）；`recursive` 可选（默认 false，仅删文件；true 时删目录及子项）。',
+      `不可恢复（不进回收站）；删错了只能从 git/restore 找回。${workspaceCwdHint(ctx.workspaceDir)}。\n` +
+      '参数：`path` 必填（绝对路径或相对当前工作区）；`recursive` 可选（默认 false，仅删文件；true 时删目录及子项）。',
     schema: z.object({ path: z.string(), recursive: z.boolean().optional() }),
     run: async ({ path, recursive }) => {
       const abs = resolveWorkspacePath(ctx.workspaceDir, path)

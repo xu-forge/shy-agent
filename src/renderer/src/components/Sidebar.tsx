@@ -1,23 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionSummary } from '../../../shared/ipc'
 import { timeAgo } from '../lib/time'
+import {
+  NAV_GROUP_COLLAPSED_KEY,
+  groupStorageKey,
+  parseCollapsedGroups,
+  toggleCollapsedGroup,
+  type NavKey,
+  type SessionGroup
+} from '../lib/shellLayout'
 import type { SettingsTab } from './SettingsDialog'
 
-export type NavKey = 'chat' | 'skills' | 'calendar'
+export type { NavKey }
 
 type Props = {
   active: NavKey
   onChange: (key: NavKey) => void
-  sessions: SessionSummary[]
+  expanded: boolean
+  onToggleExpanded: () => void
+  groups: SessionGroup[]
   activeSessionId: string
-  onSelectSession: (id: string) => void
+  onSelectSession: (session: SessionSummary) => void
   onNewSession: () => void
   onDeleteSession: (id: string, title: string) => void
+  onDeleteProject: (id: string, title: string) => void
   ipcOk: boolean | null
   onOpenSettings: (tab?: SettingsTab) => void
 }
 
-/** 左栏次级入口（zcode-home-replica：自动化/插件市场位 → shy 真实功能） */
 const SUB_NAV: { key: NavKey; label: string; icon: React.JSX.Element }[] = [
   {
     key: 'calendar',
@@ -49,10 +59,9 @@ const SETTINGS_OPTS: { tab: SettingsTab; label: string }[] = [
 ]
 
 const SIDEBAR_WIDTH_KEY = 'shy.sidebar-width'
-const SIDEBAR_DEFAULT_WIDTH = 530
-const SIDEBAR_MIN_WIDTH = 260
+const SIDEBAR_DEFAULT_WIDTH = 264
+const SIDEBAR_MIN_WIDTH = 220
 
-/** 最大宽度 = 窗口一半（窗口太小时保底 240） */
 function sidebarMaxWidth(): number {
   if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH
   return Math.max(240, Math.floor(window.innerWidth / 2))
@@ -68,38 +77,154 @@ function loadSidebarWidth(): number {
   return clampSidebarWidth(saved)
 }
 
+function ipcLabel(ipcOk: boolean | null): string {
+  if (ipcOk === null) return '连接中…'
+  return ipcOk ? '已连接' : '连接异常'
+}
+
 const TRASH_ICON = (
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M10 11v6M14 11v6" />
   </svg>
 )
 
+const PLUS_ICON = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
+
+const SETTINGS_ICON = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 3.5v2.2M12 18.3V20.5M4.9 6.5l1.6 1.6M17.5 16.9l1.6 1.6M3.5 12h2.2M18.3 12H20.5M4.9 17.5l1.6-1.6M17.5 7.1l1.6-1.6" />
+  </svg>
+)
+
+const SIDEBAR_PANEL_ICON = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3.5" y="4" width="17" height="16" rx="2.5" />
+    <path d="M9.5 4v16" />
+    <rect className="sb-nav-toggle-pane" x="3.5" y="4" width="6" height="16" rx="2.5" />
+  </svg>
+)
+
+const GROUP_CHEVRON = (
+  <svg className="sb-group-chevron" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+)
+
+function loadCollapsedGroups(): Set<string> {
+  try {
+    return new Set(parseCollapsedGroups(localStorage.getItem(NAV_GROUP_COLLAPSED_KEY)))
+  } catch {
+    return new Set()
+  }
+}
+
+/** 单列导航：展开 = 新建任务 + 会话历史（旧侧栏）；收起 = 仅图标，不展示历史。 */
 export function Sidebar({
   active,
   onChange,
-  sessions,
+  expanded,
+  onToggleExpanded,
+  groups,
   activeSessionId,
   onSelectSession,
   onNewSession,
   onDeleteSession,
+  onDeleteProject,
   ipcOk,
   onOpenSettings
 }: Props): React.JSX.Element {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(loadCollapsedGroups)
   const [width, setWidth] = useState<number>(() =>
     typeof window === 'undefined' ? SIDEBAR_DEFAULT_WIDTH : loadSidebarWidth()
   )
   const dragState = useRef<{ startX: number; startW: number } | null>(null)
 
-  // 窗口缩放后保持 ≤ 一半窗口宽
   useEffect(() => {
     const onResize = (): void => setWidth((w) => clampSidebarWidth(w))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  const onToggleGroup = (key: string): void => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(toggleCollapsedGroup([...prev], key))
+      localStorage.setItem(NAV_GROUP_COLLAPSED_KEY, JSON.stringify([...next]))
+      return next
+    })
+  }
+
+  const navToggle = (
+    <button
+      type="button"
+      className={`sb-nav-toggle no-drag${expanded ? ' is-expanded' : ''}`}
+      aria-label={expanded ? '收起导航栏' : '展开导航栏'}
+      aria-expanded={expanded}
+      title={expanded ? '收起导航' : '展开导航'}
+      onClick={onToggleExpanded}
+    >
+      {SIDEBAR_PANEL_ICON}
+    </button>
+  )
+
+  if (!expanded) {
+    return (
+      <aside className="sidebar sidebar-collapsed" aria-label="主导航">
+        {navToggle}
+        <div className="icon-rail-top">
+            {SUB_NAV.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`icon-rail-btn${active === item.key ? ' active' : ''}`}
+                aria-label={item.label}
+                aria-current={active === item.key ? 'page' : undefined}
+                title={item.label}
+                onClick={() => onChange(item.key)}
+              >
+                {item.icon}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="icon-rail-btn"
+              aria-label="新建任务"
+              title="新建任务"
+              onClick={onNewSession}
+            >
+              {PLUS_ICON}
+            </button>
+          </div>
+        <div className="icon-rail-bottom">
+          <span
+            className={`icon-rail-status${ipcOk === null ? '' : ipcOk ? ' ok' : ' err'}`}
+            title={ipcLabel(ipcOk)}
+            aria-label={ipcLabel(ipcOk)}
+          >
+            <span className="status-dot" aria-hidden="true" />
+          </span>
+          <button
+            type="button"
+            className="icon-rail-btn"
+            aria-label="设置"
+            title="设置"
+            onClick={() => onOpenSettings('general')}
+          >
+            {SETTINGS_ICON}
+          </button>
+        </div>
+      </aside>
+    )
+  }
+
   return (
-    <aside className="sidebar" style={{ width }}>
+    <aside className="sidebar" style={{ width }} aria-label="主导航">
+      {navToggle}
       <div
         className="sidebar-resizer"
         role="separator"
@@ -128,9 +253,7 @@ export function Sidebar({
       <div className="sidebar-top">
         <div className="sb-brand">shy</div>
         <button type="button" className="sb-new-task" onClick={onNewSession}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          {PLUS_ICON}
           新建任务
         </button>
         <nav className="sb-subnav">
@@ -149,58 +272,82 @@ export function Sidebar({
       </div>
 
       <div className="sb-list">
-        <div className="sb-list-head">
-          会话
-          <span className="sb-section-count">{sessions.length}</span>
-        </div>
-
-        <div className="project-list">
-          {sessions.length === 0 ? (
-            <p className="history-empty">还没有会话，点击「新建任务」开始。</p>
-          ) : (
-            sessions.map((s) => {
-              const isActive = s.id === activeSessionId && active === 'chat'
-              return (
-                <div key={s.id} className={`project-item${isActive ? ' active' : ''}`}>
-                  <button
-                    type="button"
-                    className="project-item-main"
-                    onClick={() => {
-                      onChange('chat')
-                      onSelectSession(s.id)
-                    }}
-                    title={s.title}
-                  >
-                    <span className="project-item-title">{s.title}</span>
-                    <span className="project-item-meta">
-                      <span className="project-item-time">{timeAgo(s.updatedAt)}</span>
-                      <span
-                        className="session-delete"
-                        role="button"
-                        aria-label="删除会话"
-                        title="删除会话"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onDeleteSession(s.id, s.title)
-                        }}
-                      >
-                        {TRASH_ICON}
-                      </span>
-                    </span>
-                  </button>
+        {groups.map((group) => {
+          const key = groupStorageKey(group.id)
+          const groupOpen = !collapsedGroups.has(key)
+          return (
+          <div key={key} className="sb-group">
+            <div className="sb-group-head">
+              <button
+                type="button"
+                className="sb-group-head-toggle"
+                aria-expanded={groupOpen}
+                onClick={() => onToggleGroup(key)}
+              >
+                {GROUP_CHEVRON}
+                <span className="sb-group-head-label">
+                  {group.title}
+                  <span className="sb-section-count">{group.sessions.length}</span>
+                </span>
+              </button>
+              {group.id ? (
+                <span
+                  className="session-delete"
+                  role="button"
+                  aria-label="删除项目"
+                  title="删除项目"
+                  onClick={() => {
+                    const id = group.id
+                    if (id) onDeleteProject(id, group.title)
+                  }}
+                >
+                  {TRASH_ICON}
+                </span>
+              ) : null}
+            </div>
+            {groupOpen ? (
+              group.sessions.length === 0 ? (
+                group.id === null && groups.every((g) => g.sessions.length === 0) ? (
+                  <p className="history-empty">还没有会话，点击「新建任务」开始。</p>
+                ) : null
+              ) : (
+                <div className="project-list">
+                  {group.sessions.map((s) => {
+                    const isActive = s.id === activeSessionId && active === 'projects'
+                    return (
+                      <div key={s.id} className={`project-item${isActive ? ' active' : ''}`}>
+                        <button
+                          type="button"
+                          className="project-item-main"
+                          onClick={() => onSelectSession(s)}
+                          title={s.title}
+                        >
+                          <span className="project-item-title">{s.title}</span>
+                          <span className="project-item-meta">
+                            <span className="project-item-time">{timeAgo(s.updatedAt)}</span>
+                            <span
+                              className="session-delete"
+                              role="button"
+                              aria-label="删除会话"
+                              title="删除会话"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onDeleteSession(s.id, s.title)
+                              }}
+                            >
+                              {TRASH_ICON}
+                            </span>
+                          </span>
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
               )
-            })
-          )}
-        </div>
-
-        <div className="sb-tasks">
-          <div className="sb-tasks-head">
-            任务
-            <span className="sb-section-count">0</span>
+            ) : null}
           </div>
-          <p className="history-empty">还没有任务</p>
-        </div>
+          )
+        })}
       </div>
 
       <div className="sidebar-bottom">
@@ -217,15 +364,11 @@ export function Sidebar({
             <span className="sb-account-name">shy</span>
             <span className={`sb-account-status${ipcOk === null ? '' : ipcOk ? ' ok' : ' err'}`}>
               <span className="status-dot" aria-hidden="true" />
-              {ipcOk === null ? '连接中…' : ipcOk ? '已连接' : '连接异常'}
+              {ipcLabel(ipcOk)}
             </span>
           </div>
           <button type="button" className="icon-btn" aria-label="设置" title="设置">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
-              <circle cx="15" cy="7" r="2" />
-              <circle cx="9" cy="17" r="2" />
-            </svg>
+            {SETTINGS_ICON}
           </button>
           {menuOpen ? (
             <div className="settings-popover" onClick={(e) => e.stopPropagation()}>

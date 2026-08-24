@@ -5,11 +5,9 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 // mock react,只保留 useEffect
 let lastEffectCleanup: (() => void) | null = null
-let mountedCount = 0
 
 vi.mock('react', () => ({
   useEffect: (fn: () => void | (() => void)) => {
-    mountedCount += 1
     lastEffectCleanup = null
     const cleanup = fn()
     if (typeof cleanup === 'function') {
@@ -22,9 +20,13 @@ vi.mock('react', () => ({
 // 必须在 mock 之后 import
 const { useAgentEvent } = await import('./useAgentEvent')
 
-// 用一个"组件"模式调 hook
-function runHook<T extends string>(type: T, handler: (e: { type: T } & Record<string, unknown>) => void) {
+// 用一个"组件"模式调 hook（useEffect 已 mock，非真实 React 树）
+function runHook<T extends string>(
+  type: T,
+  handler: (e: { type: T } & Record<string, unknown>) => void
+): void {
   // 模拟一次 render:useEffect 会被立刻调一次
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- test helper with mocked useEffect
   useAgentEvent(type, handler)
 }
 
@@ -34,7 +36,6 @@ describe('useAgentEvent', () => {
   beforeEach(() => {
     subscribed = []
     lastEffectCleanup = null
-    mountedCount = 0
     ;(global as unknown as { window: unknown }).window = {
       shy: {
         onEventByType: (type: string, handler: (e: unknown) => void) => {

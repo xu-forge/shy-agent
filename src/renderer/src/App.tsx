@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
-import { Sidebar, type NavKey } from './components/Sidebar'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Project, ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
+import { Sidebar } from './components/Sidebar'
 import { Header } from './components/Header'
 import { ChatWorkspace } from './components/ChatWorkspace'
 import { SkillsView } from './components/SkillsView'
@@ -9,17 +9,30 @@ import { InspectorPanel } from './components/InspectorPanel'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
+import { PlaceholderView } from './components/PlaceholderView'
+import { CodeWorkspace } from './components/code/CodeWorkspace'
+import { MaterialLibrary } from './components/material/MaterialLibrary'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
+import {
+  NAV_EXPANDED_KEY,
+  groupSessionsByProject,
+  parseNavExpanded,
+  resolveChatHostClass,
+  resolveShellLayout,
+  resolveWorkspaceKind,
+  type NavKey
+} from './lib/shellLayout'
+import { projectDeleteConfirmDetail } from './lib/projectBind'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/ui.css'
 
 type ConfirmState = { action: string; detail: string; requestId: string } | null
 
-const NAV_KEY = '***'
+const NAV_KEY = 'shy.nav'
 
 const NAV_TITLES: Record<NavKey, string> = {
-  chat: '对话',
+  projects: '项目',
   skills: '技能管理',
   calendar: '定时任务'
 }
@@ -27,9 +40,17 @@ const NAV_TITLES: Record<NavKey, string> = {
 function readNav(): NavKey {
   try {
     const v = localStorage.getItem(NAV_KEY)
-    return v === 'skills' || v === 'calendar' ? v : 'chat'
+    return v === 'skills' || v === 'calendar' ? v : 'projects'
   } catch {
-    return 'chat'
+    return 'projects'
+  }
+}
+
+function readNavExpanded(): boolean {
+  try {
+    return parseNavExpanded(localStorage.getItem(NAV_EXPANDED_KEY))
+  } catch {
+    return true
   }
 }
 
@@ -39,9 +60,12 @@ function App(): React.JSX.Element {
   const [ipcOk, setIpcOk] = useState<boolean | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState>(null)
   const [deleteSession, setDeleteSession] = useState<{ id: string; title: string } | null>(null)
+  const [deleteProject, setDeleteProject] = useState<{ id: string; title: string } | null>(null)
   const [notice, setNotice] = useState('')
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [sessionId, setSessionId] = useState('')
+  const [navExpanded, setNavExpanded] = useState(readNavExpanded)
   const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -62,11 +86,25 @@ function App(): React.JSX.Element {
     }
   }, [nav])
 
-  const refreshSessions = useCallback(async () => {
-    const list = await window.shy.listSessions()
-    setSessions(list)
+  useEffect(() => {
+    try {
+      localStorage.setItem(NAV_EXPANDED_KEY, navExpanded ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [navExpanded])
+
+  const refreshProjects = useCallback(async () => {
+    const list = await window.shy.listProjects()
+    setProjects(list)
     return list
   }, [])
+
+  const refreshSessions = useCallback(async () => {
+    const [list] = await Promise.all([window.shy.listSessions(), refreshProjects()])
+    setSessions(list)
+    return list
+  }, [refreshProjects])
 
   useEffect(() => {
     let cancelled = false
@@ -86,11 +124,16 @@ function App(): React.JSX.Element {
   useEffect(() => {
     let alive = true
     void (async () => {
-      const list = await window.shy.listSessions()
+      const [list, projectList] = await Promise.all([
+        window.shy.listSessions(),
+        window.shy.listProjects()
+      ])
       if (!alive) return
       setSessions(list)
-      if (list[0]) setSessionId(list[0].id)
-      else {
+      setProjects(projectList)
+      if (list[0]) {
+        setSessionId(list[0].id)
+      } else {
         const created = await window.shy.createSession({ mode: 'interactive' })
         if (!alive) return
         setSessions([created])
@@ -137,23 +180,52 @@ function App(): React.JSX.Element {
     })
   }, [])
 
+  const activeSession = sessions.find((s) => s.id === sessionId)
+  const boundProject = projects.find((p) => p.id === activeSession?.projectId) ?? null
+  const workspaceKind = resolveWorkspaceKind(activeSession, projects)
+  const layout = resolveShellLayout({
+    nav,
+    workspaceKind,
+    hasConversation: chatHasConversation
+  })
+  const groups = useMemo(
+    () => groupSessionsByProject(sessions, projects),
+    [sessions, projects]
+  )
+
+  const onNavChange = (key: NavKey): void => {
+    setNav(key)
+    if (key === 'projects' && !navExpanded) setNavExpanded(true)
+  }
+
+  const onSelectSession = (session: SessionSummary): void => {
+    setSessionId(session.id)
+    setNav('projects')
+  }
+
   const onNewSession = async (): Promise<void> => {
     const created = await window.shy.createSession({ mode: 'interactive' })
     await refreshSessions()
     setSessionId(created.id)
-    setNav('chat')
+    setNav('projects')
+    if (!navExpanded) setNavExpanded(true)
   }
 
   const onDeleteSession = (id: string, title: string): void => {
     setDeleteSession({ id, title })
   }
 
+  const onDeleteProject = (id: string, title: string): void => {
+    setDeleteProject({ id, title })
+  }
+
   const confirmDeleteSession = async (id: string): Promise<void> => {
     await window.shy.deleteSession(id)
     const list = await refreshSessions()
     if (id === sessionId) {
-      if (list[0]) setSessionId(list[0].id)
-      else {
+      if (list[0]) {
+        setSessionId(list[0].id)
+      } else {
         const created = await window.shy.createSession({ mode: 'interactive' })
         await refreshSessions()
         setSessionId(created.id)
@@ -161,37 +233,66 @@ function App(): React.JSX.Element {
     }
   }
 
+  const confirmDeleteProject = async (id: string): Promise<void> => {
+    await window.shy.deleteProject(id)
+    await refreshSessions()
+  }
+
   return (
     <div className="app-shell">
       <Sidebar
         active={nav}
-        onChange={setNav}
-        sessions={sessions}
+        onChange={onNavChange}
+        expanded={navExpanded}
+        onToggleExpanded={() => setNavExpanded((v) => !v)}
+        groups={groups}
         activeSessionId={sessionId}
-        onSelectSession={setSessionId}
+        onSelectSession={onSelectSession}
         onNewSession={() => void onNewSession()}
         onDeleteSession={(id, title) => onDeleteSession(id, title)}
+        onDeleteProject={(id, title) => onDeleteProject(id, title)}
         ipcOk={ipcOk}
         onOpenSettings={(tab) => {
           setSettingsTab(tab ?? 'general')
           setSettingsOpen(true)
         }}
       />
-      <div className="main-column">
-        {nav !== 'chat' ? <Header title={NAV_TITLES[nav]} /> : null}
-        {nav === 'chat' ? (
+      <div className={`main-column${layout.main === 'chat' ? ' main-collapsed' : ''}`}>
+        {nav !== 'projects' ? <Header title={NAV_TITLES[nav]} /> : null}
+        {layout.main === 'code' && boundProject && sessionId ? (
+          <CodeWorkspace
+            projectId={boundProject.id}
+            rootPath={boundProject.rootPath}
+            sessionId={sessionId}
+            theme={theme}
+          />
+        ) : null}
+        {layout.main === 'code' && !boundProject ? <PlaceholderView title="代码工作区" /> : null}
+        {layout.main === 'material' && boundProject ? (
+          <MaterialLibrary projectId={boundProject.id} sessionId={sessionId} />
+        ) : null}
+        {layout.main === 'material' && !boundProject ? (
+          <PlaceholderView title="素材工作区" />
+        ) : null}
+        {layout.main === 'skills' ? <SkillsView /> : null}
+        {layout.main === 'calendar' ? <CalendarView /> : null}
+      </div>
+      {sessionId ? (
+        <div key="chat-workspace-host" className={resolveChatHostClass(nav, workspaceKind)}>
           <ChatWorkspace
             notice={notice}
             sessionId={sessionId}
+            sessions={sessions}
+            onSelectSession={(id) => {
+              const s = sessions.find((x) => x.id === id)
+              if (s) onSelectSession(s)
+            }}
             onSessionsChanged={() => void refreshSessions()}
             onConversationState={setChatHasConversation}
           />
-        ) : null}
-        {nav === 'skills' ? <SkillsView /> : null}
-        {nav === 'calendar' ? <CalendarView /> : null}
-      </div>
-      {/* 右侧「环境」面板 — 仅在 chat 且有对话时显示（空态不显示，对齐 MiniMax） */}
-      {nav === 'chat' && chatHasConversation ? <InspectorPanel sessionId={sessionId} /> : null}
+        </div>
+      ) : null}
+      {layout.showInspector && sessionId ? <InspectorPanel sessionId={sessionId} /> : null}
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
@@ -217,8 +318,18 @@ function App(): React.JSX.Element {
             const target = deleteSession
             setDeleteSession(null)
             if (approved) void confirmDeleteSession(id).then(() => undefined)
-            // 闭包变量 target 仅作类型提示
             void target
+          }}
+        />
+      ) : null}
+      {deleteProject ? (
+        <ConfirmDialog
+          action="删除项目"
+          detail={projectDeleteConfirmDetail(deleteProject.title)}
+          requestId={deleteProject.id}
+          onResolve={(id, approved) => {
+            setDeleteProject(null)
+            if (approved) void confirmDeleteProject(id)
           }}
         />
       ) : null}

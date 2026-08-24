@@ -55,6 +55,9 @@ export function ensureSessionTables(): void {
   if (!columnNames.has('result_report_path')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN result_report_path TEXT`)
   }
+  if (!columnNames.has('project_id')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN project_id TEXT`)
+  }
   const msgCols = db.prepare(`PRAGMA table_info(session_messages)`).all() as { name: string }[]
   if (!msgCols.some((c) => c.name === 'kind')) {
     db.exec(`ALTER TABLE session_messages ADD COLUMN kind TEXT`)
@@ -274,6 +277,7 @@ function rowToSummary(row: Record<string, unknown>): SessionSummary {
     paused: runStatus === 'paused',
     goal: row.goal ? String(row.goal) : undefined,
     runStatus,
-    verifyCommand: row.verify_command ? String(row.verify_command) : undefined
+    verifyCommand: row.verify_command ? String(row.verify_command) : undefined,
+    projectId: row.project_id != null ? String(row.project_id) : null
   }
 }

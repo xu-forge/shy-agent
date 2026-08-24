@@ -85,6 +85,17 @@ describe('tool description 8 段式质量', () => {
     expect(t?.description).toMatch(/超时|timeout|路径|path/i)
   })
 
+  it('fs/shell description 含实际 workspaceDir，不含旧 sandbox 路径', () => {
+    for (const name of ['shell_exec', 'fs_read', 'fs_write', 'fs_delete']) {
+      const t = tools.find((x) => x.name === name)
+      expect(t, `${name} 未注册`).toBeDefined()
+      expect(t!.description).toContain('/tmp/shy-test-workspace')
+      expect(t!.description, `${name} 仍广告旧会话 sandbox`).not.toMatch(
+        /~\/\.shy\/sessions/
+      )
+    }
+  })
+
   it('memory 工具 description 含「审计」', () => {
     for (const name of ['memory_upsert', 'memory_list', 'memory_delete']) {
       const t = tools!.find((x) => x.name === name)

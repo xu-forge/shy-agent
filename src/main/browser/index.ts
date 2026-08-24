@@ -36,7 +36,7 @@ export function getEmbeddedBrowserManager(): EmbeddedBrowserManager {
 }
 
 export function registerBrowserIpc(): void {
-  const m = () => getEmbeddedBrowserManager()
+  const m = (): EmbeddedBrowserManager => getEmbeddedBrowserManager()
 
   // 渲染层发的是 CSS 像素；页面 zoom ≠ 1 时需换算为 DIP 才能与 React 布局对齐
   const toDip = (bounds: ViewBounds): ViewBounds => {

@@ -1,37 +1,35 @@
 /* ————————————————————————————————————————————————
-   Design tokens — MiniMax Code 参考
-   蓝色主色 #0094fc · 中性灰阶 · 统一圆角/阴影/透明度体系
-   （取值对齐 MiniMax Code 设计系统：blue_400 主色、gray 0-1000 灰阶、
-     radius 4/8/12/16/20/24、opacity_black_1_x 分层）
+   Design tokens — 图一色板
+   绿色主色 #4ade80 · slate 灰阶 · 统一圆角/阴影/透明度体系
    ———————————————————————————————————————————————— */
 
 :root {
-  /* surface：主区纯白，侧栏/浮层轻微分层 */
-  --bg: #ffffff;
-  --bg-deep: #fafafa; /* gray_50 */
-  --bg-rail: #ffffff;
+  /* surface：主区 slate-50，侧栏/浮层轻微分层 */
+  --bg: #f8fafc;
+  --bg-deep: #f1f5f9;
+  --bg-rail: #f8fafc;
   --bg-panel: #ffffff;
-  --bg-soft: #f5f5f5; /* gray_75 */
-  --bg-hover: rgba(23, 23, 23, 0.05);
-  --bg-active: rgba(23, 23, 23, 0.08);
-  --bg-inset: rgba(23, 23, 23, 0.04);
+  --bg-soft: #f1f5f9;
+  --bg-hover: rgba(30, 41, 59, 0.05);
+  --bg-active: rgba(30, 41, 59, 0.08);
+  --bg-inset: rgba(30, 41, 59, 0.04);
 
   /* lines */
-  --border: rgba(10, 10, 10, 0.08); /* opacity_black_1_8 */
-  --border-strong: rgba(10, 10, 10, 0.16);
+  --border: #cbd5e1;
+  --border-strong: #94a3b8;
 
-  /* text：gray_1000 / gray_500 / gray_400 */
-  --text: #171717;
-  --text-secondary: #666666;
-  --text-muted: #949494;
+  /* text：slate-800 / slate-500 / slate-400 */
+  --text: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
 
-  /* accent：MiniMax blue_400 #0094fc */
-  --accent: #0094fc;
-  --accent-strong: #0077d9; /* blue_500，hover / 强调文字 */
-  --accent-contrast: #ffffff;
-  --accent-soft: rgba(0, 148, 252, 0.08);
-  --accent-hover: rgba(0, 148, 252, 0.13);
-  --accent-glow: rgba(0, 148, 252, 0.24);
+  /* accent：图一 green_400 / green_500 */
+  --accent: #4ade80;
+  --accent-strong: #22c55e;
+  --accent-contrast: #052e16;
+  --accent-soft: rgba(74, 222, 128, 0.08);
+  --accent-hover: rgba(74, 222, 128, 0.13);
+  --accent-glow: rgba(74, 222, 128, 0.24);
 
   /* semantic：MiniMax green/orange/red 500 */
   --ok: #04b54b;
@@ -54,15 +52,15 @@
   --shadow-md: 0 4px 14px rgba(10, 10, 10, 0.09);
   --shadow-lg: 0 16px 40px rgba(10, 10, 10, 0.16);
   --shadow-composer: 0 2px 10px rgba(10, 10, 10, 0.06);
-  --focus-ring: 0 0 0 3px rgba(0, 148, 252, 0.28);
+  --focus-ring: 0 0 0 3px rgba(74, 222, 128, 0.28);
 
-  /* geometry：对齐 MiniMax radius 体系 */
-  --rail-width: 244px;
+  /* geometry */
+  --rail-width: 64px;
   --sidebar-width: 264px;
   --content-max: 800px;
   --radius-s: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
+  --radius: 8px;
+  --radius-lg: 16px;
   --radius-xl: 18px;
 
   /* type：MiniMax 字体栈 */
@@ -81,7 +79,7 @@
   --ink: #1f2328;
   --ink-hover: #343b47;
   --ink-contrast: #ffffff;
-  --canvas: #f7f8fa;
+  --canvas: #f8fafc;
   --line: #e4e7ec;
   --line-strong: #d5d9e0;
   --amber: #f59e0b;
@@ -93,29 +91,29 @@
 }
 
 [data-theme='dark'] {
-  --bg: #171717; /* gray_1000 */
-  --bg-deep: #141414;
-  --bg-rail: #171717;
-  --bg-panel: #1c1c1c; /* gray_900 */
-  --bg-soft: #242424;
+  --bg: #0f172a;
+  --bg-deep: #020617;
+  --bg-rail: #0f172a;
+  --bg-panel: #1e293b;
+  --bg-soft: #1e293b;
   --bg-hover: rgba(255, 255, 255, 0.06);
   --bg-active: rgba(255, 255, 255, 0.1);
   --bg-inset: rgba(255, 255, 255, 0.05);
 
-  --border: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.2);
+  --border: rgba(148, 163, 184, 0.2);
+  --border-strong: rgba(148, 163, 184, 0.35);
 
-  --text: #ececec;
-  --text-secondary: #a3a3a3;
-  --text-muted: #757575;
+  --text: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
 
-  /* accent：深色下用更亮的 blue_300 */
-  --accent: #3daeff;
-  --accent-strong: #68c0ff; /* blue_200，hover */
-  --accent-contrast: #04121d;
-  --accent-soft: rgba(61, 174, 255, 0.14);
-  --accent-hover: rgba(61, 174, 255, 0.22);
-  --accent-glow: rgba(61, 174, 255, 0.3);
+  /* accent：深色下保持绿色相 */
+  --accent: #4ade80;
+  --accent-strong: #86efac;
+  --accent-contrast: #052e16;
+  --accent-soft: rgba(74, 222, 128, 0.14);
+  --accent-hover: rgba(74, 222, 128, 0.22);
+  --accent-glow: rgba(74, 222, 128, 0.3);
 
   --ok: #4ed082;
   --ok-soft: rgba(78, 208, 130, 0.15);
@@ -135,13 +133,13 @@
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
   --shadow-composer: 0 2px 10px rgba(0, 0, 0, 0.4);
-  --focus-ring: 0 0 0 3px rgba(61, 174, 255, 0.32);
+  --focus-ring: 0 0 0 3px rgba(74, 222, 128, 0.32);
 
   /* shy 身份层（dark） */
   --ink: #e8eaed;
   --ink-hover: #f2f4f6;
   --ink-contrast: #1c1f24;
-  --canvas: #131417;
+  --canvas: #0f172a;
   --line: #2a2d33;
   --line-strong: #3a3e46;
   --amber: #f5a623;
@@ -189,7 +187,7 @@ button {
   color: var(--accent-contrast);
 }
 
-/* 聚焦可见性：蓝色环 */
+/* 聚焦可见性：绿色环 */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

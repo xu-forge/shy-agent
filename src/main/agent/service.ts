@@ -8,7 +8,7 @@ import { renderSkillCatalog } from '../skills/catalog'
 import { listLongMemory, upsertSessionTask, deleteSessionTask } from '../memory/db'
 import { compressWithLlm } from '../memory/compress'
 import { appendMessage, getSession, updateSessionRuntime } from '../sessions/store'
-import { getSessionWorkspace } from '../paths'
+import { resolveAgentWorkspace } from '../projects/workspace'
 import { summarizeSessionTitle } from '../sessions/title'
 import type { AgentEvent, AgentMode, GoalChecklistItem, TaskSource } from '../../shared/ipc'
 import { runGoalDriver } from './goal-driver'
@@ -190,7 +190,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
       },
       confirmHighRisk: waitConfirm,
       sessionId,
-      workspaceDir: getSessionWorkspace(sessionId)
+      workspaceDir: resolveAgentWorkspace(sessionId)
     }
 
     const tools = buildTools(ctx)
