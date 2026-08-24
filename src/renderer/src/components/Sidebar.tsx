@@ -18,9 +18,13 @@ type Props = {
   onDeleteSession: (id: string, title: string) => void
   ipcOk: boolean | null
   onOpenSettings: (tab?: SettingsTab) => void
+  codeProjectId?: string | null
+  codeRootPath?: string | null
+  openFilePath?: string | null
+  onOpenFile?: (relativePath: string) => void
 }
 
-/** 图标轨 + 可选二级侧栏（会话分组 / 文件树占位） */
+/** 图标轨 + 可选二级侧栏（会话分组 / 文件树） */
 export function Sidebar({
   active,
   onChange,
@@ -32,7 +36,11 @@ export function Sidebar({
   onNewSession,
   onDeleteSession,
   ipcOk,
-  onOpenSettings
+  onOpenSettings,
+  codeProjectId,
+  codeRootPath,
+  openFilePath,
+  onOpenFile
 }: Props): React.JSX.Element {
   return (
     <>
@@ -50,6 +58,10 @@ export function Sidebar({
           onSelectSession={onSelectSession}
           onNewSession={onNewSession}
           onDeleteSession={onDeleteSession}
+          projectId={codeProjectId}
+          rootPath={codeRootPath}
+          activeFilePath={openFilePath}
+          onOpenFile={onOpenFile}
         />
       ) : null}
     </>

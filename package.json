@@ -28,9 +28,11 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@monaco-editor/react": "^4.7.0",
     "better-sqlite3": "^13.0.3",
     "diff": "^9.0.0",
     "highlight.js": "^11.12.0",
+    "monaco-editor": "^0.56.0",
     "openai": "^7.5.0",
     "playwright": "^1.62.1",
     "react-markdown": "^10.1.0",

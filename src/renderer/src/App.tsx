@@ -10,6 +10,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
 import { PlaceholderView } from './components/PlaceholderView'
+import { CodeWorkspace } from './components/code/CodeWorkspace'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import {
   groupSessionsByProject,
@@ -57,6 +58,7 @@ function App(): React.JSX.Element {
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
+  const [openFilePath, setOpenFilePath] = useState<string | null>(null)
 
   // 主题：应用 + 持久化
   useEffect(() => {
@@ -162,6 +164,7 @@ function App(): React.JSX.Element {
   }, [])
 
   const activeSession = sessions.find((s) => s.id === sessionId)
+  const boundProject = projects.find((p) => p.id === activeSession?.projectId) ?? null
   const workspaceKind = resolveWorkspaceKind(activeSession, projects)
   const layout = resolveShellLayout({
     nav,
@@ -173,6 +176,10 @@ function App(): React.JSX.Element {
     () => groupSessionsByProject(sessions, projects),
     [sessions, projects]
   )
+
+  useEffect(() => {
+    setOpenFilePath(null)
+  }, [boundProject?.id])
 
   const onNavChange = (key: NavKey): void => {
     if (key === 'projects') setSecondaryMode('sessions')
@@ -233,10 +240,23 @@ function App(): React.JSX.Element {
           setSettingsTab(tab ?? 'general')
           setSettingsOpen(true)
         }}
+        codeProjectId={layout.main === 'code' ? boundProject?.id ?? null : null}
+        codeRootPath={layout.main === 'code' ? boundProject?.rootPath ?? null : null}
+        openFilePath={openFilePath}
+        onOpenFile={setOpenFilePath}
       />
       <div className={`main-column${layout.main === 'chat' ? ' main-collapsed' : ''}`}>
         {nav !== 'projects' ? <Header title={NAV_TITLES[nav]} /> : null}
-        {layout.main === 'code' ? <PlaceholderView title="代码工作区" /> : null}
+        {layout.main === 'code' && boundProject && sessionId ? (
+          <CodeWorkspace
+            projectId={boundProject.id}
+            rootPath={boundProject.rootPath}
+            sessionId={sessionId}
+            openPath={openFilePath}
+            theme={theme}
+          />
+        ) : null}
+        {layout.main === 'code' && !boundProject ? <PlaceholderView title="代码工作区" /> : null}
         {layout.main === 'material' ? <PlaceholderView title="素材工作区" /> : null}
         {layout.main === 'skills' ? <SkillsView /> : null}
         {layout.main === 'calendar' ? <CalendarView /> : null}

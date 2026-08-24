@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SessionSummary } from '../../../shared/ipc'
 import { timeAgo } from '../lib/time'
 import type { SecondaryMode, SessionGroup } from '../lib/shellLayout'
+import { FileTree } from './code/FileTree'
 
 type Props = {
   mode: SecondaryMode
@@ -10,6 +11,10 @@ type Props = {
   onSelectSession: (session: SessionSummary) => void
   onNewSession: () => void
   onDeleteSession: (id: string, title: string) => void
+  projectId?: string | null
+  rootPath?: string | null
+  activeFilePath?: string | null
+  onOpenFile?: (relativePath: string) => void
 }
 
 const SIDEBAR_WIDTH_KEY = 'shy.sidebar-width'
@@ -43,7 +48,11 @@ export function SecondarySidebar({
   activeSessionId,
   onSelectSession,
   onNewSession,
-  onDeleteSession
+  onDeleteSession,
+  projectId,
+  rootPath,
+  activeFilePath,
+  onOpenFile
 }: Props): React.JSX.Element {
   const [width, setWidth] = useState<number>(() =>
     typeof window === 'undefined' ? SIDEBAR_DEFAULT_WIDTH : loadSidebarWidth()
@@ -84,10 +93,19 @@ export function SecondarySidebar({
         onDoubleClick={() => setWidth(SIDEBAR_DEFAULT_WIDTH)}
       />
       {mode === 'files' ? (
-        <div className="file-tree-stub" aria-label="文件树">
-          <div className="sb-list-head">文件树</div>
-          <p className="history-empty">文件树将在代码工作区接入。</p>
-        </div>
+        projectId && rootPath && onOpenFile ? (
+          <FileTree
+            projectId={projectId}
+            rootPath={rootPath}
+            activePath={activeFilePath ?? null}
+            onOpenFile={onOpenFile}
+          />
+        ) : (
+          <div className="file-tree-stub" aria-label="文件树">
+            <div className="sb-list-head">文件树</div>
+            <p className="history-empty">未绑定代码项目。</p>
+          </div>
+        )
       ) : (
         <>
           <div className="sidebar-top">
