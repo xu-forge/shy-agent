@@ -236,6 +236,10 @@ function buildV2Graph(opts: {
             // turn-runner 事件 → service.ts 期望的 graphEmit 事件
             if (e.type === 'turn:delta') {
               opts.emit({ type: 'assistant_delta', content: e.content })
+            } else if (e.type === 'turn:reasoning_delta') {
+              opts.emit({ type: 'reasoning_delta', content: e.content })
+            } else if (e.type === 'turn:reasoning_done') {
+              opts.emit({ type: 'reasoning_done' })
             } else if (e.type === 'turn:tool_call') {
               opts.emit({ type: 'tool_call', id: e.id, name: e.name, input: e.input })
             } else if (e.type === 'turn:tool_result') {
@@ -253,6 +257,10 @@ function buildV2Graph(opts: {
           startTurn: state.round ?? 0
         }
       )
+
+      if (result.status === 'errored' && result.error) {
+        opts.emit({ type: 'error', message: result.error })
+      }
 
       // turn-runner 结果 → LangGraph state 兼容格式
       const newMessages = result.finalContent

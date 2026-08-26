@@ -53,6 +53,61 @@ export function schemaToJson(schema: z.ZodType<unknown>): Record<string, unknown
   return { type: 'object', properties: {} }
 }
 
+/**
+ * LLM 常把 number 参数写成字符串（"5"）。只对 zod 判定为 number 的路径做强制转换，
+ * 避免把本该是 string 的纯数字路径（如 "1"）误转成 number。
+ */
+export function parseToolArgs(schema: z.ZodType<unknown>, obj: Record<string, unknown>): unknown {
+  const first = schema.safeParse(obj)
+  if (first.success) return first.data
+  const { next, changed } = coerceNumberStrings(obj, first.error.issues)
+  if (!changed) throw first.error
+  return schema.parse(next)
+}
+
+function getAt(obj: unknown, path: readonly PropertyKey[]): unknown {
+  let cur = obj
+  for (const k of path) {
+    if (cur == null || typeof cur !== 'object') return undefined
+    cur = (cur as Record<PropertyKey, unknown>)[k]
+  }
+  return cur
+}
+
+function setAt(obj: unknown, path: readonly PropertyKey[], value: unknown): void {
+  let cur = obj
+  for (let i = 0; i < path.length - 1; i++) {
+    if (cur == null || typeof cur !== 'object') return
+    cur = (cur as Record<PropertyKey, unknown>)[path[i]!]
+  }
+  const last = path[path.length - 1]
+  if (cur != null && typeof cur === 'object' && last !== undefined) {
+    ;(cur as Record<PropertyKey, unknown>)[last] = value
+  }
+}
+
+function coerceNumberStrings(
+  obj: Record<string, unknown>,
+  issues: z.ZodIssue[]
+): { next: Record<string, unknown>; changed: boolean } {
+  const next = JSON.parse(JSON.stringify(obj)) as Record<string, unknown>
+  let changed = false
+  for (const issue of issues) {
+    if (issue.code !== 'invalid_type') continue
+    const expected = (issue as { expected?: unknown }).expected
+    if (expected !== 'number' || issue.path.length === 0) continue
+    const raw = getAt(next, issue.path)
+    if (typeof raw !== 'string') continue
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+    const n = Number(trimmed)
+    if (!Number.isFinite(n)) continue
+    setAt(next, issue.path, n)
+    changed = true
+  }
+  return { next, changed }
+}
+
 /** ShyTool[] → OpenAI function tool 格式（给非流式/流式 chat 用） */
 export function toOpenAITools(tools: ShyTool[]): ChatCompletionTool[] {
   return tools.map((t) => ({
@@ -93,7 +148,7 @@ export async function runToolCalls(
     }
     try {
       const obj = JSON.parse(tc.args) as Record<string, unknown>
-      const parsed = tool.schema.parse(obj) as Record<string, unknown>
+      const parsed = parseToolArgs(tool.schema, obj) as Record<string, unknown>
       const result = await tool.run(parsed)
       emit({ type: 'turn:tool_result', turnId, id: tc.id, output: result })
       out.push({ role: 'tool', tool_call_id: tc.id, content: result })

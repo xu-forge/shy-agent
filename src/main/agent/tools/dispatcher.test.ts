@@ -72,6 +72,40 @@ describe('runToolCalls', () => {
     })
   })
 
+  it('数字参数写成字符串时强制转换后成功（LLM 常见）', async () => {
+    const emit = vi.fn()
+    const out = await runToolCalls(
+      [addTool],
+      [{ id: 't2s', name: 'add', args: '{"a":"2","b":"3"}' }],
+      'turn_2s',
+      emit
+    )
+    expect(out[0].content).toBe('5')
+    expect(emit).toHaveBeenCalledWith({
+      type: 'turn:tool_result',
+      turnId: 'turn_2s',
+      id: 't2s',
+      output: '5'
+    })
+  })
+
+  it('嵌套 number 字段的数字字符串也能强制转换', async () => {
+    const nested: ShyTool<{ config: { timeout: number } }> = {
+      name: 'nested',
+      description: '嵌套',
+      schema: z.object({ config: z.object({ timeout: z.number() }) }),
+      run: async ({ config }) => String(config.timeout)
+    }
+    const emit = vi.fn()
+    const out = await runToolCalls(
+      [nested],
+      [{ id: 'tn', name: 'nested', args: '{"config":{"timeout":"30"}}' }],
+      'turn_n',
+      emit
+    )
+    expect(out[0].content).toBe('30')
+  })
+
   it('校验失败（zod 类型不符）→ error 工具消息 + emit error', async () => {
     const emit = vi.fn()
     const out = await runToolCalls(

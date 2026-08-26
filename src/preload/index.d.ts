@@ -86,6 +86,7 @@ export interface ShyApi {
   }) => Promise<{ ok: boolean; task?: SessionTaskRecord; error?: string }>
   deleteSessionTask: (input: { sessionId: string; id: string }) => Promise<{ ok: boolean }>
   confirmTool: (requestId: string, approved: boolean) => Promise<{ ok: boolean }>
+  askUserReply: (requestId: string, answer: string) => Promise<{ ok: boolean }>
   scheduleTasksList: () => Promise<ScheduleTasksListResult>
   scheduleTasksGet: (id: string) => Promise<ScheduleTask | null>
   scheduleTasksCreate: (input: CreateScheduleTaskInput) => Promise<ScheduleTaskSaveResult>

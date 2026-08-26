@@ -16,6 +16,7 @@ export const IPC = {
   settingsGet: 'shy:settings-get',
   settingsSet: 'shy:settings-set',
   toolConfirm: 'shy:tool-confirm',
+  askUserReply: 'shy:ask-user-reply',
   sessionsList: 'shy:sessions-list',
   sessionsGet: 'shy:sessions-get',
   sessionsCreate: 'shy:sessions-create',
@@ -385,6 +386,8 @@ export type AgentEvent =
   | { type: 'assistant'; content: string; sessionId?: string }
   | { type: 'assistant_delta'; content: string; sessionId?: string }
   | { type: 'assistant_done'; sessionId?: string }
+  | { type: 'reasoning_delta'; content: string; sessionId?: string }
+  | { type: 'reasoning_done'; sessionId?: string }
   | { type: 'tool'; name: string; detail?: unknown; input?: unknown; sessionId?: string }
   | { type: 'tool_call'; id: string; name?: string; input?: unknown; sessionId?: string }
   | { type: 'tool_result'; id: string; output?: unknown; error?: string; sessionId?: string }
@@ -419,6 +422,13 @@ export type AgentEvent =
       action: string
       detail: string
       requestId: string
+      sessionId?: string
+    }
+  | {
+      type: 'ask_user'
+      requestId: string
+      question: string
+      options?: string[]
       sessionId?: string
     }
   | { type: 'notify'; message: string; sessionId?: string }

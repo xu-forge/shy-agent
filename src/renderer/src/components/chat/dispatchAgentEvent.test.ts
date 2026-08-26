@@ -15,6 +15,14 @@ describe('dispatchAgentEvent', () => {
     expect(h.onDelta).toHaveBeenCalledWith('d')
   })
 
+  it('分发 reasoning_delta / reasoning_done', () => {
+    const h: AgentEventHandlers = { onReasoningDelta: vi.fn(), onReasoningDone: vi.fn() }
+    dispatchAgentEvent({ type: 'reasoning_delta', content: '想' }, 's1', h)
+    dispatchAgentEvent({ type: 'reasoning_done' }, 's1', h)
+    expect(h.onReasoningDelta).toHaveBeenCalledWith('想')
+    expect(h.onReasoningDone).toHaveBeenCalled()
+  })
+
   it('分发 assistant_done', () => {
     const h: AgentEventHandlers = { onAssistantDone: vi.fn() }
     dispatchAgentEvent({ type: 'assistant_done' }, 's1', h)

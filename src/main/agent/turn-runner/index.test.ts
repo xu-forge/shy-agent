@@ -6,9 +6,11 @@ import { buildTools } from '../tools/registry'
 // Mock llm-client — 第一次 yield tool_call,第二次 yield plain content
 let callCount = 0
 const seenSystemPrompts: string[] = []
+const seenLlmMessages: unknown[] = []
 vi.mock('../llm-client', () => ({
   streamChatCompletion: async function* (_config: unknown, messages: unknown) {
     callCount += 1
+    seenLlmMessages.push(messages)
     const sysMsg = (messages as Array<{ role: string; content: string }>).find(
       (m) => m.role === 'system'
     )
@@ -99,6 +101,17 @@ describe('runTurn 端到端', () => {
     for (const tr of toolResults) {
       expect(String(tr.output)).not.toMatch(/did not match expected schema/)
     }
+    // 第二轮必须把 assistant.tool_calls 编成 OpenAI function 格式，否则模型无法续写
+    const second = seenLlmMessages[1] as Array<{
+      role: string
+      tool_calls?: Array<{ id: string; type?: string; function?: { name: string; arguments: string } }>
+    }>
+    const asst = second.find((m) => m.role === 'assistant' && m.tool_calls?.length)
+    expect(asst?.tool_calls?.[0]).toMatchObject({
+      id: 'tc-1',
+      type: 'function',
+      function: { name: 'runtime_ping', arguments: '{"note":"first"}' }
+    })
   })
 
   it('system-reminder 接入:buildReminder 被调且 block 拼到 systemPrompt', async () => {

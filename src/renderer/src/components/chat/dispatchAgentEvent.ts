@@ -20,6 +20,12 @@ export function dispatchAgentEvent(
     case 'assistant_delta':
       handlers.onDelta?.(ev.content)
       break
+    case 'reasoning_delta':
+      handlers.onReasoningDelta?.(ev.content)
+      break
+    case 'reasoning_done':
+      handlers.onReasoningDone?.()
+      break
     case 'assistant_done':
       handlers.onAssistantDone?.()
       break

@@ -16,6 +16,8 @@ const MAX_ENTRIES = 30
 const SUBSCRIBED_TYPES = [
   'status',
   'assistant_delta',
+  'reasoning_delta',
+  'reasoning_done',
   'assistant_done',
   'tool',
   'task',
@@ -43,6 +45,10 @@ function summarize(type: string, e: Record<string, unknown>): string {
       return String(e.message ?? '')
     case 'assistant_delta':
       return String(e.content ?? '').slice(0, 60)
+    case 'reasoning_delta':
+      return `思考 ${String(e.content ?? '').slice(0, 40)}`
+    case 'reasoning_done':
+      return '思考结束'
     case 'assistant_done':
       return '(完成)'
     case 'tool':

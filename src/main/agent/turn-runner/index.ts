@@ -22,6 +22,7 @@
  */
 import { randomUUID } from 'crypto'
 import { streamChatCompletion, type LLMMessage } from '../llm-client'
+import { ThinkingStreamParser } from '../../../shared/thinking-stream'
 import { compactHistory, type CompactionSettings } from '../compaction'
 import { runToolCalls, type ShyTool } from '../tools/dispatcher'
 import type {
@@ -381,11 +382,15 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
               tool_call_id: m.toolCallId ?? ''
             }
           }
-          // assistant
+          const tool_calls = (m.toolCalls ?? []).map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: tc.args }
+          }))
           return {
             role: 'assistant' as const,
             content: m.content,
-            ...(m.toolCalls ? { tool_calls: m.toolCalls as never } : {})
+            ...(tool_calls.length ? { tool_calls } : {})
           }
         })
       ]
@@ -398,6 +403,18 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
       const accToolCalls: Array<{ id: string; name: string; args: string }> = []
       let promptTok = 0
       let completionTok = 0
+      const thinking = new ThinkingStreamParser()
+      const emitStreamPieces = (pieces: ReturnType<ThinkingStreamParser['push']>): void => {
+        for (const piece of pieces) {
+          if (piece.type === 'text') {
+            deps.emit({ type: 'turn:delta', turnId, content: piece.delta })
+          } else if (piece.type === 'reasoning') {
+            deps.emit({ type: 'turn:reasoning_delta', turnId, content: piece.delta })
+          } else {
+            deps.emit({ type: 'turn:reasoning_done', turnId })
+          }
+        }
+      }
       const stream = streamChatCompletion(
         {
           baseURL: input.llm.baseURL,
@@ -411,7 +428,7 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
       for await (const ev of stream) {
         if (ev.type === 'content') {
           accContent += ev.delta
-          deps.emit({ type: 'turn:delta', turnId, content: ev.delta })
+          emitStreamPieces(thinking.push(ev.delta))
         } else if (ev.type === 'tool_calls') {
           for (const tc of ev.toolCalls) {
             // OpenAI SDK 7.x union 类型：function 字段需要 cast
@@ -427,6 +444,7 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
         }
         if (input.signal?.aborted) break
       }
+      emitStreamPieces(thinking.flush())
       tokenUsed.prompt += promptTok
       tokenUsed.completion += completionTok
       deps.emit({

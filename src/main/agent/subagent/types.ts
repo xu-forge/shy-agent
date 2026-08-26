@@ -23,8 +23,7 @@ export const SUBAGENT_TOOL_ALLOWLIST: Record<SubagentType, ReadonlySet<string>> 
     'skill_list',
     'web_search',
     'web_fetch',
-    'todo_read',
-    'goal_get'
+    'task_query'
   ]),
   worker: new Set([
     'shell_exec',
@@ -42,10 +41,8 @@ export const SUBAGENT_TOOL_ALLOWLIST: Record<SubagentType, ReadonlySet<string>> 
     'skill_delete',
     'web_search',
     'web_fetch',
-    'todo_read',
-    'todo_write',
-    'goal_get',
-    'goal_update'
+    'task',
+    'task_query'
   ]),
   verifier: new Set([
     'shell_exec',
@@ -56,8 +53,7 @@ export const SUBAGENT_TOOL_ALLOWLIST: Record<SubagentType, ReadonlySet<string>> 
     'skill_list',
     'web_search',
     'web_fetch',
-    'todo_read',
-    'goal_get'
+    'task_query'
   ])
 } as const
 

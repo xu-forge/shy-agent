@@ -8,7 +8,7 @@
 import { useMemo } from 'react'
 import { MarkdownBody } from '../MarkdownBody'
 
-type Props = { content: string }
+type Props = { content: string; skipThinking?: boolean }
 
 /** 提取推理块并去掉 think 标签，剩余作为正文 */
 function splitReasoning(content: string): { reasoning: string; reply: string } {
@@ -32,13 +32,14 @@ function countThinkBlocks(content: string): number {
   return m ? m.length : 0
 }
 
-export function ReActContent({ content }: Props): React.JSX.Element {
+export function ReActContent({ content, skipThinking = false }: Props): React.JSX.Element {
   const { reasoning, reply } = useMemo(() => splitReasoning(content), [content])
   const thinkCount = useMemo(() => countThinkBlocks(content), [content])
+  const showThinking = Boolean(reasoning) && !skipThinking
 
   return (
     <div className="react-plain">
-      {reasoning ? (
+      {showThinking ? (
         <details className="react-thinking">
           <summary className="react-thinking-head">
             <span className="think-chevron" aria-hidden="true">

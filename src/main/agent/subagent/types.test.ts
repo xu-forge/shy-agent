@@ -16,7 +16,7 @@ describe('subagent/types', () => {
     expect(SUBAGENT_TOOL_ALLOWLIST.verifier.size).toBeGreaterThan(0)
 
     // 写工具 explore/verifier 都看不到
-    for (const writeTool of ['fs_write', 'fs_edit', 'fs_delete', 'memory_upsert', 'memory_delete', 'skill_write', 'skill_delete', 'goal_update']) {
+    for (const writeTool of ['fs_write', 'fs_edit', 'fs_delete', 'memory_upsert', 'memory_delete', 'skill_write', 'skill_delete']) {
       expect(SUBAGENT_TOOL_ALLOWLIST.explore.has(writeTool)).toBe(false)
       expect(SUBAGENT_TOOL_ALLOWLIST.verifier.has(writeTool)).toBe(false)
     }

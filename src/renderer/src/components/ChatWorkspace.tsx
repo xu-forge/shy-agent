@@ -2,9 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ModeKey } from './ModeToggle'
 import type { SessionFileRecord, SessionSummary, SkillSummary } from '../../../shared/ipc'
 import { MarkdownBody } from './MarkdownBody'
-import { timeAgo } from '../lib/time'
-import { ReActContent } from './chat/ReActContent'
-import { ToolCallCard } from './chat/ToolCallCard'
+import { AgentTimeline } from './chat/AgentTimeline'
+import { messagesToSegments } from './chat/turnSegments'
 import { SlashMenu, type SlashItem } from './chat/SlashMenu'
 import { ProjectPicker } from './ProjectPicker'
 import {
@@ -29,20 +28,19 @@ type Props = {
 }
 
 type Msg = {
-  role: 'user' | 'assistant' | 'system' | 'tool'
+  role: 'user' | 'assistant' | 'system' | 'tool' | 'reasoning'
   content: string
   createdAt?: string
   kind?: 'result'
-  /** 正在流式输出（用于打字光标） */
   streaming?: boolean
-  /** 工具调用状态：运行中 / 已完成 / 失败 */
   toolStatus?: 'running' | 'done' | 'failed'
-  /** 工具调用 id（call+result 靠它合并成一条） */
   toolId?: string
   toolName?: string
   toolInput?: unknown
   toolResult?: unknown
   toolError?: string
+  durationMs?: number
+  reasoningStartedAt?: number
 }
 
 // zcode-home-replica：3 条列表式示例（替换原 pills 建议）
@@ -214,16 +212,23 @@ export function ChatWorkspace({
 
   // 把连续的工具消息聚成一个时间轴块，其余消息独立渲染
   const renderBlocks = useMemo(() => {
-    const blocks: Array<{ kind: 'msg'; msg: Msg } | { kind: 'tools'; items: Msg[] }> = []
-    for (const m of messages) {
-      if (m.role === 'tool') {
-        const last = blocks[blocks.length - 1]
-        if (last && last.kind === 'tools') last.items.push(m)
-        else blocks.push({ kind: 'tools', items: [m] })
-      } else {
-        blocks.push({ kind: 'msg', msg: m })
+    const blocks: Array<{ kind: 'msg'; msg: Msg } | { kind: 'timeline'; items: Msg[] }> = []
+    let timeline: Msg[] = []
+    const flush = (): void => {
+      if (timeline.length) {
+        blocks.push({ kind: 'timeline', items: timeline })
+        timeline = []
       }
     }
+    for (const m of messages) {
+      if (m.role === 'user' || m.role === 'system') {
+        flush()
+        blocks.push({ kind: 'msg', msg: m })
+      } else {
+        timeline.push(m)
+      }
+    }
+    flush()
     return blocks
   }, [messages])
 
@@ -399,6 +404,9 @@ export function ChatWorkspace({
         input?: unknown
         output?: unknown
         error?: string
+        requestId?: string
+        question?: string
+        options?: string[]
       }
       if (ev.sessionId && ev.sessionId !== sessionId) return
       if (ev.type === 'result' && ev.content) {
@@ -411,6 +419,42 @@ export function ChatWorkspace({
             kind: 'result'
           }
         ])
+      } else if (ev.type === 'reasoning_delta' && ev.content) {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'reasoning' && last.streaming) {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, content: last.content + ev.content!, streaming: true }
+            ]
+          }
+          return [
+            ...prev,
+            {
+              role: 'reasoning',
+              content: ev.content!,
+              createdAt: new Date().toISOString(),
+              streaming: true,
+              reasoningStartedAt: Date.now()
+            }
+          ]
+        })
+      } else if (ev.type === 'reasoning_done') {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'reasoning') {
+            const started = last.reasoningStartedAt ?? Date.now()
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                streaming: false,
+                durationMs: Math.max(0, Date.now() - started)
+              }
+            ]
+          }
+          return prev
+        })
       } else if (ev.type === 'assistant_delta' && ev.content) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -505,6 +549,30 @@ export function ChatWorkspace({
               toolStatus: ev.error ? ('failed' as const) : ('done' as const)
             }
           ]
+        })
+      } else if (ev.type === 'ask_user' && ev.requestId) {
+        setMessages((prev) => {
+          const next = [...prev]
+          for (let i = next.length - 1; i >= 0; i--) {
+            const m = next[i]
+            if (m.role === 'tool' && m.toolName === 'ask_user' && m.toolStatus === 'running') {
+              const prevInput =
+                m.toolInput && typeof m.toolInput === 'object' && !Array.isArray(m.toolInput)
+                  ? (m.toolInput as Record<string, unknown>)
+                  : {}
+              next[i] = {
+                ...m,
+                toolInput: {
+                  ...prevInput,
+                  question: ev.question ?? prevInput.question,
+                  options: ev.options ?? prevInput.options,
+                  requestId: ev.requestId
+                }
+              }
+              return next
+            }
+          }
+          return prev
         })
       } else if (ev.type === 'tool') {
         setMessages((prev) => [
@@ -733,20 +801,23 @@ export function ChatWorkspace({
               ) : (
                 <>
                   {renderBlocks.map((block, bi) => {
-                    if (block.kind === 'tools') {
+                    if (block.kind === 'timeline') {
+                      const streaming = block.items.some((t) => t.streaming)
                       return (
-                        <div key={bi} className="tool-timeline">
-                          {block.items.map((t, i) => (
-                            <ToolCallCard
-                              key={t.toolId ?? i}
-                              toolName={t.toolName ?? 'tool'}
-                              input={t.toolInput}
-                              result={t.toolResult ?? t.content}
-                              error={t.toolError}
-                              status={t.toolStatus}
-                              isLast={i === block.items.length - 1}
-                            />
-                          ))}
+                        <div key={bi} className="msg msg-assistant">
+                          <div className="msg-head">
+                            <span className="msg-avatar" aria-hidden="true">
+                              s
+                            </span>
+                            <span className="msg-name">shy</span>
+                          </div>
+                          <AgentTimeline
+                            segments={messagesToSegments(block.items)}
+                            streaming={streaming}
+                          />
+                          {streaming ? (
+                            <span className="stream-cursor" aria-hidden="true" />
+                          ) : null}
                         </div>
                       )
                     }
@@ -757,26 +828,6 @@ export function ChatWorkspace({
                           <div className="msg-bubble">
                             <MarkdownBody content={m.content} />
                           </div>
-                        ) : null}
-                        {m.role === 'assistant' ? (
-                          <>
-                            <div className="msg-head">
-                              <span className="msg-avatar" aria-hidden="true">
-                                s
-                              </span>
-                              <span className="msg-name">shy</span>
-                              {m.kind === 'result' ? (
-                                <span className="chip chip-goal">完整结果</span>
-                              ) : null}
-                              {m.createdAt ? (
-                                <span className="msg-time">{timeAgo(m.createdAt)}</span>
-                              ) : null}
-                            </div>
-                            <ReActContent content={m.content} />
-                            {m.streaming ? (
-                              <span className="stream-cursor" aria-hidden="true" />
-                            ) : null}
-                          </>
                         ) : null}
                         {m.role === 'system' ? <div className="msg-pill">{m.content}</div> : null}
                       </div>

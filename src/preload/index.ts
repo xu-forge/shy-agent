@@ -109,6 +109,8 @@ const shy = {
     ipcRenderer.invoke(IPC.sessionTasksDelete, input),
   confirmTool: (requestId: string, approved: boolean): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.toolConfirm, requestId, approved),
+  askUserReply: (requestId: string, answer: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.askUserReply, requestId, answer),
   scheduleTasksList: (): Promise<ScheduleTasksListResult> =>
     ipcRenderer.invoke(IPC.scheduleTasksList),
   scheduleTasksGet: (id: string): Promise<ScheduleTask | null> =>

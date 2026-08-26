@@ -12,6 +12,7 @@ import { resolveAgentWorkspace } from '../projects/workspace'
 import { summarizeSessionTitle } from '../sessions/title'
 import type { AgentEvent, AgentMode, GoalChecklistItem, TaskSource } from '../../shared/ipc'
 import { runGoalDriver } from './goal-driver'
+import { waitAskUser } from '../ask-user'
 
 // AgentEvent 类型已迁移到 shared/ipc.ts（统一事件 schema + 流式扩展）
 export type { AgentEvent } from '../../shared/ipc'
@@ -189,6 +190,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
         }
       },
       confirmHighRisk: waitConfirm,
+      askUser: (question, options) => waitAskUser(question, options, sessionId),
       sessionId,
       workspaceDir: resolveAgentWorkspace(sessionId)
     }
@@ -221,6 +223,12 @@ export async function runAgent(args: RunArgs): Promise<void> {
       if (event.type === 'assistant_delta' && event.content) {
         emit({ type: 'assistant_delta', content: event.content })
       }
+      if (event.type === 'reasoning_delta' && event.content) {
+        emit({ type: 'reasoning_delta', content: event.content })
+      }
+      if (event.type === 'reasoning_done') {
+        emit({ type: 'reasoning_done' })
+      }
       if (event.type === 'assistant' && event.content) {
         emit({ type: 'assistant', content: event.content })
         appendMessage(sessionId, 'assistant', event.content)
@@ -230,6 +238,9 @@ export async function runAgent(args: RunArgs): Promise<void> {
       }
       if (event.type === 'tool_result' && event.id) {
         emit({ type: 'tool_result', id: event.id, output: event.output, error: event.error })
+      }
+      if (event.type === 'error' && event.message) {
+        emit({ type: 'error', message: event.message })
       }
       if (event.type === 'tool') {
         emit({ type: 'tool', name: event.name ?? 'tool', detail: event.detail })

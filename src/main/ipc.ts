@@ -10,9 +10,11 @@ import {
 import { getSettings, setSettings } from './settings/store'
 import { runAgent, cancelAgent, pauseAgent, resumeAgent } from './agent/service'
 import { createConfirmWaiter, registerConfirmIpc } from './confirm'
+import { registerAskUserIpc, rejectPendingAsks } from './ask-user'
 import { startScheduler } from './schedule/scheduler-loop'
 import { registerBuiltinTools } from './agent/tools/builtin'
 import { registerComputerTools } from './agent/tools/computer'
+import { registerEnrichmentTools } from './agent/tools/enrichment'
 import {
   deleteLongMemory,
   deleteSessionTask,
@@ -94,7 +96,9 @@ export function registerCoreIpc(): void {
   ensureSessionTables()
   registerBuiltinTools()
   registerComputerTools()
+  registerEnrichmentTools()
   registerConfirmIpc()
+  registerAskUserIpc()
   registerScheduleIpc()
 
   ipcMain.handle(IPC.ping, async () => 'pong' as const)
@@ -317,6 +321,7 @@ export function registerCoreIpc(): void {
 
   ipcMain.handle(IPC.agentCancel, async (_e, sessionId: string) => {
     cancelAgent(sessionId)
+    rejectPendingAsks(sessionId)
     return { ok: true }
   })
 

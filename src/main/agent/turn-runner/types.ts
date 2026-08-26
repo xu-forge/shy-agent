@@ -112,6 +112,8 @@ export type TurnStepEvent =
       ok: boolean
     }
   | { type: 'turn:delta'; turnId: string; content: string }
+  | { type: 'turn:reasoning_delta'; turnId: string; content: string }
+  | { type: 'turn:reasoning_done'; turnId: string }
   | { type: 'turn:tool_call'; turnId: string; id: string; name: string; input: unknown }
   | { type: 'turn:tool_result'; turnId: string; id: string; output?: unknown; error?: string }
   | { type: 'turn:usage'; turnId: string; promptTokens: number; completionTokens: number }

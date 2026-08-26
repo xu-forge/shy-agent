@@ -3,13 +3,29 @@ import { getReactGuide, REACT_GUIDE_BLOCK } from './react-prompt'
 
 describe('REACT_GUIDE_BLOCK', () => {
   it('含工具列表与必须调用规则', () => {
+    expect(REACT_GUIDE_BLOCK).toContain('web_search')
+    expect(REACT_GUIDE_BLOCK).toContain('web_fetch')
+    expect(REACT_GUIDE_BLOCK).toContain('show_widget')
+    expect(REACT_GUIDE_BLOCK).toContain('present_artifact')
     expect(REACT_GUIDE_BLOCK).toContain('browser_fetch')
     expect(REACT_GUIDE_BLOCK).toContain('shell_exec')
-    expect(REACT_GUIDE_BLOCK).toContain('必须调用')
+    expect(REACT_GUIDE_BLOCK).toContain('必须')
   })
 
-  it('含例外条款（simple Q&A 可直接回答）', () => {
-    expect(REACT_GUIDE_BLOCK).toMatch(/反模式|simple/i)
+  it('含事实门禁与 visualizer / present 规则', () => {
+    expect(REACT_GUIDE_BLOCK).toMatch(/事实类门禁/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/Visualizer/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/present_artifact/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/final_answer/)
+  })
+
+  it('含 ask_user 澄清规则', () => {
+    expect(REACT_GUIDE_BLOCK).toMatch(/ask_user/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/澄清/)
+  })
+
+  it('含反模式（禁止空述打算）', () => {
+    expect(REACT_GUIDE_BLOCK).toMatch(/我打算/)
   })
 })
 

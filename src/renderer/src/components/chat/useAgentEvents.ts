@@ -13,6 +13,8 @@ import { dispatchAgentEvent } from './dispatchAgentEvent'
 export type AgentEventHandlers = {
   onAssistant?: (content: string) => void
   onDelta?: (delta: string) => void
+  onReasoningDelta?: (delta: string) => void
+  onReasoningDone?: () => void
   onAssistantDone?: () => void
   onToolCall?: (name: string, detail?: unknown, input?: unknown) => void
   onStatus?: (message: string) => void

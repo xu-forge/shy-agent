@@ -25,6 +25,7 @@ import { invokeChatCompletion, type LLMMessage } from './llm-client'
 import { getEnabledSkillEntries } from '../skills/store'
 import { renderSkillCatalog } from '../skills/catalog'
 import { listLongMemory } from '../memory/db'
+import { waitAskUser } from '../ask-user'
 
 export const GOAL_PLAN_SYSTEM_PROMPT = `你是步骤规划器。根据用户目标只输出步骤 JSON：
 {"checklist":[{"id":"1","title":"...","done":false,"check":"可在本机运行的 shell 命令"}]}
@@ -599,6 +600,7 @@ async function defaultRunBurst(opts: {
       }
     },
     confirmHighRisk: waitConfirm,
+    askUser: (question, options) => waitAskUser(question, options, sessionId),
     sessionId,
     workspaceDir: resolveAgentWorkspace(sessionId)
   }
@@ -643,6 +645,12 @@ async function defaultRunBurst(opts: {
         pendingAssistantText += event.content
         emit({ type: 'assistant_delta', content: event.content })
       }
+      if (event.type === 'reasoning_delta' && event.content) {
+        emit({ type: 'reasoning_delta', content: event.content })
+      }
+      if (event.type === 'reasoning_done') {
+        emit({ type: 'reasoning_done' })
+      }
       if (event.type === 'tool_call' && event.id) {
         // 工具调用开始 = 上一段思考流已完整：落盘 + 停掉渲染层打字光标
         if (pendingAssistantText.trim()) {
@@ -654,6 +662,9 @@ async function defaultRunBurst(opts: {
       }
       if (event.type === 'tool_result' && event.id) {
         emit({ type: 'tool_result', id: event.id, output: event.output, error: event.error })
+      }
+      if (event.type === 'error' && event.message) {
+        emit({ type: 'error', message: event.message })
       }
       if (event.type === 'tool') {
         emit({ type: 'tool', name: event.name ?? 'tool', detail: event.detail })
