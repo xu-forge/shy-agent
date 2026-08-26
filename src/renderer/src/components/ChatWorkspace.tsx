@@ -12,18 +12,20 @@ import {
   chatStatusTone,
   isProjectPickerLocked,
   resolveBoundProjectId,
-  sameProjectSessions,
   shouldBindOnSend,
   shouldShowProjectPicker
 } from '../lib/projectBind'
+import type { CodeLayout } from '../lib/shellLayout'
 
 type Props = {
   notice?: string
   sessionId: string
   sessions?: SessionSummary[]
-  onSelectSession?: (sessionId: string) => void
   onSessionsChanged?: () => void
   onConversationState?: (has: boolean) => void
+  showCodeLayoutToggle?: boolean
+  codeLayout?: CodeLayout
+  onCodeLayoutChange?: (next: CodeLayout) => void
 }
 
 type Msg = {
@@ -76,9 +78,11 @@ export function ChatWorkspace({
   notice,
   sessionId,
   sessions = [],
-  onSelectSession,
   onSessionsChanged,
-  onConversationState
+  onConversationState,
+  showCodeLayoutToggle = false,
+  codeLayout = 'ide',
+  onCodeLayoutChange
 }: Props): React.JSX.Element {
   const [mode, setMode] = useState<ModeKey>('interactive')
   const [draft, setDraft] = useState('')
@@ -668,28 +672,26 @@ export function ChatWorkspace({
     runningText = status
   }
 
+  const sessionTitle =
+    sessions.find((s) => s.id === sessionId)?.title?.trim() || '未命名会话'
+
   return (
     <div className="main chat-column">
       <div className="topbar">
-        <div className="topbar-title">
-          {boundProjectId ? (
-            <select
-              className="session-switcher"
-              aria-label="同项目会话"
-              value={sessionId}
-              onChange={(e) => onSelectSession?.(e.target.value)}
-            >
-              {sameProjectSessions(sessions, boundProjectId).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title || '未命名会话'}
-                </option>
-              ))}
-            </select>
-          ) : (
-            '对话'
-          )}
+        <div className="topbar-title" title={sessionTitle}>
+          {sessionTitle}
         </div>
         <div className="top-actions">
+          {showCodeLayoutToggle ? (
+            <button
+              type="button"
+              className="layout-switch-btn"
+              title={codeLayout === 'ide' ? '切换为普通布局' : '切换为代码布局'}
+              onClick={() => onCodeLayoutChange?.(codeLayout === 'ide' ? 'chat' : 'ide')}
+            >
+              {codeLayout === 'ide' ? '普通布局' : '代码布局'}
+            </button>
+          ) : null}
           {runningCls ? (
             <div className={`status ${runningCls}`}>
               <span className="status-dot" aria-hidden="true" />

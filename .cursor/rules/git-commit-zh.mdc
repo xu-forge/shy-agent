@@ -1,0 +1,35 @@
+---
+description: 本仓库 Git 提交信息须使用简体中文
+alwaysApply: true
+---
+
+# Git 提交信息：使用中文
+
+本仓库（shy）的 commit message **默认使用简体中文**，与 OpenSpec  artifacts 语言一致。
+
+## 要求
+
+- **标题与正文均用中文**（类型前缀如 `feat`、`fix` 可保留英文）
+- 说明「为什么」而不只是罗列文件
+- 遵循现有风格：`feat(ui): …`、`fix: …`、`docs(openspec): …`
+
+## 示例
+
+```
+feat(ui): 代码模式支持右侧会话栏拖拽调宽
+
+默认 350px，范围 350–450px；修复侧栏收起时导航按钮不可点击。
+```
+
+```
+fix: 修复素材列表分页上限
+```
+
+## 避免
+
+```
+feat(ui): add resizable chat aside panel
+fix: cap materials list
+```
+
+仅在用户明确要求英文 commit 时例外。

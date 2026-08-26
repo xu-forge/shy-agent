@@ -6883,11 +6883,75 @@
 }
 
 .chat-aside {
-  width: 320px;
-  min-width: 280px;
+  position: relative;
   flex-shrink: 0;
-  border-left: 1px solid var(--border);
   background: var(--bg-panel);
+}
+
+/* 右侧会话栏外壳（代码/素材模式）：默认 350px，左缘拖拽，350–450px */
+.session-aside-shell {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.session-aside-shell .session-aside-panel {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+}
+
+.session-aside-panel > .main.chat-column {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.session-aside-panel .workspace,
+.session-aside-panel .workspace-inner,
+.session-aside-panel .thread,
+.session-aside-panel .composer-dock,
+.session-aside-panel .assistant-block,
+.session-aside-panel .md {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.session-aside-panel .md pre,
+.session-aside-panel .md table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.session-aside-panel .msg-bubble {
+  max-width: min(92%, 100%);
+}
+
+.session-aside-resizer,
+.chat-aside-resizer {
+  flex: 0 0 6px;
+  width: 6px;
+  align-self: stretch;
+  position: relative;
+  cursor: col-resize;
+  z-index: 40;
+  background: transparent;
+  touch-action: none;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.chat-aside-resizer:hover,
+.chat-aside-resizer:active {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .chat-hidden {
@@ -7283,4 +7347,149 @@
   max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
+}
+
+/* ══════════ 标题栏拖拽 / 代码布局切换 / 二级页主题 ══════════ */
+
+.app-shell > .sidebar {
+  z-index: 6;
+}
+
+.sidebar.sidebar-collapsed .sb-nav-toggle {
+  position: static;
+  left: auto;
+  top: auto;
+  width: 40px;
+  height: 40px;
+}
+
+.main-column.main-with-inset {
+  padding-top: 36px;
+}
+
+.main-column.main-with-inset::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  -webkit-app-region: drag;
+}
+
+.topbar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-switch-btn {
+  appearance: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.layout-switch-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.inspector-item-check {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.inspector-item-check:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.inspector-item.recent {
+  outline: 1px solid var(--accent-glow);
+}
+
+/* 技能 / 定时任务：内容区用略深的绿色 accent（侧栏导航保持原灰样式） */
+.skills-view,
+.calendar-view {
+  --accent: #16a34a;
+  --accent-strong: #15803d;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(22, 163, 74, 0.1);
+  --accent-hover: rgba(22, 163, 74, 0.14);
+}
+
+.skills-view .btn-primary,
+.calendar-view .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.skills-view .btn-primary:hover:not(:disabled),
+.calendar-view .btn-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+
+.skills-view .calendar-cell-today,
+.calendar-view .calendar-cell-today {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent) inset;
+}
+
+.skills-view .calendar-cell-today .calendar-cell-date,
+.calendar-view .calendar-cell-today .calendar-cell-date {
+  color: var(--accent-strong);
+}
+
+.skills-view .ui-switch.on,
+.calendar-view .ui-switch.on {
+  background: var(--accent);
+}
+
+.skills-view .skill-root-chip.root-project,
+.calendar-view .skill-root-chip.root-project {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent-strong);
+}
+
+/* 完全访问：主题绿（覆盖 zcode 橙色复刻） */
+.full-access {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: transparent;
+}
+
+.full-access:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+}
+
+.full-access.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.full-access.on:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--accent-contrast);
 }

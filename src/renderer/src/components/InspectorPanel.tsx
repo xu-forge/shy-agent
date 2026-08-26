@@ -1,11 +1,10 @@
 /**
- * InspectorPanel — 未绑定会话右侧面板。
- * 两个 tab：会话详情 / 浏览器。任务与 diff 已从 UI 移除。
+ * InspectorPanel — 会话右侧面板。
+ * 两个 tab：任务列表 / 产物列表。
  */
-import { useEffect, useState } from 'react'
-import type { SessionDetail, SessionFileRecord } from '../../../shared/ipc'
-import { BrowserPanel } from './chat/BrowserPanel'
-import { timeAgo } from '../lib/time'
+import { useCallback, useEffect, useState } from 'react'
+import type { SessionFileRecord, SessionTaskRecord } from '../../../shared/ipc'
+import { truncateEvidence } from './goalUi'
 import {
   INSPECTOR_TABS,
   artifactFiles,
@@ -17,21 +16,25 @@ type Props = {
   sessionId: string
 }
 
+type PanelTask = Pick<SessionTaskRecord, 'id' | 'title' | 'done' | 'evidence' | 'source'> & {
+  check?: string
+  checklistItem?: boolean
+}
+
 const POLL_INTERVAL_MS = 5_000
 const TAB_KEY = 'shy.inspectorTab'
 const OPEN_KEY = 'shy.inspectorOpen'
 
 const TAB_ICONS: Record<InspectorTab, React.JSX.Element> = {
-  details: (
+  tasks: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="5" y="4" width="14" height="16" rx="2" />
-      <path d="M8 9h8M8 13h6" />
+      <path d="M9 6h11M9 12h11M9 18h7" />
+      <path d="M5 6h.01M5 12h.01M5 18h.01" />
     </svg>
   ),
-  browser: (
+  artifacts: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3.5 9h17M3.5 15h17M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+      <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
     </svg>
   )
 }
@@ -45,28 +48,46 @@ function readPanelOpen(): boolean {
 }
 
 export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
-  const [detail, setDetail] = useState<SessionDetail | null>(null)
+  const [tasks, setTasks] = useState<PanelTask[]>([])
   const [files, setFiles] = useState<SessionFileRecord[]>([])
-  const [model, setModel] = useState('')
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<InspectorTab>(readTab)
   const [panelOpen, setPanelOpen] = useState<boolean>(readPanelOpen)
+  const [recentTask, setRecentTask] = useState<string | null>(null)
+
+  const fetchTasks = useCallback(async (): Promise<PanelTask[]> => {
+    if (!sessionId) return []
+    const [records, detail] = await Promise.all([
+      window.shy.listSessionTasks(sessionId),
+      window.shy.getSession(sessionId)
+    ])
+    const checklistIds = new Set(detail?.checklist.map((item) => item.id) ?? [])
+    const checklist: PanelTask[] =
+      detail?.checklist.map((item) => ({
+        id: item.id,
+        title: item.title,
+        done: item.done,
+        evidence: item.evidence,
+        check: item.check,
+        source: 'goal',
+        checklistItem: true
+      })) ?? []
+    return [...checklist, ...records.filter((record) => !checklistIds.has(record.id))]
+  }, [sessionId])
+
+  const fetchFiles = useCallback(async (): Promise<SessionFileRecord[]> => {
+    if (!sessionId) return []
+    return window.shy.listSessionFiles(sessionId)
+  }, [sessionId])
 
   useEffect(() => {
     let alive = true
     const load = async (): Promise<void> => {
       try {
-        const [session, fileList, settings] = await Promise.all([
-          sessionId ? window.shy.getSession(sessionId).catch(() => null) : Promise.resolve(null),
-          sessionId
-            ? window.shy.listSessionFiles(sessionId).catch(() => [] as SessionFileRecord[])
-            : Promise.resolve([] as SessionFileRecord[]),
-          window.shy.getSettings().catch(() => null)
-        ])
+        const [nextTasks, nextFiles] = await Promise.all([fetchTasks(), fetchFiles()])
         if (!alive) return
-        setDetail(session)
-        setFiles(fileList)
-        if (settings?.model) setModel(settings.model)
+        setTasks(nextTasks)
+        setFiles(nextFiles)
         setLoading(false)
       } catch {
         if (alive) setLoading(false)
@@ -78,7 +99,32 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
       alive = false
       clearInterval(timer)
     }
-  }, [sessionId])
+  }, [fetchTasks, fetchFiles])
+
+  useEffect(() => {
+    return window.shy.onEvent((payload) => {
+      const ev = payload as { type?: string; sessionId?: string; id?: string }
+      if (ev.sessionId !== sessionId) return
+      if (ev.type === 'task' || ev.type === 'goal') {
+        void fetchTasks().then(setTasks)
+        if (ev.id) {
+          setRecentTask(ev.id)
+          setTimeout(() => setRecentTask((cur) => (cur === ev.id ? null : cur)), 1500)
+        }
+      }
+      void fetchFiles().then(setFiles)
+    })
+  }, [sessionId, fetchTasks, fetchFiles])
+
+  const toggleTask = async (task: PanelTask): Promise<void> => {
+    if (task.checklistItem) return
+    await window.shy.updateSessionTask({
+      sessionId,
+      id: task.id,
+      done: !task.done
+    })
+    void fetchTasks().then(setTasks)
+  }
 
   const setOpenPersisted = (next: boolean): void => {
     setPanelOpen(next)
@@ -130,6 +176,12 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
           >
             {TAB_ICONS[t.key]}
             <span>{t.label}</span>
+            {t.key === 'tasks' && tasks.length > 0 ? (
+              <span className="inspector-count">{tasks.length}</span>
+            ) : null}
+            {t.key === 'artifacts' && artifacts.length > 0 ? (
+              <span className="inspector-count">{artifacts.length}</span>
+            ) : null}
           </button>
         ))}
         <button
@@ -145,62 +197,81 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
         </button>
       </div>
 
-      {tab === 'browser' ? (
-        <div className="inspector-browser">
-          <BrowserPanel embedded />
-        </div>
-      ) : (
-        <div className="inspector-body">
-          {loading ? <div className="inspector-empty">加载中…</div> : null}
-          {!loading ? (
-            <div className="inspector-details">
-              <dl className="inspector-meta">
-                <div>
-                  <dt>标题</dt>
-                  <dd>{detail?.title || '未命名会话'}</dd>
-                </div>
-                <div>
-                  <dt>创建时间</dt>
-                  <dd>{detail?.createdAt ? timeAgo(detail.createdAt) : '—'}</dd>
-                </div>
-                <div>
-                  <dt>模型</dt>
-                  <dd>{model || '—'}</dd>
-                </div>
-                <div>
-                  <dt>消息数</dt>
-                  <dd>{detail?.messages.length ?? 0}</dd>
-                </div>
-              </dl>
-              <section className="inspector-artifacts">
-                <h3>产物</h3>
-                {artifacts.length === 0 ? (
-                  <div className="inspector-empty">
-                    <div className="inspector-empty-title">暂无产物</div>
-                    <div className="inspector-empty-hint">Agent 写入的文件会出现在这里</div>
-                  </div>
-                ) : (
-                  <ul className="env-file-list">
-                    {artifacts.map((f) => (
-                      <li key={`${f.id}-${f.path}`}>
-                        <button
-                          type="button"
-                          className="env-file"
-                          title="在访达中显示"
-                          onClick={() => void window.shy.revealSessionFile(sessionId, f.path)}
-                        >
-                          <span className="file-op">写</span>
-                          <span className="file-path">{f.path}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+      <div className="inspector-body">
+        {loading ? <div className="inspector-empty">加载中…</div> : null}
+        {!loading && tab === 'tasks' ? (
+          tasks.length === 0 ? (
+            <div className="inspector-empty">
+              <div className="inspector-empty-title">暂无任务</div>
+              <div className="inspector-empty-hint">目标模式或 Agent 动态任务会出现在这里</div>
             </div>
-          ) : null}
-        </div>
-      )}
+          ) : (
+            <ul className="inspector-list">
+              {tasks.map((t) => (
+                <li
+                  key={t.id}
+                  className={`inspector-item task-${t.source}${t.done ? ' done' : ''}${recentTask === t.id ? ' recent' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="inspector-item-check"
+                    aria-pressed={t.done}
+                    aria-label={
+                      t.checklistItem
+                        ? '由验收命令自动更新'
+                        : t.done
+                          ? '标记为未完成'
+                          : '标记为完成'
+                    }
+                    disabled={t.checklistItem}
+                    onClick={() => void toggleTask(t)}
+                  >
+                    {t.done ? '✓' : ''}
+                  </button>
+                  <div className="inspector-item-body">
+                    <div className="inspector-item-title">
+                      {t.title}
+                      <span className="inspector-item-source" data-source={t.source}>
+                        {t.source === 'goal' ? '步骤' : 'Agent'}
+                      </span>
+                    </div>
+                    {t.check ? (
+                      <p className="inspector-item-evidence">验收：{t.check}</p>
+                    ) : null}
+                    {!t.done && t.evidence ? (
+                      <p className="inspector-item-evidence">{truncateEvidence(t.evidence)}</p>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
+        {!loading && tab === 'artifacts' ? (
+          artifacts.length === 0 ? (
+            <div className="inspector-empty">
+              <div className="inspector-empty-title">暂无产物</div>
+              <div className="inspector-empty-hint">Agent 写入的文件会出现在这里</div>
+            </div>
+          ) : (
+            <ul className="env-file-list">
+              {artifacts.map((f) => (
+                <li key={`${f.id}-${f.path}`}>
+                  <button
+                    type="button"
+                    className="env-file"
+                    title="在访达中显示"
+                    onClick={() => void window.shy.revealSessionFile(sessionId, f.path)}
+                  >
+                    <span className="file-op">写</span>
+                    <span className="file-path">{f.path}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
+      </div>
     </aside>
   )
 }

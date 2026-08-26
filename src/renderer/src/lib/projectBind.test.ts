@@ -15,19 +15,19 @@ import {
 } from './projectBind'
 
 describe('INSPECTOR_TABS', () => {
-  it('仅含会话详情与浏览器', () => {
-    expect(INSPECTOR_TABS.map((t) => t.key)).toEqual(['details', 'browser'])
-    expect(INSPECTOR_TABS.map((t) => t.label)).toEqual(['会话详情', '浏览器'])
+  it('仅含任务与产物', () => {
+    expect(INSPECTOR_TABS.map((t) => t.key)).toEqual(['tasks', 'artifacts'])
+    expect(INSPECTOR_TABS.map((t) => t.label)).toEqual(['任务', '产物'])
   })
 })
 
 describe('normalizeInspectorTab', () => {
-  it('browser 保留，其余（含旧 tasks/diffs）落到 details', () => {
-    expect(normalizeInspectorTab('browser')).toBe('browser')
-    expect(normalizeInspectorTab('details')).toBe('details')
-    expect(normalizeInspectorTab('tasks')).toBe('details')
-    expect(normalizeInspectorTab('diffs')).toBe('details')
-    expect(normalizeInspectorTab(null)).toBe('details')
+  it('artifacts 保留，其余（含旧 details/browser）落到 tasks', () => {
+    expect(normalizeInspectorTab('artifacts')).toBe('artifacts')
+    expect(normalizeInspectorTab('tasks')).toBe('tasks')
+    expect(normalizeInspectorTab('details')).toBe('tasks')
+    expect(normalizeInspectorTab('browser')).toBe('tasks')
+    expect(normalizeInspectorTab(null)).toBe('tasks')
   })
 })
 

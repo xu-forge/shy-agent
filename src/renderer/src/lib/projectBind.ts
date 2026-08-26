@@ -1,10 +1,10 @@
 import type { SessionFileRecord, SessionSummary } from '../../../shared/ipc'
 
-export type InspectorTab = 'details' | 'browser'
+export type InspectorTab = 'tasks' | 'artifacts'
 
 export const INSPECTOR_TABS: ReadonlyArray<{ key: InspectorTab; label: string }> = [
-  { key: 'details', label: '会话详情' },
-  { key: 'browser', label: '浏览器' }
+  { key: 'tasks', label: '任务' },
+  { key: 'artifacts', label: '产物' }
 ]
 
 export const BIND_ERROR_LABEL: Record<'already_bound' | 'has_messages' | 'not_found', string> = {
@@ -14,7 +14,7 @@ export const BIND_ERROR_LABEL: Record<'already_bound' | 'has_messages' | 'not_fo
 }
 
 export function normalizeInspectorTab(raw: string | null): InspectorTab {
-  return raw === 'browser' ? 'browser' : 'details'
+  return raw === 'artifacts' ? 'artifacts' : 'tasks'
 }
 
 export function isProjectPickerLocked(opts: {

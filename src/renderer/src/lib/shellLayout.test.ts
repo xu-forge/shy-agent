@@ -6,7 +6,10 @@ import {
   groupSessionsByProject,
   groupStorageKey,
   parseCollapsedGroups,
+  parseChatAsideWidth,
+  parseCodeLayout,
   parseNavExpanded,
+  clampChatAsideWidth,
   resolveChatHostClass,
   resolveShellLayout,
   resolveWorkspaceKind,
@@ -114,6 +117,30 @@ describe('parseNavExpanded', () => {
   })
 })
 
+describe('parseCodeLayout', () => {
+  it('缺省 IDE，仅 chat 为普通布局', () => {
+    expect(parseCodeLayout(null)).toBe('ide')
+    expect(parseCodeLayout('ide')).toBe('ide')
+    expect(parseCodeLayout('chat')).toBe('chat')
+  })
+})
+
+describe('clampChatAsideWidth', () => {
+  it('默认 350，最小 350，最大 450', () => {
+    expect(clampChatAsideWidth(NaN)).toBe(350)
+    expect(clampChatAsideWidth(300)).toBe(350)
+    expect(clampChatAsideWidth(420)).toBe(420)
+    expect(clampChatAsideWidth(500)).toBe(450)
+  })
+})
+
+describe('parseChatAsideWidth', () => {
+  it('无效或缺失时用默认 350', () => {
+    expect(parseChatAsideWidth(null)).toBe(350)
+    expect(parseChatAsideWidth('abc')).toBe(350)
+  })
+})
+
 describe('group collapse', () => {
   it('未选择项目用稳定 key', () => {
     expect(groupStorageKey(null)).toBe(UNSELECTED_GROUP_KEY)
@@ -173,6 +200,29 @@ describe('resolveShellLayout', () => {
     })
   })
 
+  it('代码项目切普通布局：中间会话 + Inspector（空会话也显示面板）', () => {
+    expect(
+      resolveShellLayout({
+        nav: 'projects',
+        workspaceKind: 'code',
+        hasConversation: true,
+        codeLayout: 'chat'
+      })
+    ).toEqual({
+      main: 'chat',
+      showInspector: true,
+      showChatAside: false
+    })
+    expect(
+      resolveShellLayout({
+        nav: 'projects',
+        workspaceKind: 'code',
+        hasConversation: false,
+        codeLayout: 'chat'
+      }).showInspector
+    ).toBe(true)
+  })
+
   it('素材项目：素材主区 + 右侧对话，无 Inspector', () => {
     expect(
       resolveShellLayout({
@@ -214,6 +264,10 @@ describe('resolveChatHostClass', () => {
     expect(resolveChatHostClass('projects', 'unbound')).toBe('chat-main')
     expect(resolveChatHostClass('projects', 'code')).toBe('chat-aside')
     expect(resolveChatHostClass('projects', 'material')).toBe('chat-aside')
+  })
+
+  it('代码项目普通布局用 chat-main', () => {
+    expect(resolveChatHostClass('projects', 'code', 'chat')).toBe('chat-main')
   })
 
   it('技能/日历隐藏宿主但不卸载（chat-hidden）', () => {

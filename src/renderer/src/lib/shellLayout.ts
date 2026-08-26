@@ -8,7 +8,15 @@ export type WorkspaceKind = 'unbound' | 'code' | 'material'
 
 export type ChatHostClass = 'chat-main' | 'chat-aside' | 'chat-hidden'
 
+/** 代码项目：IDE（文件树 | 编辑器 | 右侧会话）或普通（中间会话 | 右侧详情）。 */
+export type CodeLayout = 'ide' | 'chat'
+
 export const NAV_EXPANDED_KEY = 'shy.nav-expanded'
+export const CODE_LAYOUT_KEY = 'shy.codeLayout'
+export const CHAT_ASIDE_WIDTH_KEY = 'shy.chatAsideWidth'
+export const CHAT_ASIDE_MIN_WIDTH = 350
+export const CHAT_ASIDE_MAX_WIDTH = 450
+export const CHAT_ASIDE_DEFAULT_WIDTH = 350
 export const NAV_GROUP_COLLAPSED_KEY = 'shy.nav-group-collapsed'
 export const UNSELECTED_GROUP_KEY = 'unselected'
 
@@ -27,6 +35,29 @@ export type ShellLayout = {
 /** 缺省展开；仅显式 `'0'` / `'false'` 视为收起。 */
 export function parseNavExpanded(raw: string | null): boolean {
   return raw !== '0' && raw !== 'false'
+}
+
+/** 缺省 IDE；仅显式 `'chat'` 视为普通会话布局。 */
+export function parseCodeLayout(raw: string | null): CodeLayout {
+  return raw === 'chat' ? 'chat' : 'ide'
+}
+
+export function chatAsideMaxWidth(): number {
+  return CHAT_ASIDE_MAX_WIDTH
+}
+
+export function clampChatAsideWidth(
+  w: number,
+  max: number = CHAT_ASIDE_MAX_WIDTH
+): number {
+  if (!Number.isFinite(w)) return Math.min(CHAT_ASIDE_DEFAULT_WIDTH, max)
+  const effectiveMin = Math.min(CHAT_ASIDE_MIN_WIDTH, max)
+  return Math.min(max, Math.max(effectiveMin, Math.round(w)))
+}
+
+export function parseChatAsideWidth(raw: string | null): number {
+  const saved = Number(raw)
+  return clampChatAsideWidth(saved > 0 ? saved : CHAT_ASIDE_DEFAULT_WIDTH)
 }
 
 export function groupStorageKey(id: string | null): string {
@@ -82,6 +113,7 @@ export function resolveShellLayout(opts: {
   nav: NavKey
   workspaceKind: WorkspaceKind
   hasConversation: boolean
+  codeLayout?: CodeLayout
 }): ShellLayout {
   if (opts.nav === 'skills' || opts.nav === 'calendar') {
     return {
@@ -92,6 +124,13 @@ export function resolveShellLayout(opts: {
   }
 
   if (opts.workspaceKind === 'code') {
+    if (opts.codeLayout === 'chat') {
+      return {
+        main: 'chat',
+        showInspector: true,
+        showChatAside: false
+      }
+    }
     return {
       main: 'code',
       showInspector: false,
@@ -115,8 +154,13 @@ export function resolveShellLayout(opts: {
 }
 
 /** 同一 DOM 宿主只换 class，避免 unbound ↔ code/material 卸载 ChatWorkspace。 */
-export function resolveChatHostClass(nav: NavKey, workspaceKind: WorkspaceKind): ChatHostClass {
+export function resolveChatHostClass(
+  nav: NavKey,
+  workspaceKind: WorkspaceKind,
+  codeLayout: CodeLayout = 'ide'
+): ChatHostClass {
   if (nav !== 'projects') return 'chat-hidden'
   if (workspaceKind === 'unbound') return 'chat-main'
+  if (workspaceKind === 'code' && codeLayout === 'chat') return 'chat-main'
   return 'chat-aside'
 }

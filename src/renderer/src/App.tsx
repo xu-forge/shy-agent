@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Project, ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
 import { Sidebar } from './components/Sidebar'
-import { Header } from './components/Header'
 import { ChatWorkspace } from './components/ChatWorkspace'
+import { ChatWorkspaceHost } from './components/ChatWorkspaceHost'
 import { SkillsView } from './components/SkillsView'
 import { CalendarView } from './components/CalendarView'
 import { InspectorPanel } from './components/InspectorPanel'
@@ -14,12 +14,15 @@ import { CodeWorkspace } from './components/code/CodeWorkspace'
 import { MaterialLibrary } from './components/material/MaterialLibrary'
 import { applyTheme, readTheme, writeTheme, type Theme } from './lib/theme'
 import {
+  CODE_LAYOUT_KEY,
   NAV_EXPANDED_KEY,
   groupSessionsByProject,
+  parseCodeLayout,
   parseNavExpanded,
   resolveChatHostClass,
   resolveShellLayout,
   resolveWorkspaceKind,
+  type CodeLayout,
   type NavKey
 } from './lib/shellLayout'
 import { projectDeleteConfirmDetail } from './lib/projectBind'
@@ -30,12 +33,6 @@ import './styles/ui.css'
 type ConfirmState = { action: string; detail: string; requestId: string } | null
 
 const NAV_KEY = 'shy.nav'
-
-const NAV_TITLES: Record<NavKey, string> = {
-  projects: '项目',
-  skills: '技能管理',
-  calendar: '定时任务'
-}
 
 function readNav(): NavKey {
   try {
@@ -54,6 +51,14 @@ function readNavExpanded(): boolean {
   }
 }
 
+function readCodeLayout(): CodeLayout {
+  try {
+    return parseCodeLayout(localStorage.getItem(CODE_LAYOUT_KEY))
+  } catch {
+    return 'ide'
+  }
+}
+
 function App(): React.JSX.Element {
   const [nav, setNav] = useState<NavKey>(readNav)
   const [theme, setTheme] = useState<Theme>(readTheme)
@@ -66,6 +71,7 @@ function App(): React.JSX.Element {
   const [projects, setProjects] = useState<Project[]>([])
   const [sessionId, setSessionId] = useState('')
   const [navExpanded, setNavExpanded] = useState(readNavExpanded)
+  const [codeLayout, setCodeLayout] = useState<CodeLayout>(readCodeLayout)
   const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -93,6 +99,14 @@ function App(): React.JSX.Element {
       /* ignore */
     }
   }, [navExpanded])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CODE_LAYOUT_KEY, codeLayout)
+    } catch {
+      /* ignore */
+    }
+  }, [codeLayout])
 
   const refreshProjects = useCallback(async () => {
     const list = await window.shy.listProjects()
@@ -186,7 +200,8 @@ function App(): React.JSX.Element {
   const layout = resolveShellLayout({
     nav,
     workspaceKind,
-    hasConversation: chatHasConversation
+    hasConversation: chatHasConversation,
+    codeLayout
   })
   const groups = useMemo(
     () => groupSessionsByProject(sessions, projects),
@@ -257,8 +272,9 @@ function App(): React.JSX.Element {
           setSettingsOpen(true)
         }}
       />
-      <div className={`main-column${layout.main === 'chat' ? ' main-collapsed' : ''}`}>
-        {nav !== 'projects' ? <Header title={NAV_TITLES[nav]} /> : null}
+      <div
+        className={`main-column${layout.main === 'chat' ? ' main-collapsed' : ''}${nav !== 'projects' ? ' main-with-inset' : ''}`}
+      >
         {layout.main === 'code' && boundProject && sessionId ? (
           <CodeWorkspace
             projectId={boundProject.id}
@@ -267,7 +283,9 @@ function App(): React.JSX.Element {
             theme={theme}
           />
         ) : null}
-        {layout.main === 'code' && !boundProject ? <PlaceholderView title="代码工作区" /> : null}
+        {layout.main === 'code' && !boundProject ? (
+          <PlaceholderView title="代码工作区" />
+        ) : null}
         {layout.main === 'material' && boundProject ? (
           <MaterialLibrary projectId={boundProject.id} sessionId={sessionId} />
         ) : null}
@@ -278,19 +296,21 @@ function App(): React.JSX.Element {
         {layout.main === 'calendar' ? <CalendarView /> : null}
       </div>
       {sessionId ? (
-        <div key="chat-workspace-host" className={resolveChatHostClass(nav, workspaceKind)}>
+        <ChatWorkspaceHost
+          key="chat-workspace-host"
+          hostClass={resolveChatHostClass(nav, workspaceKind, codeLayout)}
+        >
           <ChatWorkspace
             notice={notice}
             sessionId={sessionId}
             sessions={sessions}
-            onSelectSession={(id) => {
-              const s = sessions.find((x) => x.id === id)
-              if (s) onSelectSession(s)
-            }}
             onSessionsChanged={() => void refreshSessions()}
             onConversationState={setChatHasConversation}
+            showCodeLayoutToggle={nav === 'projects' && workspaceKind === 'code'}
+            codeLayout={codeLayout}
+            onCodeLayoutChange={setCodeLayout}
           />
-        </div>
+        </ChatWorkspaceHost>
       ) : null}
       {layout.showInspector && sessionId ? <InspectorPanel sessionId={sessionId} /> : null}
       <SettingsDialog

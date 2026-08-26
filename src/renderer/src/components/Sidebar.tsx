@@ -175,31 +175,31 @@ export function Sidebar({
   if (!expanded) {
     return (
       <aside className="sidebar sidebar-collapsed" aria-label="主导航">
-        {navToggle}
         <div className="icon-rail-top">
-            {SUB_NAV.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`icon-rail-btn${active === item.key ? ' active' : ''}`}
-                aria-label={item.label}
-                aria-current={active === item.key ? 'page' : undefined}
-                title={item.label}
-                onClick={() => onChange(item.key)}
-              >
-                {item.icon}
-              </button>
-            ))}
+          {navToggle}
+          {SUB_NAV.map((item) => (
             <button
+              key={item.key}
               type="button"
-              className="icon-rail-btn"
-              aria-label="新建任务"
-              title="新建任务"
-              onClick={onNewSession}
+              className={`icon-rail-btn${active === item.key ? ' active' : ''}`}
+              aria-label={item.label}
+              aria-current={active === item.key ? 'page' : undefined}
+              title={item.label}
+              onClick={() => onChange(item.key)}
             >
-              {PLUS_ICON}
+              {item.icon}
             </button>
-          </div>
+          ))}
+          <button
+            type="button"
+            className="icon-rail-btn"
+            aria-label="新建任务"
+            title="新建任务"
+            onClick={onNewSession}
+          >
+            {PLUS_ICON}
+          </button>
+        </div>
         <div className="icon-rail-bottom">
           <span
             className={`icon-rail-status${ipcOk === null ? '' : ipcOk ? ' ok' : ' err'}`}
