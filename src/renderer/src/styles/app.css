@@ -6479,6 +6479,58 @@
 }
 .settings-save-path { font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); }
 
+.mcp-settings .mcp-empty {
+  padding: 14px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.mcp-settings .mcp-empty code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.mcp-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 12px 6px;
+  margin-bottom: 12px;
+  background: var(--bg-soft);
+}
+.mcp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.mcp-id { flex: 1; min-width: 140px; }
+.mcp-status {
+  font-size: 11.5px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-secondary);
+}
+.mcp-status-ok { color: #2f6f4e; background: color-mix(in srgb, #2f6f4e 12%, var(--bg)); }
+.mcp-status-err { color: #a33; background: color-mix(in srgb, #a33 12%, var(--bg)); }
+.mcp-status-disabled { color: var(--text-muted); }
+.mcp-remove { margin-left: auto; }
+.mcp-env { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.mcp-env-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mcp-textarea { min-height: 72px; height: auto; padding: 8px 10px; resize: vertical; font-family: var(--font-mono); font-size: 12px; }
+.settings-section .field-top { align-items: start; }
+.settings-section .field-top .field-label { padding-top: 8px; }
+.mcp-save-actions { display: flex; align-items: center; gap: 12px; }
+.toast-error { background: color-mix(in srgb, #a33 16%, var(--bg-panel)); }
+
 /* seg 控件：墨色激活 */
 .seg { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
 .seg-btn { border: none; background: transparent; padding: 5px 12px; font-size: 12.5px; color: var(--text-secondary); }

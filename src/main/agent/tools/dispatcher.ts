@@ -7,7 +7,7 @@
  *
  * 事件沿用 turn-runner 的 turn:tool_call / turn:tool_result，graph.ts → 前端的事件链路不变。
  */
-import type { z } from 'zod'
+import { z } from 'zod'
 import type { ChatCompletionTool } from 'openai/resources/index'
 import { zodShapeToJsonSchema } from '../llm-client'
 
@@ -18,6 +18,8 @@ export type ShyTool<T = any> = {
   description: string
   /** zod schema，用于参数校验 + 转 OpenAI tool format */
   schema: z.ZodType<T>
+  /** 若提供，优先作为 OpenAI function.parameters（MCP JSON Schema） */
+  jsonSchema?: Record<string, unknown>
   /** 执行函数，按 zod 推断的参数类型取值 */
   run: (args: T) => Promise<string>
 }
@@ -54,15 +56,21 @@ export function schemaToJson(schema: z.ZodType<unknown>): Record<string, unknown
 }
 
 /**
- * LLM 常把 number 参数写成字符串（"5"）。只对 zod 判定为 number 的路径做强制转换，
- * 避免把本该是 string 的纯数字路径（如 "1"）误转成 number。
+ * LLM 常把 number 写成 "5"、把 array 写成 JSON 字符串或 {item:[...]}。
+ * 按 zod 报错路径做有限次强制转换，避免 MiniMax 一类模型反复 schema 失败。
  */
 export function parseToolArgs(schema: z.ZodType<unknown>, obj: Record<string, unknown>): unknown {
-  const first = schema.safeParse(obj)
-  if (first.success) return first.data
-  const { next, changed } = coerceNumberStrings(obj, first.error.issues)
-  if (!changed) throw first.error
-  return schema.parse(next)
+  let current: Record<string, unknown> = obj
+  let lastError: z.ZodError | undefined
+  for (let i = 0; i < 4; i++) {
+    const parsed = schema.safeParse(current)
+    if (parsed.success) return parsed.data
+    lastError = parsed.error
+    const { next, changed } = coerceLlmArgs(current, parsed.error.issues)
+    if (!changed) break
+    current = next
+  }
+  throw lastError ?? new Error('tool args invalid')
 }
 
 function getAt(obj: unknown, path: readonly PropertyKey[]): unknown {
@@ -86,7 +94,31 @@ function setAt(obj: unknown, path: readonly PropertyKey[], value: unknown): void
   }
 }
 
-function coerceNumberStrings(
+function tryParseJson(raw: string): unknown {
+  const trimmed = raw.trim()
+  if (!trimmed) return undefined
+  const start = trimmed[0]
+  if (start !== '{' && start !== '[') return undefined
+  try {
+    return JSON.parse(trimmed) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+/** MiniMax 等会把数组编成 { item: T | T[] } / { items: T[] } */
+export function unwrapItemWrapper(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const rec = raw as Record<string, unknown>
+  if ('item' in rec) {
+    const item = rec.item
+    return Array.isArray(item) ? item : item === undefined ? [] : [item]
+  }
+  if ('items' in rec && Array.isArray(rec.items)) return rec.items
+  return raw
+}
+
+function coerceLlmArgs(
   obj: Record<string, unknown>,
   issues: z.ZodIssue[]
 ): { next: Record<string, unknown>; changed: boolean } {
@@ -95,18 +127,65 @@ function coerceNumberStrings(
   for (const issue of issues) {
     if (issue.code !== 'invalid_type') continue
     const expected = (issue as { expected?: unknown }).expected
-    if (expected !== 'number' || issue.path.length === 0) continue
+    if (issue.path.length === 0) continue
     const raw = getAt(next, issue.path)
-    if (typeof raw !== 'string') continue
-    const trimmed = raw.trim()
-    if (!trimmed) continue
-    const n = Number(trimmed)
-    if (!Number.isFinite(n)) continue
-    setAt(next, issue.path, n)
-    changed = true
+
+    if (expected === 'number' && typeof raw === 'string') {
+      const n = Number(raw.trim())
+      if (!Number.isFinite(n)) continue
+      setAt(next, issue.path, n)
+      changed = true
+      continue
+    }
+
+    if (expected === 'array') {
+      if (typeof raw === 'string') {
+        const parsed = tryParseJson(raw)
+        const unwrapped = unwrapItemWrapper(parsed ?? raw)
+        if (Array.isArray(unwrapped)) {
+          setAt(next, issue.path, unwrapped)
+          changed = true
+        } else if (raw.trim()) {
+          setAt(next, issue.path, [raw])
+          changed = true
+        }
+      } else if (raw && typeof raw === 'object') {
+        const unwrapped = unwrapItemWrapper(raw)
+        if (Array.isArray(unwrapped)) {
+          setAt(next, issue.path, unwrapped)
+          changed = true
+        }
+      }
+      continue
+    }
+
+    if (expected === 'object' && typeof raw === 'string') {
+      const parsed = tryParseJson(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        setAt(next, issue.path, parsed)
+        changed = true
+      }
+    }
   }
   return { next, changed }
 }
+
+function htmlWritePaths(toolName: string, result: string): string[] {
+  if (toolName !== 'fs_write') return []
+  try {
+    const parsed = JSON.parse(result) as { ok?: boolean; path?: unknown }
+    if (!parsed?.ok || typeof parsed.path !== 'string') return []
+    return /\.html?$/i.test(parsed.path) ? [parsed.path] : []
+  } catch {
+    return []
+  }
+}
+
+export type ToolDispatchEmit = (
+  e:
+    | { type: 'turn:tool_result'; turnId: string; id: string; output?: unknown; error?: string }
+    | { type: 'turn:tool_call'; turnId: string; id: string; name: string; input: unknown }
+) => void
 
 /** ShyTool[] → OpenAI function tool 格式（给非流式/流式 chat 用） */
 export function toOpenAITools(tools: ShyTool[]): ChatCompletionTool[] {
@@ -115,29 +194,27 @@ export function toOpenAITools(tools: ShyTool[]): ChatCompletionTool[] {
     function: {
       name: t.name,
       description: t.description ?? '',
-      parameters: schemaToJson(t.schema)
+      parameters: t.jsonSchema ?? schemaToJson(t.schema)
     }
   }))
 }
 
 /**
  * 执行一批 tool call：校验参数 → 执行 → 产出 tool 消息 + emit turn:tool_result。
- * turn:tool_call 由 turn-runner 的 handleToolCalls 提前 emit，这里只发结果。
+ * 写完 html 会自动 present 到 UI，但不写入 LLM history（否则 tool id 对不上，API 400）。
  */
 export async function runToolCalls(
   tools: ShyTool[],
   toolCalls: ToolCall[],
   turnId: string,
-  emit: (e: {
-    type: 'turn:tool_result'
-    turnId: string
-    id: string
-    output?: unknown
-    error?: string
-  }) => void
+  emit: ToolDispatchEmit
 ): Promise<ToolDispatchResult> {
   const byName = new Map(tools.map((t) => [t.name, t]))
   const out: ToolDispatchResult = []
+  let askUserRan = false
+  const presentedHtml = new Set<string>()
+  let wroteHtml: string[] = []
+
   for (const tc of toolCalls) {
     const tool = byName.get(tc.name)
     if (!tool) {
@@ -146,17 +223,56 @@ export async function runToolCalls(
       out.push({ role: 'tool', tool_call_id: tc.id, content: msg })
       continue
     }
+    if (tc.name === 'ask_user' && askUserRan) {
+      const skipped = JSON.stringify({
+        ok: false,
+        skipped: true,
+        error: '本轮已有 ask_user，请根据用户回答再提问，不要并行多个'
+      })
+      emit({ type: 'turn:tool_result', turnId, id: tc.id, output: skipped })
+      out.push({ role: 'tool', tool_call_id: tc.id, content: skipped })
+      continue
+    }
     try {
       const obj = JSON.parse(tc.args) as Record<string, unknown>
       const parsed = parseToolArgs(tool.schema, obj) as Record<string, unknown>
       const result = await tool.run(parsed)
       emit({ type: 'turn:tool_result', turnId, id: tc.id, output: result })
       out.push({ role: 'tool', tool_call_id: tc.id, content: result })
+      if (tc.name === 'ask_user') askUserRan = true
+      if (tc.name === 'present_artifact') {
+        try {
+          const p = JSON.parse(result) as { paths?: unknown }
+          if (Array.isArray(p.paths)) {
+            for (const path of p.paths) if (typeof path === 'string') presentedHtml.add(path)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      wroteHtml = [...wroteHtml, ...htmlWritePaths(tc.name, result)]
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       emit({ type: 'turn:tool_result', turnId, id: tc.id, error: msg })
       out.push({ role: 'tool', tool_call_id: tc.id, content: `Error: ${msg}` })
     }
   }
+
+  const present = byName.get('present_artifact')
+  const pendingHtml = wroteHtml.filter((p) => !presentedHtml.has(p))
+  if (present && pendingHtml.length > 0) {
+    const id = `auto_present_${turnId}`
+    const input = { paths: pendingHtml }
+    emit({ type: 'turn:tool_call', turnId, id, name: 'present_artifact', input })
+    try {
+      const parsed = parseToolArgs(present.schema, input) as Record<string, unknown>
+      const result = await present.run(parsed)
+      emit({ type: 'turn:tool_result', turnId, id, output: result })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      emit({ type: 'turn:tool_result', turnId, id, error: msg })
+    }
+  }
+
   return out
 }

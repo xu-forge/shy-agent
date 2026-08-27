@@ -1,5 +1,7 @@
 import type { ShyTool } from './dispatcher'
 import { z } from 'zod'
+import { getMcpManager } from '../../mcp/manager'
+import { mcpToolsToShy } from '../../mcp/to-shy-tool'
 
 export type ToolContext = {
   emit: (event: string, payload: unknown) => void
@@ -25,7 +27,18 @@ export function registeredToolNames(): string[] {
 }
 
 export function buildTools(ctx: ToolContext): ShyTool[] {
-  return [...factories.values()].map((f) => f(ctx))
+  const local = [...factories.values()].map((f) => f(ctx))
+  try {
+    const mgr = getMcpManager()
+    const mcp = mcpToolsToShy(
+      mgr.listExposedTools(local.map((t) => t.name)),
+      (name, args) => mgr.callTool(name, args),
+      ctx
+    )
+    return [...local, ...mcp]
+  } catch {
+    return local
+  }
 }
 
 registerTool('runtime_ping', (ctx) => ({

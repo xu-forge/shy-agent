@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { schemaToJson, toOpenAITools, runToolCalls, type ShyTool } from './dispatcher'
+import { schemaToJson, toOpenAITools, runToolCalls, parseToolArgs, type ShyTool } from './dispatcher'
 
 const pingTool: ShyTool<{ note?: string; count?: number }> = {
   name: 'ping',
@@ -154,5 +154,104 @@ describe('runToolCalls', () => {
       String(2 + 3),
       JSON.stringify({ ok: true, note: '', count: 0 })
     ])
+  })
+
+  it('array 参数写成 JSON 字符串时强制转换', async () => {
+    const present: ShyTool<{ paths?: string[] }> = {
+      name: 'present_artifact',
+      description: '呈现',
+      schema: z.object({ paths: z.array(z.string()).optional() }),
+      run: async ({ paths }) => JSON.stringify({ paths: paths ?? [] })
+    }
+    const emit = vi.fn()
+    const out = await runToolCalls(
+      [present],
+      [{ id: 'p1', name: 'present_artifact', args: JSON.stringify({ paths: '["a.html"]' }) }],
+      'turn_p',
+      emit
+    )
+    expect(JSON.parse(out[0].content)).toEqual({ paths: ['a.html'] })
+  })
+
+  it('单字符串 paths 包成数组', async () => {
+    const present: ShyTool<{ paths?: string[] }> = {
+      name: 'present_artifact',
+      description: '呈现',
+      schema: z.object({ paths: z.array(z.string()).optional() }),
+      run: async ({ paths }) => JSON.stringify({ paths: paths ?? [] })
+    }
+    const emit = vi.fn()
+    const out = await runToolCalls(
+      [present],
+      [{ id: 'p2', name: 'present_artifact', args: '{"paths":"攻略.html"}' }],
+      'turn_p2',
+      emit
+    )
+    expect(JSON.parse(out[0].content)).toEqual({ paths: ['攻略.html'] })
+  })
+
+  it('{item:[...]} 解成数组（ask_user options）', () => {
+    const schema = z.object({
+      options: z.array(z.union([z.string(), z.object({ label: z.string() })])).optional()
+    })
+    const parsed = parseToolArgs(schema, {
+      options: { item: [{ label: '经典打卡' }, { label: '美食' }] }
+    }) as { options: Array<{ label: string }> }
+    expect(parsed.options.map((o) => o.label)).toEqual(['经典打卡', '美食'])
+  })
+
+  it('同轮第二个 ask_user 跳过', async () => {
+    const ask: ShyTool<{ question: string }> = {
+      name: 'ask_user',
+      description: '问',
+      schema: z.object({ question: z.string() }),
+      run: async ({ question }) => JSON.stringify({ ok: true, question })
+    }
+    const emit = vi.fn()
+    const out = await runToolCalls(
+      [ask],
+      [
+        { id: 'a1', name: 'ask_user', args: '{"question":"风格？"}' },
+        { id: 'a2', name: 'ask_user', args: '{"question":"预算？"}' }
+      ],
+      'turn_ask',
+      emit
+    )
+    expect(JSON.parse(out[0].content).ok).toBe(true)
+    expect(JSON.parse(out[1].content).skipped).toBe(true)
+  })
+
+  it('fs_write html 后自动 present_artifact', async () => {
+    const write: ShyTool<{ path: string; content: string }> = {
+      name: 'fs_write',
+      description: '写',
+      schema: z.object({ path: z.string(), content: z.string() }),
+      run: async ({ path }) => JSON.stringify({ ok: true, path })
+    }
+    const present: ShyTool<{ paths?: string[] }> = {
+      name: 'present_artifact',
+      description: '呈现',
+      schema: z.object({ paths: z.array(z.string()).optional() }),
+      run: async ({ paths }) => JSON.stringify({ paths: paths ?? [], auto: true })
+    }
+    const emit = vi.fn()
+    const out = await runToolCalls(
+      [write, present],
+      [{ id: 'w1', name: 'fs_write', args: '{"path":"/tmp/a.html","content":"<p>x</p>"}' }],
+      'turn_html',
+      emit
+    )
+    expect(out).toHaveLength(1)
+    expect(JSON.parse(out[0].content)).toEqual({ ok: true, path: '/tmp/a.html' })
+    const calls = emit.mock.calls.map(
+      (c) => c[0] as { type: string; name?: string; output?: unknown }
+    )
+    expect(calls.some((e) => e.type === 'turn:tool_call' && e.name === 'present_artifact')).toBe(
+      true
+    )
+    const presentResult = calls.find(
+      (e) => e.type === 'turn:tool_result' && String(e.output ?? '').includes('auto')
+    )
+    expect(presentResult).toBeTruthy()
   })
 })

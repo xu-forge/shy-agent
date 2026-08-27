@@ -9,7 +9,6 @@ import { resolveWorkspacePath } from './builtin'
 import { captureWriteDiff } from '../../diff/capture'
 import { recordFileOp } from '../../memory/db'
 import { getShyPaths } from '../../paths'
-import { runWebSearch } from './web-search'
 import { httpGet } from '../../net/http-get'
 
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist', 'out', 'coverage', '.shy'])
@@ -65,19 +64,6 @@ const READ_ME_GUIDES: Record<string, string> = {
 }
 
 export function registerEnrichmentTools(): void {
-  registerTool('web_search', (ctx) => ({
-    name: 'web_search',
-    description:
-      '检索网页（时效/事实/地点/价格）。返回 query + results[{title,url,snippet}]。\n' +
-      '何时用：新闻、推荐、需核验的事实。何时不用：纯概念定义。',
-    schema: z.object({ query: z.string(), maxResults: z.number().optional() }),
-    run: async ({ query, maxResults }) => {
-      ctx.emit('tool', { name: 'web_search', query })
-      const limit = Math.min(maxResults ?? 8, 12)
-      return JSON.stringify(await runWebSearch(query, limit))
-    }
-  }))
-
   registerTool('web_fetch', (ctx) => ({
     name: 'web_fetch',
     description:
@@ -252,14 +238,23 @@ export function registerEnrichmentTools(): void {
     run: async ({ widgetType, data, html }) => {
       ctx.emit('tool', { name: 'show_widget', widgetType })
       if (!widgetType) return JSON.stringify({ error: '非法 spec：缺少 widgetType' })
-      return JSON.stringify({ widgetType, data: data ?? null, html: html ?? '' })
+      let parsedData: unknown = data ?? null
+      if (typeof parsedData === 'string') {
+        try {
+          parsedData = JSON.parse(parsedData) as unknown
+        } catch {
+          /* 保留原字符串 */
+        }
+      }
+      return JSON.stringify({ widgetType, data: parsedData, html: html ?? '' })
     }
   }))
 
   registerTool('present_artifact', (ctx) => ({
     name: 'present_artifact',
     description:
-      '呈现可查看产物（文件或 http(s)/localhost URL）。有 HTML/报告等 deliverable 时 turn 末必须调用。',
+      '呈现可查看产物（文件或 http(s)/localhost URL）。有 HTML/报告等 deliverable 时调用。\n' +
+      'paths 必须是 JSON 数组，如 ["攻略.html"]，不要传字符串。写入 .html 后系统会自动呈现，一般不必再调。',
     schema: z.object({
       paths: z.array(z.string()).optional(),
       url: z.string().optional()
@@ -285,7 +280,8 @@ export function registerEnrichmentTools(): void {
   registerTool('ask_user', (ctx) => ({
     name: 'ask_user',
     description:
-      '向用户澄清或给选项。需要偏好、预算、二选一或无法从上下文确定时调用，不要猜测。options 为 2–4 个字符串；也可 {label, description}。',
+      '向用户澄清或给选项。需要偏好、预算、二选一或无法从上下文确定时调用，不要猜测。\n' +
+      '同一轮只问一个问题。options 必须是 JSON 数组（2–4 项字符串，或 {label, description}），禁止传字符串或 {item: [...]}。',
     schema: z.object({
       question: z.string(),
       options: z

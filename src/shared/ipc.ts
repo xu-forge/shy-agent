@@ -15,6 +15,9 @@ export const IPC = {
   skillsSetEnabled: 'shy:skills-set-enabled',
   settingsGet: 'shy:settings-get',
   settingsSet: 'shy:settings-set',
+  mcpGet: 'shy:mcp-get',
+  mcpSet: 'shy:mcp-set',
+  mcpStatus: 'shy:mcp-status',
   toolConfirm: 'shy:tool-confirm',
   askUserReply: 'shy:ask-user-reply',
   sessionsList: 'shy:sessions-list',
@@ -146,6 +149,31 @@ export type ModelSettings = {
   enableGoalCompleteReport?: boolean
   /** 始终授权：开启后工具确认不再逐条弹窗，直接放行（默认 false） */
   autoApproveTools?: boolean
+}
+
+export type McpServerEntry = {
+  command: string
+  args: string[]
+  env: Record<string, string>
+  enabled: boolean
+}
+
+export type McpConfigFile = {
+  mcpServers: Record<string, McpServerEntry>
+}
+
+export type McpServerState = 'connected' | 'disabled' | 'error' | 'connecting' | 'invalid'
+
+export type McpServerStatus = {
+  id: string
+  state: McpServerState
+  error?: string
+  tools: string[]
+}
+
+export type McpSetResult = {
+  config: McpConfigFile
+  status: McpServerStatus[]
 }
 
 export type ChatMessage = {

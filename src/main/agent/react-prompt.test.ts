@@ -4,6 +4,7 @@ import { getReactGuide, REACT_GUIDE_BLOCK } from './react-prompt'
 describe('REACT_GUIDE_BLOCK', () => {
   it('含工具列表与必须调用规则', () => {
     expect(REACT_GUIDE_BLOCK).toContain('web_search')
+    expect(REACT_GUIDE_BLOCK).toMatch(/若当前工具表含 web_search/)
     expect(REACT_GUIDE_BLOCK).toContain('web_fetch')
     expect(REACT_GUIDE_BLOCK).toContain('show_widget')
     expect(REACT_GUIDE_BLOCK).toContain('present_artifact')
@@ -24,8 +25,11 @@ describe('REACT_GUIDE_BLOCK', () => {
     expect(REACT_GUIDE_BLOCK).toMatch(/澄清/)
   })
 
-  it('含反模式（禁止空述打算）', () => {
-    expect(REACT_GUIDE_BLOCK).toMatch(/我打算/)
+  it('含改已有文件与参数形状规则', () => {
+    expect(REACT_GUIDE_BLOCK).toMatch(/改已有文件/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/fs_write/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/同一轮只调用一次 ask_user/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/自动 present/)
   })
 })
 

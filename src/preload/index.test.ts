@@ -54,6 +54,28 @@ describe('schedule task preload API', () => {
   })
 })
 
+describe('mcp preload API', () => {
+  beforeEach(async () => {
+    vi.resetModules()
+    invoke.mockReset()
+    on.mockReset()
+    removeListener.mockReset()
+    await import('./index')
+  })
+
+  it('暴露 get/set/status', () => {
+    const cfg = { mcpServers: { MiniMax: { command: 'uvx', args: ['-y'], env: {}, enabled: true } } }
+    exposed.getMcpConfig()
+    exposed.setMcpConfig(cfg as never)
+    exposed.getMcpStatus()
+    expect(invoke.mock.calls).toEqual([
+      [IPC.mcpGet],
+      [IPC.mcpSet, cfg],
+      [IPC.mcpStatus]
+    ])
+  })
+})
+
 describe('project preload API', () => {
   beforeEach(async () => {
     vi.resetModules()

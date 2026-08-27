@@ -24,6 +24,7 @@ describe('paths', () => {
     const paths = ensureShyHomeDirs(home)
     expect(paths.dbPath).toBe(join(home, 'db', 'shy.sqlite'))
     expect(paths.configSettings).toBe(join(home, 'config', 'settings.json'))
+    expect(paths.configMcp).toBe(join(home, 'config', 'mcp.json'))
     expect(existsSync(paths.skillsDir)).toBe(true)
     expect(existsSync(paths.logsAgentDir)).toBe(true)
     expect(existsSync(paths.reportsDir)).toBe(true)

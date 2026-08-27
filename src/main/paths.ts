@@ -6,6 +6,7 @@ export type ShyPaths = {
   shyHome: string
   configDir: string
   configSettings: string
+  configMcp: string
   dbDir: string
   dbPath: string
   skillsDir: string
@@ -45,6 +46,7 @@ export function getShyPaths(home = resolveShyHome()): ShyPaths {
     shyHome: home,
     configDir,
     configSettings: join(configDir, 'settings.json'),
+    configMcp: join(configDir, 'mcp.json'),
     dbDir,
     dbPath: join(dbDir, 'shy.sqlite'),
     skillsDir: join(home, 'skills'),

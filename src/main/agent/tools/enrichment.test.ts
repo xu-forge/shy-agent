@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, afterEach, vi } from 'vitest'
 import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -6,6 +6,7 @@ import { registerBuiltinTools } from './builtin'
 import { registerEnrichmentTools } from './enrichment'
 import { buildTools, registeredToolNames } from './registry'
 import { SUBAGENT_TOOL_ALLOWLIST } from '../subagent/types'
+import { McpManager, setMcpManagerForTests } from '../../mcp/manager'
 
 vi.mock('../../memory/db', () => ({
   recordFileOp: () => undefined,
@@ -104,14 +105,50 @@ describe('ask_user', () => {
 })
 
 describe('subagent allowlist 无 ghost 工具', () => {
-  it('allowlist 中每个名字都已 registerTool', () => {
+  it('allowlist 中每个名字都已 registerTool（web_search 可由 MCP 动态提供）', () => {
     const names = new Set(registeredToolNames())
+    const optionalDynamic = new Set(['web_search'])
     const missing: string[] = []
     for (const set of Object.values(SUBAGENT_TOOL_ALLOWLIST)) {
       for (const n of set) {
-        if (!names.has(n)) missing.push(n)
+        if (!names.has(n) && !optionalDynamic.has(n)) missing.push(n)
       }
     }
     expect(missing).toEqual([])
+  })
+})
+
+describe('web_search / web_fetch', () => {
+  afterEach(() => {
+    setMcpManagerForTests(null)
+  })
+
+  it('无 MCP 时无内置 web_search，仍有 web_fetch', () => {
+    const names = tools().map((t) => t.name)
+    expect(names).not.toContain('web_search')
+    expect(names).toContain('web_fetch')
+  })
+
+  it('mock MCP 导出 web_search 时 buildTools 含该名且走 callTool', async () => {
+    const mgr = new McpManager({
+      connector: async () => ({
+        listTools: async () => [{ name: 'web_search', description: 'search' }],
+        callTool: async () => JSON.stringify({ results: [{ title: 'hit', url: 'https://x.test' }] }),
+        close: async () => undefined
+      })
+    })
+    setMcpManagerForTests(mgr)
+    await mgr.connectAll({
+      mcpServers: {
+        MiniMax: { command: 'uvx', args: ['-y'], env: {}, enabled: true }
+      }
+    })
+    const search = tools().find((t) => t.name === 'web_search')
+    expect(search).toBeTruthy()
+    const out = JSON.parse(await search!.run({ query: '广州周末' })) as {
+      results: Array<{ title: string }>
+    }
+    expect(out.results[0]?.title).toBe('hit')
+    await mgr.shutdown()
   })
 })

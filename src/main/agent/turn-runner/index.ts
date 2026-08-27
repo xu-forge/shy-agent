@@ -282,7 +282,6 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
   }
 
   let loopGuard = 0
-  const maxLoops = 8 // 单 turn 最多 8 个 tool call 循环
 
   // ── hooks: beforeToolCall / afterToolCall（包装工具执行） ──
   const hooks = deps.hooks ?? {}
@@ -316,17 +315,7 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
         stepDurations
       }
     }
-    if (++loopGuard > maxLoops) {
-      return {
-        status: 'errored',
-        turnId,
-        finalContent,
-        stepsExecuted,
-        tokenUsed,
-        stepDurations,
-        error: `单 turn 超过 ${maxLoops} 个 tool call 循环`
-      }
-    }
+    loopGuard += 1
 
     // ── hooks: beforeLlmCall（决策：continue / skip / replaceMessages / abort） ──
     if (hooks.beforeLlmCall?.length) {

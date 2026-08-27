@@ -21,4 +21,14 @@ describe('normalizeAskOptions', () => {
   it('非数组返回空', () => {
     expect(normalizeAskOptions(null)).toEqual([])
   })
+
+  it('JSON 字符串数组可解析', () => {
+    expect(normalizeAskOptions('["A","B"]').map((o) => o.label)).toEqual(['A', 'B'])
+  })
+
+  it('{item:[...]} 解开', () => {
+    expect(
+      normalizeAskOptions({ item: [{ label: '经典打卡' }, { label: '美食' }] }).map((o) => o.label)
+    ).toEqual(['经典打卡', '美食'])
+  })
 })

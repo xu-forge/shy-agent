@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import type { Theme } from '../lib/theme'
 import { MemoryView } from './MemoryView'
 import { SettingsPanel } from './SettingsPanel'
+import { McpSettingsPanel } from './McpSettingsPanel'
 import { LogsView } from './LogsView'
 
-export type SettingsTab = 'memory' | 'general' | 'logs'
+export type SettingsTab = 'memory' | 'general' | 'mcp' | 'logs'
 
 const TABS: { key: SettingsTab; label: string; hint: string; icon: React.JSX.Element }[] = [
   {
@@ -27,6 +28,17 @@ const TABS: { key: SettingsTab; label: string; hint: string; icon: React.JSX.Ele
         <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
         <circle cx="15" cy="7" r="2" />
         <circle cx="9" cy="17" r="2" />
+      </svg>
+    )
+  },
+  {
+    key: 'mcp',
+    label: 'MCP',
+    hint: 'stdio 服务器、连接状态与 env',
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M8 8h3v8H8zM13 8h3v8h-3z" />
+        <path d="M4 12h4M16 12h4" />
       </svg>
     )
   },
@@ -102,6 +114,7 @@ export function SettingsDialog({
           </div>
           {tab === 'memory' ? <MemoryView /> : null}
           {tab === 'general' ? <SettingsPanel theme={theme} onToggleTheme={onToggleTheme} /> : null}
+          {tab === 'mcp' ? <McpSettingsPanel /> : null}
           {tab === 'logs' ? <LogsView /> : null}
         </div>
         <button type="button" className="settings-close" aria-label="关闭" onClick={onClose}>

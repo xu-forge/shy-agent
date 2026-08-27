@@ -5,9 +5,12 @@ import {
   type AgentMode,
   type ChatRequest,
   type ModelSettings,
+  type McpConfigFile,
   type ProjectType
 } from '../shared/ipc'
 import { getSettings, setSettings } from './settings/store'
+import { parseMcpConfig, readMcpConfig, writeMcpConfig } from './mcp/config'
+import { getMcpManager } from './mcp/manager'
 import { runAgent, cancelAgent, pauseAgent, resumeAgent } from './agent/service'
 import { createConfirmWaiter, registerConfirmIpc } from './confirm'
 import { registerAskUserIpc, rejectPendingAsks } from './ask-user'
@@ -15,6 +18,7 @@ import { startScheduler } from './schedule/scheduler-loop'
 import { registerBuiltinTools } from './agent/tools/builtin'
 import { registerComputerTools } from './agent/tools/computer'
 import { registerEnrichmentTools } from './agent/tools/enrichment'
+import { registeredToolNames } from './agent/tools/registry'
 import {
   deleteLongMemory,
   deleteSessionTask,
@@ -35,7 +39,7 @@ import {
   listSessions,
   updateSessionRuntime
 } from './sessions/store'
-import { getShyPaths } from './paths'
+import { getShyPaths, resolveShyHome } from './paths'
 import { listAgentLogFiles, readAgentLogFile, revealAgentLogsDir } from './logs/agent-logs'
 import { registerScheduleIpc } from './schedule/ipc'
 import { resumeInterruptedGoals } from './agent/boot-resume'
@@ -97,6 +101,7 @@ export function registerCoreIpc(): void {
   registerBuiltinTools()
   registerComputerTools()
   registerEnrichmentTools()
+  getMcpManager().setOccupiedNames(() => registeredToolNames())
   registerConfirmIpc()
   registerAskUserIpc()
   registerScheduleIpc()
@@ -121,6 +126,15 @@ export function registerCoreIpc(): void {
 
   ipcMain.handle(IPC.settingsGet, async () => getSettings())
   ipcMain.handle(IPC.settingsSet, async (_e, next: ModelSettings) => setSettings(next))
+
+  ipcMain.handle(IPC.mcpGet, async () => readMcpConfig(resolveShyHome()))
+  ipcMain.handle(IPC.mcpSet, async (_e, next: McpConfigFile) => {
+    const cfg = parseMcpConfig(next)
+    await writeMcpConfig(cfg, resolveShyHome())
+    await getMcpManager().applyConfig(cfg)
+    return { config: cfg, status: getMcpManager().getStatus() }
+  })
+  ipcMain.handle(IPC.mcpStatus, async () => getMcpManager().getStatus())
 
   ipcMain.handle(IPC.memoryList, async () => listLongMemory())
   ipcMain.handle(IPC.memoryUpsert, async (_e, input) =>

@@ -16,6 +16,8 @@ protocol.registerSchemesAsPrivileged([
 import { ensureShyHomeDirs, resolveShyHome } from './paths'
 import { dropLegacyWorkflowTables, migrateLegacyUserData } from './migration'
 import { bridgeEventBusToIpc, getDefaultBus } from './event-bridge'
+import { readMcpConfig } from './mcp/config'
+import { getMcpManager } from './mcp/manager'
 
 let bootResumeAttempted = false
 
@@ -102,6 +104,10 @@ app.whenReady().then(() => {
   setBrowserWindowProvider(() => BrowserWindow.getAllWindows()[0] ?? null)
   setBrowserManagerGetter(() => getEmbeddedBrowserManager())
 
+  void readMcpConfig(shyHome)
+    .then((cfg) => getMcpManager().connectAll(cfg))
+    .catch((err) => console.error('[shy] mcp connectAll', err))
+
   // shy-asset://<相对路径> → ~/.shy/<相对路径>（仅限 shyHome 内，防穿越）
   protocol.handle('shy-asset', (request) => {
     try {
@@ -132,4 +138,17 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+let mcpQuitting = false
+app.on('before-quit', (event) => {
+  if (mcpQuitting) return
+  event.preventDefault()
+  mcpQuitting = true
+  const cap = new Promise<void>((resolve) => {
+    setTimeout(resolve, 3000)
+  })
+  void Promise.race([getMcpManager().shutdown(), cap])
+    .catch((err) => console.error('[shy] mcp shutdown', err))
+    .finally(() => app.quit())
 })

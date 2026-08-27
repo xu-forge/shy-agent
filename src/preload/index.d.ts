@@ -6,6 +6,9 @@ import type {
   ChatRequest,
   CreateScheduleTaskInput,
   LongMemoryEntry,
+  McpConfigFile,
+  McpServerStatus,
+  McpSetResult,
   ModelSettings,
   Project,
   ProjectCreateResult,
@@ -39,6 +42,9 @@ export interface ShyApi {
   getPaths: () => Promise<AppPaths>
   getSettings: () => Promise<ModelSettings>
   setSettings: (next: ModelSettings) => Promise<ModelSettings>
+  getMcpConfig: () => Promise<McpConfigFile>
+  setMcpConfig: (next: McpConfigFile) => Promise<McpSetResult>
+  getMcpStatus: () => Promise<McpServerStatus[]>
   chat: (req: ChatRequest) => Promise<{ ok: boolean; started: boolean }>
   cancel: (sessionId: string) => Promise<{ ok: boolean }>
   pause: (sessionId: string) => Promise<{ ok: boolean }>

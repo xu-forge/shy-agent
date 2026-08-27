@@ -55,6 +55,7 @@ const SUB_NAV: { key: NavKey; label: string; icon: React.JSX.Element }[] = [
 const SETTINGS_OPTS: { tab: SettingsTab; label: string }[] = [
   { tab: 'memory', label: '记忆' },
   { tab: 'general', label: '常规设置' },
+  { tab: 'mcp', label: 'MCP' },
   { tab: 'logs', label: '运行日志' }
 ]
 

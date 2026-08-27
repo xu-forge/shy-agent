@@ -6,6 +6,9 @@ import {
   type ChatRequest,
   type LongMemoryEntry,
   type ModelSettings,
+  type McpConfigFile,
+  type McpServerStatus,
+  type McpSetResult,
   type SessionDetail,
   type SessionFileRecord,
   type SessionDiffRecord,
@@ -42,6 +45,10 @@ const shy = {
   getSettings: (): Promise<ModelSettings> => ipcRenderer.invoke(IPC.settingsGet),
   setSettings: (next: ModelSettings): Promise<ModelSettings> =>
     ipcRenderer.invoke(IPC.settingsSet, next),
+  getMcpConfig: (): Promise<McpConfigFile> => ipcRenderer.invoke(IPC.mcpGet),
+  setMcpConfig: (next: McpConfigFile): Promise<McpSetResult> =>
+    ipcRenderer.invoke(IPC.mcpSet, next),
+  getMcpStatus: (): Promise<McpServerStatus[]> => ipcRenderer.invoke(IPC.mcpStatus),
   chat: (req: ChatRequest): Promise<{ ok: boolean; started: boolean }> =>
     ipcRenderer.invoke(IPC.agentChat, req),
   cancel: (sessionId: string): Promise<{ ok: boolean }> =>
