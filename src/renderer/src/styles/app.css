@@ -817,7 +817,6 @@
   min-height: 0;
   overflow: auto;
   padding: 8px 6px 20px;
-  scroll-behavior: smooth;
 }
 
 /* 空状态：大标题 + 居中输入 */
@@ -4696,8 +4695,8 @@
   font-size: 12px;
   line-height: 1.6;
   color: var(--text-secondary);
-  white-space: pre;
-  word-break: break-all;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .logs-empty {
   padding: 24px 16px;

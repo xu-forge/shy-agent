@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatAgentLogView } from '../../../shared/agent-log-view'
 import type { AgentLogFileSummary } from '../../../shared/ipc'
 
 function fmtSize(bytes: number): string {
@@ -49,10 +50,10 @@ export function LogsView(): React.JSX.Element {
     let alive = true
     setContent('加载中…')
     window.shy
-      .readAgentLog({ name: selected, limit: 2000 })
+      .readAgentLog({ name: selected })
       .then((r) => {
         if (!alive) return
-        setContent(r.content)
+        setContent(formatAgentLogView(r.content))
         setTruncated(r.truncated)
       })
       .catch((e) => {
@@ -90,7 +91,7 @@ export function LogsView(): React.JSX.Element {
         {selected ? (
           <pre className="logs-pre">
             {content}
-            {truncated ? '\n…（内容已截断，仅显示前 2000 行）' : ''}
+            {truncated ? '\n…（文件较大，仅显示前 256 KB；可在 Finder 中打开完整 jsonl）' : ''}
           </pre>
         ) : (
           <div className="logs-empty">选择一个日志文件查看</div>

@@ -15,6 +15,7 @@ import {
   shouldShowProjectPicker
 } from '../lib/projectBind'
 import type { CodeLayout } from '../lib/shellLayout'
+import { isNearBottom } from '../lib/scrollStick'
 
 type Props = {
   notice?: string
@@ -103,6 +104,7 @@ export function ChatWorkspace({
   } | null>(null)
 
   const threadRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const currentSessionIdRef = useRef(sessionId)
   useEffect(() => {
@@ -381,10 +383,20 @@ export function ChatWorkspace({
     }
   }, [sessionId])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true
+  }, [sessionId])
+
+  useLayoutEffect(() => {
     const el = threadRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight
   }, [messages, busy])
+
+  const onThreadScroll = (): void => {
+    const el = threadRef.current
+    if (!el) return
+    stickToBottomRef.current = isNearBottom(el)
+  }
 
   useEffect(() => {
     return window.shy.onEvent((payload) => {
@@ -695,6 +707,7 @@ export function ChatWorkspace({
       onSessionsChanged?.()
     }
     setDraft('')
+    stickToBottomRef.current = true
     setBusy(true)
     setPaused(false)
     setStatus(mode === 'goal' ? '目标推进中' : '思考中')
@@ -774,7 +787,7 @@ export function ChatWorkspace({
           <div className="workspace-inner">
             {notice ? <div className="banner">{notice}</div> : null}
 
-            <div className="thread" ref={threadRef}>
+            <div className="thread" ref={threadRef} onScroll={onThreadScroll}>
               {!hasConversation ? (
                 <div className="empty-state">
                   <h1 className="empty-title">{greetingForHour(new Date().getHours())}</h1>
