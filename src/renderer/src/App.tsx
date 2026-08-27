@@ -5,7 +5,7 @@ import { ChatWorkspace } from './components/ChatWorkspace'
 import { ChatWorkspaceHost } from './components/ChatWorkspaceHost'
 import { SkillsView } from './components/SkillsView'
 import { CalendarView } from './components/CalendarView'
-import { InspectorPanel } from './components/InspectorPanel'
+import { SessionDock } from './components/SessionDock'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
@@ -25,6 +25,13 @@ import {
   type CodeLayout,
   type NavKey
 } from './lib/shellLayout'
+import {
+  DOCK_MODE_KEY,
+  LEGACY_INSPECTOR_OPEN_KEY,
+  parseDockMode,
+  serializeDockMode,
+  type DockMode
+} from './lib/dockMode'
 import { projectDeleteConfirmDetail } from './lib/projectBind'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -59,6 +66,17 @@ function readCodeLayout(): CodeLayout {
   }
 }
 
+function readDockMode(): DockMode {
+  try {
+    return parseDockMode(
+      localStorage.getItem(DOCK_MODE_KEY),
+      localStorage.getItem(LEGACY_INSPECTOR_OPEN_KEY)
+    )
+  } catch {
+    return null
+  }
+}
+
 function App(): React.JSX.Element {
   const [nav, setNav] = useState<NavKey>(readNav)
   const [theme, setTheme] = useState<Theme>(readTheme)
@@ -72,6 +90,7 @@ function App(): React.JSX.Element {
   const [sessionId, setSessionId] = useState('')
   const [navExpanded, setNavExpanded] = useState(readNavExpanded)
   const [codeLayout, setCodeLayout] = useState<CodeLayout>(readCodeLayout)
+  const [dockMode, setDockMode] = useState<DockMode>(readDockMode)
   const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -107,6 +126,14 @@ function App(): React.JSX.Element {
       /* ignore */
     }
   }, [codeLayout])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DOCK_MODE_KEY, serializeDockMode(dockMode))
+    } catch {
+      /* ignore */
+    }
+  }, [dockMode])
 
   const refreshProjects = useCallback(async () => {
     const list = await window.shy.listProjects()
@@ -309,10 +336,15 @@ function App(): React.JSX.Element {
             showCodeLayoutToggle={nav === 'projects' && workspaceKind === 'code'}
             codeLayout={codeLayout}
             onCodeLayoutChange={setCodeLayout}
+            showDockToggle={Boolean(layout.showInspector && sessionId)}
+            dockMode={dockMode}
+            onDockModeChange={setDockMode}
           />
         </ChatWorkspaceHost>
       ) : null}
-      {layout.showInspector && sessionId ? <InspectorPanel sessionId={sessionId} /> : null}
+      {layout.showInspector && sessionId ? (
+        <SessionDock sessionId={sessionId} mode={dockMode} onClose={() => setDockMode(null)} />
+      ) : null}
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}

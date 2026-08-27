@@ -18,6 +18,7 @@ export const CHAT_ASIDE_MIN_WIDTH = 350
 export const CHAT_ASIDE_MAX_WIDTH = 450
 export const CHAT_ASIDE_DEFAULT_WIDTH = 350
 export const NAV_GROUP_COLLAPSED_KEY = 'shy.nav-group-collapsed'
+export const INSPECTOR_OPEN_KEY = 'shy.inspectorOpen'
 export const UNSELECTED_GROUP_KEY = 'unselected'
 
 export type SessionGroup = {
@@ -28,6 +29,7 @@ export type SessionGroup = {
 
 export type ShellLayout = {
   main: 'chat' | 'code' | 'material' | 'skills' | 'calendar'
+  /** 会话主列是否展示右侧 Dock（任务/浏览器/文件）。 */
   showInspector: boolean
   showChatAside: boolean
 }
@@ -35,6 +37,11 @@ export type ShellLayout = {
 /** 缺省展开；仅显式 `'0'` / `'false'` 视为收起。 */
 export function parseNavExpanded(raw: string | null): boolean {
   return raw !== '0' && raw !== 'false'
+}
+
+/** 任务详情面板缺省展开；仅显式 `'false'` 视为收起。 */
+export function parseInspectorOpen(raw: string | null): boolean {
+  return raw !== 'false'
 }
 
 /** 缺省 IDE；仅显式 `'chat'` 视为普通会话布局。 */

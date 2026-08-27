@@ -53,6 +53,12 @@ export const IPC = {
   projectReveal: 'shy:project-reveal',
   projectMaterialsList: 'shy:project-materials-list',
   projectMaterialsImport: 'shy:project-materials-import',
+  dockOpenRoot: 'shy:dock-open-root',
+  dockTreeList: 'shy:dock-tree-list',
+  dockFileRead: 'shy:dock-file-read',
+  dockFileReadDataUrl: 'shy:dock-file-read-data-url',
+  dockFileReveal: 'shy:dock-file-reveal',
+  dockFileOpen: 'shy:dock-file-open',
   events: 'shy:events',
   browserShow: 'shy:browser-show',
   browserHide: 'shy:browser-hide',
@@ -263,6 +269,23 @@ export type ProjectMaterialsListResult =
 
 export type ProjectMaterialsImportResult =
   { ok: true; item: MaterialItem } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type DockOpenRootResult =
+  { ok: true; path: string } | { ok: false; error: 'not_found' | 'open_failed' }
+
+export type DockTreeListResult =
+  | { ok: true; tree: TreeNode[]; truncated: boolean; rootPath: string }
+  | { ok: false; error: 'not_found' }
+
+export type DockFileReadResult =
+  | { ok: true; content: string; truncated: boolean }
+  | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type DockFileReadDataUrlResult =
+  { ok: true; dataUrl: string } | { ok: false; error: 'path_escape' | 'not_found' }
+
+export type DockFilePathResult =
+  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' | 'open_failed' }
 
 /* ────────── session files & tasks（shell-session-side-panel） ────────── */
 

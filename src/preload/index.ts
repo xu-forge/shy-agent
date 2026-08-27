@@ -36,7 +36,12 @@ import {
   type ScheduleTaskSaveResult,
   type ScheduleTasksExpandInput,
   type ScheduleTasksListResult,
-  type UpdateScheduleTaskInput
+  type UpdateScheduleTaskInput,
+  type DockOpenRootResult,
+  type DockTreeListResult,
+  type DockFileReadResult,
+  type DockFileReadDataUrlResult,
+  type DockFilePathResult
 } from '../shared/ipc'
 
 const shy = {
@@ -181,6 +186,26 @@ const shy = {
     sourceAbsPath: string
   }): Promise<ProjectMaterialsImportResult> =>
     ipcRenderer.invoke(IPC.projectMaterialsImport, input),
+  dockOpenRoot: (sessionId: string): Promise<DockOpenRootResult> =>
+    ipcRenderer.invoke(IPC.dockOpenRoot, sessionId),
+  dockTreeList: (sessionId: string): Promise<DockTreeListResult> =>
+    ipcRenderer.invoke(IPC.dockTreeList, sessionId),
+  dockFileRead: (input: {
+    sessionId: string
+    relativePath: string
+  }): Promise<DockFileReadResult> => ipcRenderer.invoke(IPC.dockFileRead, input),
+  dockFileReadDataUrl: (input: {
+    sessionId: string
+    relativePath: string
+  }): Promise<DockFileReadDataUrlResult> => ipcRenderer.invoke(IPC.dockFileReadDataUrl, input),
+  dockFileReveal: (input: {
+    sessionId: string
+    relativePath: string
+  }): Promise<DockFilePathResult> => ipcRenderer.invoke(IPC.dockFileReveal, input),
+  dockFileOpen: (input: {
+    sessionId: string
+    relativePath: string
+  }): Promise<DockFilePathResult> => ipcRenderer.invoke(IPC.dockFileOpen, input),
   onEvent: (handler: (payload: unknown) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
       handler(payload)

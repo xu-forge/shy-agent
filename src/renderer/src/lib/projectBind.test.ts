@@ -2,34 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { SessionFileRecord, SessionSummary } from '../../../shared/ipc'
 import {
   BIND_ERROR_LABEL,
-  INSPECTOR_TABS,
   artifactFiles,
   chatStatusTone,
   isProjectPickerLocked,
-  normalizeInspectorTab,
   projectDeleteConfirmDetail,
   resolveBoundProjectId,
   sameProjectSessions,
   shouldBindOnSend,
   shouldShowProjectPicker
 } from './projectBind'
-
-describe('INSPECTOR_TABS', () => {
-  it('仅含任务与产物', () => {
-    expect(INSPECTOR_TABS.map((t) => t.key)).toEqual(['tasks', 'artifacts'])
-    expect(INSPECTOR_TABS.map((t) => t.label)).toEqual(['任务', '产物'])
-  })
-})
-
-describe('normalizeInspectorTab', () => {
-  it('artifacts 保留，其余（含旧 details/browser）落到 tasks', () => {
-    expect(normalizeInspectorTab('artifacts')).toBe('artifacts')
-    expect(normalizeInspectorTab('tasks')).toBe('tasks')
-    expect(normalizeInspectorTab('details')).toBe('tasks')
-    expect(normalizeInspectorTab('browser')).toBe('tasks')
-    expect(normalizeInspectorTab(null)).toBe('tasks')
-  })
-})
 
 describe('isProjectPickerLocked', () => {
   it('空会话且未绑定时可改选', () => {
@@ -102,6 +83,18 @@ describe('artifactFiles', () => {
       { id: 3, sessionId: 's', op: 'delete', path: 'gone.ts', occurredAt: 3 }
     ]
     expect(artifactFiles(files).map((f) => f.path)).toEqual(['out.md'])
+  })
+
+  it('同一路径多次 write 只保留一条（最近一次）', () => {
+    const files: SessionFileRecord[] = [
+      { id: 1, sessionId: 's', op: 'write', path: '/w/攻略.html', occurredAt: 10 },
+      { id: 2, sessionId: 's', op: 'write', path: '/w/攻略.html', occurredAt: 20 },
+      { id: 3, sessionId: 's', op: 'write', path: '/w/攻略.html', occurredAt: 15 },
+      { id: 4, sessionId: 's', op: 'write', path: '/w/notes.md', occurredAt: 12 }
+    ]
+    const listed = artifactFiles(files)
+    expect(listed.map((f) => f.path)).toEqual(['/w/攻略.html', '/w/notes.md'])
+    expect(listed[0]?.id).toBe(2)
   })
 })
 

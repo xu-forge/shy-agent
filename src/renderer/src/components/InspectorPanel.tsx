@@ -1,16 +1,15 @@
 /**
- * InspectorPanel — 会话右侧面板。
- * 两个 tab：任务列表 / 产物列表。
+ * DockTasksView — 会话 Dock「任务详情」页：进度/步骤 + 产物 上下两块。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { SessionFileRecord, SessionTaskRecord } from '../../../shared/ipc'
 import { truncateEvidence } from './goalUi'
+import { artifactFiles } from '../lib/projectBind'
 import {
-  INSPECTOR_TABS,
-  artifactFiles,
-  normalizeInspectorTab,
-  type InspectorTab
-} from '../lib/projectBind'
+  buildArtifactTree,
+  defaultSessionWorkspaceRoot,
+  type ArtifactTreeNode
+} from '../lib/artifactTree'
 
 type Props = {
   sessionId: string
@@ -22,37 +21,64 @@ type PanelTask = Pick<SessionTaskRecord, 'id' | 'title' | 'done' | 'evidence' | 
 }
 
 const POLL_INTERVAL_MS = 5_000
-const TAB_KEY = 'shy.inspectorTab'
-const OPEN_KEY = 'shy.inspectorOpen'
 
-const TAB_ICONS: Record<InspectorTab, React.JSX.Element> = {
-  tasks: (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M9 6h11M9 12h11M9 18h7" />
-      <path d="M5 6h.01M5 12h.01M5 18h.01" />
-    </svg>
-  ),
-  artifacts: (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-    </svg>
+function ArtifactTreeView({
+  nodes,
+  sessionId
+}: {
+  nodes: ArtifactTreeNode[]
+  sessionId: string
+}): React.JSX.Element {
+  return (
+    <ul className="inspector-tree">
+      {nodes.map((node) => (
+        <ArtifactTreeItem key={node.path} node={node} sessionId={sessionId} />
+      ))}
+    </ul>
   )
 }
 
-function readTab(): InspectorTab {
-  return normalizeInspectorTab(localStorage.getItem(TAB_KEY))
+function ArtifactTreeItem({
+  node,
+  sessionId
+}: {
+  node: ArtifactTreeNode
+  sessionId: string
+}): React.JSX.Element {
+  if (node.type === 'dir') {
+    return (
+      <li>
+        <div className="inspector-tree-dir">
+          <span className="inspector-tree-chevron" aria-hidden="true">
+            ▾
+          </span>
+          {node.name}
+        </div>
+        {node.children.length > 0 ? (
+          <ArtifactTreeView nodes={node.children} sessionId={sessionId} />
+        ) : null}
+      </li>
+    )
+  }
+  return (
+    <li>
+      <button
+        type="button"
+        className="inspector-tree-file"
+        title="在访达中显示"
+        onClick={() => void window.shy.revealSessionFile(sessionId, node.absPath)}
+      >
+        {node.name}
+      </button>
+    </li>
+  )
 }
 
-function readPanelOpen(): boolean {
-  return localStorage.getItem(OPEN_KEY) !== 'false'
-}
-
-export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
+export function DockTasksView({ sessionId }: Props): React.JSX.Element {
   const [tasks, setTasks] = useState<PanelTask[]>([])
   const [files, setFiles] = useState<SessionFileRecord[]>([])
+  const [workspaceRoot, setWorkspaceRoot] = useState('')
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<InspectorTab>(readTab)
-  const [panelOpen, setPanelOpen] = useState<boolean>(readPanelOpen)
   const [recentTask, setRecentTask] = useState<string | null>(null)
 
   const fetchTasks = useCallback(async (): Promise<PanelTask[]> => {
@@ -80,14 +106,29 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
     return window.shy.listSessionFiles(sessionId)
   }, [sessionId])
 
+  const resolveWorkspace = useCallback(async (): Promise<string> => {
+    const [paths, detail, projects] = await Promise.all([
+      window.shy.getPaths(),
+      window.shy.getSession(sessionId),
+      window.shy.listProjects()
+    ])
+    const project = projects.find((p) => p.id === detail?.projectId)
+    return project?.rootPath || defaultSessionWorkspaceRoot(paths.shyHome, sessionId)
+  }, [sessionId])
+
   useEffect(() => {
     let alive = true
     const load = async (): Promise<void> => {
       try {
-        const [nextTasks, nextFiles] = await Promise.all([fetchTasks(), fetchFiles()])
+        const [nextTasks, nextFiles, root] = await Promise.all([
+          fetchTasks(),
+          fetchFiles(),
+          resolveWorkspace()
+        ])
         if (!alive) return
         setTasks(nextTasks)
         setFiles(nextFiles)
+        setWorkspaceRoot(root)
         setLoading(false)
       } catch {
         if (alive) setLoading(false)
@@ -99,7 +140,7 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
       alive = false
       clearInterval(timer)
     }
-  }, [fetchTasks, fetchFiles])
+  }, [fetchTasks, fetchFiles, resolveWorkspace])
 
   useEffect(() => {
     return window.shy.onEvent((payload) => {
@@ -113,8 +154,9 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
         }
       }
       void fetchFiles().then(setFiles)
+      void resolveWorkspace().then(setWorkspaceRoot)
     })
-  }, [sessionId, fetchTasks, fetchFiles])
+  }, [sessionId, fetchTasks, fetchFiles, resolveWorkspace])
 
   const toggleTask = async (task: PanelTask): Promise<void> => {
     if (task.checklistItem) return
@@ -126,86 +168,35 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
     void fetchTasks().then(setTasks)
   }
 
-  const setOpenPersisted = (next: boolean): void => {
-    setPanelOpen(next)
-    try {
-      localStorage.setItem(OPEN_KEY, String(next))
-    } catch {
-      /* ignore */
-    }
-  }
-
-  if (!panelOpen) {
-    return (
-      <aside className="inspector-panel collapsed">
-        <button
-          type="button"
-          className="inspector-handle"
-          title="展开功能面板"
-          aria-label="展开功能面板"
-          onClick={() => setOpenPersisted(true)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M14 6l-6 6 6 6" />
-          </svg>
-        </button>
-      </aside>
-    )
-  }
-
   const artifacts = artifactFiles(files)
+  const tree = useMemo(
+    () => (workspaceRoot ? buildArtifactTree(artifacts, workspaceRoot) : []),
+    [artifacts, workspaceRoot]
+  )
+
+  const doneCount = tasks.filter((t) => t.done).length
 
   return (
-    <aside className="inspector-panel">
-      <div className="inspector-tabs" role="tablist" aria-label="功能面板">
-        {INSPECTOR_TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.key}
-            className={`inspector-tab${tab === t.key ? ' active' : ''}`}
-            onClick={() => {
-              setTab(t.key)
-              try {
-                localStorage.setItem(TAB_KEY, t.key)
-              } catch {
-                /* ignore */
-              }
-            }}
-          >
-            {TAB_ICONS[t.key]}
-            <span>{t.label}</span>
-            {t.key === 'tasks' && tasks.length > 0 ? (
-              <span className="inspector-count">{tasks.length}</span>
-            ) : null}
-            {t.key === 'artifacts' && artifacts.length > 0 ? (
-              <span className="inspector-count">{artifacts.length}</span>
-            ) : null}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="inspector-collapse"
-          title="收起面板"
-          aria-label="收起面板"
-          onClick={() => setOpenPersisted(false)}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M10 6l6 6-6 6" />
-          </svg>
-        </button>
-      </div>
-
-      <div className="inspector-body">
-        {loading ? <div className="inspector-empty">加载中…</div> : null}
-        {!loading && tab === 'tasks' ? (
-          tasks.length === 0 ? (
+    <div className="inspector-split dock-page">
+      <section className="inspector-pane inspector-pane-tasks" aria-label="进度与步骤">
+        <h3 className="inspector-pane-title">
+          进度 / 步骤
+          {tasks.length > 0 ? (
+            <span className="inspector-meta">
+              {' '}
+              {doneCount}/{tasks.length}
+            </span>
+          ) : null}
+        </h3>
+        <div className="inspector-pane-body">
+          {loading ? <div className="inspector-empty">加载中…</div> : null}
+          {!loading && tasks.length === 0 ? (
             <div className="inspector-empty">
               <div className="inspector-empty-title">暂无任务</div>
               <div className="inspector-empty-hint">目标模式或 Agent 动态任务会出现在这里</div>
             </div>
-          ) : (
+          ) : null}
+          {!loading && tasks.length > 0 ? (
             <ul className="inspector-list">
               {tasks.map((t) => (
                 <li
@@ -245,33 +236,30 @@ export function InspectorPanel({ sessionId }: Props): React.JSX.Element {
                 </li>
               ))}
             </ul>
-          )
-        ) : null}
-        {!loading && tab === 'artifacts' ? (
-          artifacts.length === 0 ? (
+          ) : null}
+        </div>
+      </section>
+
+      <section className="inspector-pane inspector-pane-artifacts" aria-label="产物">
+        <h3 className="inspector-pane-title">
+          产物
+          {artifacts.length > 0 ? (
+            <span className="inspector-meta"> {artifacts.length}</span>
+          ) : null}
+        </h3>
+        <div className="inspector-pane-body">
+          {loading ? <div className="inspector-empty">加载中…</div> : null}
+          {!loading && artifacts.length === 0 ? (
             <div className="inspector-empty">
               <div className="inspector-empty-title">暂无产物</div>
               <div className="inspector-empty-hint">Agent 写入的文件会出现在这里</div>
             </div>
-          ) : (
-            <ul className="env-file-list">
-              {artifacts.map((f) => (
-                <li key={`${f.id}-${f.path}`}>
-                  <button
-                    type="button"
-                    className="env-file"
-                    title="在访达中显示"
-                    onClick={() => void window.shy.revealSessionFile(sessionId, f.path)}
-                  >
-                    <span className="file-op">写</span>
-                    <span className="file-path">{f.path}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )
-        ) : null}
-      </div>
-    </aside>
+          ) : null}
+          {!loading && artifacts.length > 0 ? (
+            <ArtifactTreeView nodes={tree} sessionId={sessionId} />
+          ) : null}
+        </div>
+      </section>
+    </div>
   )
 }

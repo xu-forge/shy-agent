@@ -1,20 +1,9 @@
 import type { SessionFileRecord, SessionSummary } from '../../../shared/ipc'
 
-export type InspectorTab = 'tasks' | 'artifacts'
-
-export const INSPECTOR_TABS: ReadonlyArray<{ key: InspectorTab; label: string }> = [
-  { key: 'tasks', label: '任务' },
-  { key: 'artifacts', label: '产物' }
-]
-
 export const BIND_ERROR_LABEL: Record<'already_bound' | 'has_messages' | 'not_found', string> = {
   already_bound: '会话已绑定项目',
   has_messages: '已有消息的会话无法绑定项目',
   not_found: '会话或项目不存在'
-}
-
-export function normalizeInspectorTab(raw: string | null): InspectorTab {
-  return raw === 'artifacts' ? 'artifacts' : 'tasks'
 }
 
 export function isProjectPickerLocked(opts: {
@@ -59,7 +48,14 @@ export function chatStatusTone(opts: {
 }
 
 export function artifactFiles(files: SessionFileRecord[]): SessionFileRecord[] {
-  return files.filter((f) => f.op === 'write')
+  const latest = new Map<string, SessionFileRecord>()
+  for (const f of files) {
+    if (f.op !== 'write') continue
+    const key = f.path.replace(/\\/g, '/')
+    const prev = latest.get(key)
+    if (!prev || f.occurredAt >= prev.occurredAt) latest.set(key, f)
+  }
+  return [...latest.values()].sort((a, b) => b.occurredAt - a.occurredAt)
 }
 
 export function sameProjectSessions(

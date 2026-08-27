@@ -34,7 +34,12 @@ import type {
   SessionSummary,
   SessionTaskRecord,
   SkillSummary,
-  UpdateScheduleTaskInput
+  UpdateScheduleTaskInput,
+  DockOpenRootResult,
+  DockTreeListResult,
+  DockFileReadResult,
+  DockFileReadDataUrlResult,
+  DockFilePathResult
 } from '../shared/ipc'
 
 export interface ShyApi {
@@ -145,6 +150,24 @@ export interface ShyApi {
     projectId: string
     sourceAbsPath: string
   }) => Promise<ProjectMaterialsImportResult>
+  dockOpenRoot: (sessionId: string) => Promise<DockOpenRootResult>
+  dockTreeList: (sessionId: string) => Promise<DockTreeListResult>
+  dockFileRead: (input: {
+    sessionId: string
+    relativePath: string
+  }) => Promise<DockFileReadResult>
+  dockFileReadDataUrl: (input: {
+    sessionId: string
+    relativePath: string
+  }) => Promise<DockFileReadDataUrlResult>
+  dockFileReveal: (input: {
+    sessionId: string
+    relativePath: string
+  }) => Promise<DockFilePathResult>
+  dockFileOpen: (input: {
+    sessionId: string
+    relativePath: string
+  }) => Promise<DockFilePathResult>
   onEvent: (handler: (payload: unknown) => void) => () => void
   onEventByType: <T extends { type: string }>(type: T['type'], handler: (event: T) => void) => () => void
   onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void) => () => void

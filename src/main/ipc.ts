@@ -63,6 +63,13 @@ import {
   collectProjectMaterialWrites,
   resolveProjectFilePath
 } from './projects/ipc-helpers'
+import {
+  ensureDockRoot,
+  listDockTree,
+  readDockFileDataUrl,
+  readDockFileText,
+  resolveDockFile
+} from './dock/root'
 
 let mainWindow: BrowserWindow | null = null
 const waitConfirm = createConfirmWaiter(() => mainWindow)
@@ -85,6 +92,37 @@ function emitToRenderer(payload: unknown): void {
     return
   }
   getDefaultBus().emitSync(event as Parameters<ReturnType<typeof getDefaultBus>['emitSync']>[0])
+}
+
+function asDockIoFailure(
+  err: unknown
+): { ok: false; error: 'path_escape' | 'not_found' } | null {
+  const mapped = asIpcFailure(err)
+  if (mapped?.error === 'path_escape') return { ok: false as const, error: 'path_escape' as const }
+  if (
+    err &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as NodeJS.ErrnoException).code === 'ENOENT'
+  ) {
+    return { ok: false, error: 'not_found' }
+  }
+  if (mapped) return { ok: false, error: 'not_found' }
+  return null
+}
+
+async function revealInFileManager(filePath: string): Promise<void> {
+  if (process.platform === 'win32') {
+    await shell.openPath(filePath).catch(() => undefined)
+    const { spawn } = await import('child_process')
+    spawn('explorer.exe', [`/select,${filePath.replace(/\//g, '\\')}`], { detached: true })
+  } else if (process.platform === 'darwin') {
+    const { spawn } = await import('child_process')
+    spawn('open', ['-R', filePath], { detached: true })
+  } else {
+    const { dirname } = await import('path')
+    await shell.openPath(dirname(filePath))
+  }
 }
 
 export function resumeInterruptedGoalSessions(): void {
@@ -178,20 +216,7 @@ export function registerCoreIpc(): void {
     listSessionDiffs(sessionId)
   )
   ipcMain.handle(IPC.sessionFilesReveal, async (_e, _sessionId: string, filePath: string) => {
-    if (process.platform === 'win32') {
-      // explorer /select, 在资源管理器中选中文件（需转义逗号）
-      await shell.openPath(filePath).catch(() => undefined)
-      // 退化为 openPath 已能打开所在目录；如需严格 /select 走子进程：
-      const { spawn } = await import('child_process')
-      spawn('explorer.exe', [`/select,${filePath.replace(/\//g, '\\')}`], { detached: true })
-    } else if (process.platform === 'darwin') {
-      const { spawn } = await import('child_process')
-      spawn('open', ['-R', filePath], { detached: true })
-    } else {
-      // Linux 暂不支持 reveal，回退到打开所在目录
-      const { dirname } = await import('path')
-      await shell.openPath(dirname(filePath))
-    }
+    await revealInFileManager(filePath)
     return { ok: true }
   })
 
@@ -327,6 +352,84 @@ export function registerCoreIpc(): void {
         return { ok: true as const, item }
       } catch (err) {
         const mapped = asIpcFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.dockOpenRoot, async (_e, sessionId: string) => {
+    try {
+      const path = ensureDockRoot(sessionId)
+      const message = await shell.openPath(path)
+      if (message) return { ok: false as const, error: 'open_failed' as const }
+      return { ok: true as const, path }
+    } catch (err) {
+      const mapped = asDockIoFailure(err)
+      if (mapped?.error === 'not_found') return mapped
+      return { ok: false as const, error: 'open_failed' as const }
+    }
+  })
+  ipcMain.handle(IPC.dockTreeList, async (_e, sessionId: string) => {
+    try {
+      const { tree, truncated, rootPath } = listDockTree(sessionId)
+      return { ok: true as const, tree, truncated, rootPath }
+    } catch (err) {
+      const mapped = asDockIoFailure(err)
+      if (mapped) return mapped
+      throw err
+    }
+  })
+  ipcMain.handle(
+    IPC.dockFileRead,
+    async (_e, input: { sessionId: string; relativePath: string }) => {
+      try {
+        const { content, truncated } = readDockFileText(input.sessionId, input.relativePath)
+        return { ok: true as const, content, truncated }
+      } catch (err) {
+        const mapped = asDockIoFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+  ipcMain.handle(
+    IPC.dockFileReadDataUrl,
+    async (_e, input: { sessionId: string; relativePath: string }) => {
+      try {
+        const dataUrl = readDockFileDataUrl(input.sessionId, input.relativePath)
+        return { ok: true as const, dataUrl }
+      } catch (err) {
+        const mapped = asDockIoFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+  ipcMain.handle(
+    IPC.dockFileReveal,
+    async (_e, input: { sessionId: string; relativePath: string }) => {
+      try {
+        const abs = resolveDockFile(input.sessionId, input.relativePath)
+        await revealInFileManager(abs)
+        return { ok: true as const }
+      } catch (err) {
+        const mapped = asDockIoFailure(err)
+        if (mapped) return mapped
+        throw err
+      }
+    }
+  )
+  ipcMain.handle(
+    IPC.dockFileOpen,
+    async (_e, input: { sessionId: string; relativePath: string }) => {
+      try {
+        const abs = resolveDockFile(input.sessionId, input.relativePath)
+        const message = await shell.openPath(abs)
+        if (message) return { ok: false as const, error: 'open_failed' as const }
+        return { ok: true as const }
+      } catch (err) {
+        const mapped = asDockIoFailure(err)
         if (mapped) return mapped
         throw err
       }

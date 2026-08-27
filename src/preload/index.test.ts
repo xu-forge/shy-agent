@@ -130,4 +130,23 @@ describe('project preload API', () => {
       [IPC.projectFileReadDataUrl, dataUrlInput]
     ])
   })
+
+  it('exposes session dock open/tree/preview IPC', () => {
+    const fileInput = { sessionId: 's1', relativePath: 'notes.md' }
+    exposed.dockOpenRoot('s1' as never)
+    exposed.dockTreeList('s1' as never)
+    exposed.dockFileRead(fileInput as never)
+    exposed.dockFileReadDataUrl(fileInput as never)
+    exposed.dockFileReveal(fileInput as never)
+    exposed.dockFileOpen(fileInput as never)
+
+    expect(invoke.mock.calls).toEqual([
+      [IPC.dockOpenRoot, 's1'],
+      [IPC.dockTreeList, 's1'],
+      [IPC.dockFileRead, fileInput],
+      [IPC.dockFileReadDataUrl, fileInput],
+      [IPC.dockFileReveal, fileInput],
+      [IPC.dockFileOpen, fileInput]
+    ])
+  })
 })

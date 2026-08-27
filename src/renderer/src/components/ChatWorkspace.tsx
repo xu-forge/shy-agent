@@ -9,13 +9,19 @@ import { ProjectPicker } from './ProjectPicker'
 import {
   BIND_ERROR_LABEL,
   chatStatusTone,
+  artifactFiles,
   isProjectPickerLocked,
   resolveBoundProjectId,
   shouldBindOnSend,
   shouldShowProjectPicker
 } from '../lib/projectBind'
+import { artifactDisplayPath } from '../lib/artifactTree'
 import type { CodeLayout } from '../lib/shellLayout'
 import { isNearBottom } from '../lib/scrollStick'
+import { toggleDockMode, type DockMode } from '../lib/dockMode'
+import { RightDockIcon } from './RightDockIcon'
+import { OpenWithMenu } from './dock/OpenWithMenu'
+import { FolderIcon, GlobeIcon } from './dock/DockIcons'
 
 type Props = {
   notice?: string
@@ -26,6 +32,9 @@ type Props = {
   showCodeLayoutToggle?: boolean
   codeLayout?: CodeLayout
   onCodeLayoutChange?: (next: CodeLayout) => void
+  showDockToggle?: boolean
+  dockMode?: DockMode
+  onDockModeChange?: (mode: DockMode) => void
 }
 
 type Msg = {
@@ -81,7 +90,10 @@ export function ChatWorkspace({
   onConversationState,
   showCodeLayoutToggle = false,
   codeLayout = 'ide',
-  onCodeLayoutChange
+  onCodeLayoutChange,
+  showDockToggle = false,
+  dockMode = null,
+  onDockModeChange
 }: Props): React.JSX.Element {
   const [mode, setMode] = useState<ModeKey>('interactive')
   const [draft, setDraft] = useState('')
@@ -210,7 +222,7 @@ export function ChatWorkspace({
     }
   }
 
-  const editFiles = useMemo(() => sessionFiles.filter((f) => f.op === 'write'), [sessionFiles])
+  const editFiles = useMemo(() => artifactFiles(sessionFiles), [sessionFiles])
 
   // 把连续的工具消息聚成一个时间轴块，其余消息独立渲染
   const renderBlocks = useMemo(() => {
@@ -779,6 +791,38 @@ export function ChatWorkspace({
               {runningText}
             </div>
           ) : null}
+          {showDockToggle ? <OpenWithMenu sessionId={sessionId} /> : null}
+          {showDockToggle && dockMode === null ? (
+            <>
+              <button
+                type="button"
+                className="inspector-dock-btn"
+                title="内置浏览器"
+                aria-label="内置浏览器"
+                onClick={() => onDockModeChange?.(toggleDockMode(dockMode, 'browser'))}
+              >
+                <GlobeIcon />
+              </button>
+              <button
+                type="button"
+                className="inspector-dock-btn"
+                title="文件目录"
+                aria-label="文件目录"
+                onClick={() => onDockModeChange?.(toggleDockMode(dockMode, 'files'))}
+              >
+                <FolderIcon />
+              </button>
+              <button
+                type="button"
+                className="inspector-dock-btn"
+                title="任务详情"
+                aria-label="任务详情"
+                onClick={() => onDockModeChange?.(toggleDockMode(dockMode, 'tasks'))}
+              >
+                <RightDockIcon />
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
@@ -867,8 +911,8 @@ export function ChatWorkspace({
                       {editFiles.length > 0 ? (
                         <ul className="product-files-list">
                           {editFiles.map((f) => (
-                            <li key={`${f.id}-${f.path}`} className="product-file">
-                              {f.path}
+                            <li key={f.path} className="product-file" title={f.path}>
+                              {artifactDisplayPath('', f.path)}
                             </li>
                           ))}
                         </ul>

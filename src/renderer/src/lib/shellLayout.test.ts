@@ -8,6 +8,7 @@ import {
   parseCollapsedGroups,
   parseChatAsideWidth,
   parseCodeLayout,
+  parseInspectorOpen,
   parseNavExpanded,
   clampChatAsideWidth,
   resolveChatHostClass,
@@ -161,8 +162,16 @@ describe('group collapse', () => {
   })
 })
 
+describe('parseInspectorOpen', () => {
+  it('缺省展开，仅 false 视为收起', () => {
+    expect(parseInspectorOpen(null)).toBe(true)
+    expect(parseInspectorOpen('true')).toBe(true)
+    expect(parseInspectorOpen('false')).toBe(false)
+  })
+})
+
 describe('resolveShellLayout', () => {
-  it('未绑定且有对话：对话主区 + Inspector', () => {
+  it('未绑定且有对话：对话主区 + 可展示 Dock', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
@@ -176,7 +185,7 @@ describe('resolveShellLayout', () => {
     })
   })
 
-  it('未绑定空态不显示 Inspector', () => {
+  it('未绑定空态不显示 Dock', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
@@ -186,7 +195,7 @@ describe('resolveShellLayout', () => {
     ).toBe(false)
   })
 
-  it('代码项目：代码主区 + 右侧对话，无 Inspector', () => {
+  it('代码项目：代码主区 + 右侧对话，无 Dock', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
@@ -200,7 +209,7 @@ describe('resolveShellLayout', () => {
     })
   })
 
-  it('代码项目切普通布局：中间会话 + Inspector（空会话也显示面板）', () => {
+  it('代码项目切普通布局：中间会话 + Dock（空会话也显示入口）', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
@@ -223,7 +232,7 @@ describe('resolveShellLayout', () => {
     ).toBe(true)
   })
 
-  it('素材项目：素材主区 + 右侧对话，无 Inspector', () => {
+  it('素材项目：素材主区 + 右侧对话，无 Dock', () => {
     expect(
       resolveShellLayout({
         nav: 'projects',
@@ -237,7 +246,7 @@ describe('resolveShellLayout', () => {
     })
   })
 
-  it('技能 / 日历无 Inspector，主区切走', () => {
+  it('技能 / 日历无 Dock，主区切走', () => {
     expect(
       resolveShellLayout({
         nav: 'skills',

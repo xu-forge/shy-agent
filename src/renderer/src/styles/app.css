@@ -6656,55 +6656,371 @@
 [data-theme='dark'] .diff-add { color: #3fb950; }
 .hljs { background: transparent !important; padding: 0 !important; }
 
-/* ══════════ inspector 面板展开/收起（收起态右缘把手） ══════════ */
+/* ══════════ inspector 面板展开/收起（宽度滑动） ══════════ */
 .inspector-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
   width: 340px;
+  min-width: 0;
   flex-shrink: 0;
-}
-.inspector-panel.collapsed {
-  width: 26px;
-  align-items: center;
-  padding-top: 10px;
+  overflow: hidden;
+  position: relative;
   border-left: 1px solid var(--line);
   background: var(--bg-panel);
+  transition:
+    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 200ms ease;
 }
-.inspector-handle {
-  width: 22px;
-  height: 34px;
-  display: inline-flex;
+.inspector-panel.is-closed {
+  width: 0;
+  border-left-color: transparent;
+  pointer-events: none;
+}
+.inspector-panel-inner {
+  width: 340px;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspector-panel {
+    transition: none;
+  }
+}
+.inspector-panel.is-dragging {
+  transition: none;
+}
+
+.inspector-head {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg-panel);
+  gap: 8px;
+  padding: 10px 10px 8px 14px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.inspector-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.inspector-meta {
+  font-size: 11px;
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.inspector-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.inspector-pane {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.inspector-pane-tasks {
+  flex: 1.16 1 0;
+}
+.inspector-pane-artifacts {
+  flex: 1 1 0;
+  border-top: 1px solid var(--line);
+}
+.inspector-pane-title {
+  margin: 0;
+  padding: 8px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.inspector-pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 10px 12px;
+}
+.inspector-pane .inspector-empty {
+  padding: 16px 8px;
+}
+.inspector-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 10px;
+}
+.inspector-pane-body > .inspector-tree {
+  padding-left: 0;
+}
+.inspector-tree-dir,
+.inspector-tree-file {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+.inspector-tree-dir {
+  color: var(--text-secondary);
+  font-weight: 540;
+  cursor: default;
+}
+.inspector-tree-file {
   cursor: pointer;
 }
-.inspector-handle:hover { color: var(--text); background: var(--bg-hover); }
-.inspector-handle svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
-
-.inspector-tabs { display: flex; } /* 恢复横向 tab 条 */
+.inspector-tree-file:hover {
+  background: var(--bg-hover);
+}
+.inspector-tree-chevron {
+  width: 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
 .inspector-collapse {
   margin-left: auto;
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
+  border-radius: 8px;
+  background: var(--bg-soft, var(--bg-hover));
+  color: var(--text);
   cursor: pointer;
-  align-self: center;
-  margin-right: 6px;
-  margin-bottom: -1px;
 }
 .inspector-collapse:hover { background: var(--bg-hover); color: var(--text); }
-.inspector-collapse svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
+.inspector-collapse svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.7; fill: none; }
+
+.dock-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 40;
+  background: transparent;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+.dock-resizer:hover,
+.dock-resizer:active {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.inspector-panel.is-closed .dock-resizer {
+  pointer-events: none;
+}
+
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.inspector-browser .browser-view-slot {
+  min-height: 120px;
+}
+
+.dock-open-with {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+.dock-open-with-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft, var(--bg-hover));
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.dock-open-with-btn:hover {
+  background: var(--bg-hover);
+}
+.dock-open-with-caret {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.dock-open-with-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 30;
+}
+.dock-open-with-menu button {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dock-open-with-menu button:hover {
+  background: var(--bg-hover);
+}
+.dock-open-error {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 29;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--danger, #c23);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.dock-files.dock-page {
+  flex-direction: row;
+  align-items: stretch;
+}
+.dock-files-tree {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 176px;
+  width: 176px;
+  min-width: 140px;
+  max-width: 42%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 0 6px;
+  border-right: 1px solid var(--line);
+}
+.dock-files-tree .inspector-pane-title {
+  padding-left: 12px;
+  padding-right: 8px;
+}
+.dock-files-filter {
+  width: calc(100% - 16px);
+  box-sizing: border-box;
+  margin: 0 8px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.dock-files-list-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 6px 8px;
+}
+.dock-files-list {
+  padding-left: 0;
+}
+.dock-files .inspector-tree-dir {
+  cursor: pointer;
+}
+.dock-files .inspector-tree-dir,
+.dock-files .inspector-tree-file {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.inspector-tree-file.active {
+  background: var(--bg-active, var(--bg-hover));
+  font-weight: 600;
+}
+.dock-files-preview {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: none;
+  padding: 0;
+}
+.dock-files-preview .inspector-pane-title {
+  padding-left: 12px;
+  padding-right: 10px;
+}
+.dock-files-preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+}
+.dock-files-preview-body > .dock-preview-html,
+.dock-files-preview-body > .dock-preview-scroll {
+  flex: 1;
+  min-height: 0;
+}
+.dock-preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+.dock-preview-html {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.dock-preview-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+.dock-preview-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.dock-preview-truncated {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.dock-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  justify-content: center;
+}
 
 /* ————————————————————————————————————————————————
    UI kit 迁移层：定时任务 / 技能 / 设置 控件统一（components/ui/ + ui.css）
@@ -7591,6 +7907,35 @@
   background: var(--bg-hover);
   color: var(--text);
   border-color: var(--border-strong);
+}
+
+.inspector-dock-btn {
+  -webkit-app-region: no-drag;
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-soft, var(--bg-hover));
+  color: var(--text);
+  cursor: pointer;
+}
+.inspector-dock-btn:hover {
+  background: var(--bg-hover);
+}
+.inspector-dock-btn.active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.inspector-dock-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  fill: none;
 }
 
 .inspector-item-check {
