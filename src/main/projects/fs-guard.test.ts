@@ -119,6 +119,8 @@ describe('kindFromName', () => {
 describe('listMaterials', () => {
   it('classifies files and sets sourceSessionId when writes abs path matches', () => {
     writeFileSync(join(root, 'out.png'), 'img')
+    writeFileSync(join(root, 'app.ts'), 'code')
+    writeFileSync(join(root, 'data.bin'), 'raw')
     mkdirSync(join(root, 'docs'))
     writeFileSync(join(root, 'docs', 'note.md'), 'hi')
     mkdirSync(join(root, 'node_modules'))
@@ -130,6 +132,9 @@ describe('listMaterials', () => {
     const ids = items.map((i) => i.id)
     expect(ids).toContain('out.png')
     expect(ids).toContain('docs/note.md')
+    // 代码与未知二进制不算素材
+    expect(ids).not.toContain('app.ts')
+    expect(ids).not.toContain('data.bin')
     expect(ids.some((id) => id.includes('skip.bin'))).toBe(false)
 
     const png = items.find((i) => i.id === 'out.png')

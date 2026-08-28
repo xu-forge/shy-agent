@@ -10,14 +10,18 @@ import { protocol, net } from 'electron'
 import { pathToFileURL } from 'url'
 
 // minimax-feature-port：shy-asset:// 协议 — 渲染层展示 ~/.shy 下的产物（浏览器截图等）
+// material-canvas：shy-material:// 协议 — 按项目根校验后读取素材原文件（缩略图/播放/截帧源）
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'shy-asset', privileges: { standard: true, secure: true, supportFetchAPI: false } }
+  { scheme: 'shy-asset', privileges: { standard: true, secure: true, supportFetchAPI: false } },
+  { scheme: 'shy-material', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
 import { ensureShyHomeDirs, resolveShyHome } from './paths'
 import { dropLegacyWorkflowTables, migrateLegacyUserData } from './migration'
 import { bridgeEventBusToIpc, getDefaultBus } from './event-bridge'
 import { readMcpConfig } from './mcp/config'
 import { getMcpManager } from './mcp/manager'
+import { getProject } from './projects/store'
+import { assertInsideRoot } from './projects/fs-guard'
 
 let bootResumeAttempted = false
 
@@ -108,15 +112,31 @@ app.whenReady().then(() => {
     .then((cfg) => getMcpManager().connectAll(cfg))
     .catch((err) => console.error('[shy] mcp connectAll', err))
 
-  // shy-asset://<相对路径> → ~/.shy/<相对路径>（仅限 shyHome 内，防穿越）
+  // shy-asset://<首段>/<相对路径> → ~/.shy/<首段>/<相对路径>
+  // 注意：standard scheme 中首段是 URL host（会被小写化），须并入相对路径
   protocol.handle('shy-asset', (request) => {
     try {
       const u = new URL(request.url)
-      const rel = decodeURIComponent(u.pathname.replace(/^\/+/, ''))
+      const rel = decodeURIComponent(`${u.host}${u.pathname}`).replace(/^\/+/, '')
       const home = resolveShyHome()
       const file = join(home, rel)
       if (!file.startsWith(home)) return new Response('forbidden', { status: 403 })
       return net.fetch(pathToFileURL(file).toString())
+    } catch {
+      return new Response('bad request', { status: 400 })
+    }
+  })
+  // shy-material://m/<projectId>/<encodeURIComponent(absPath)> → 项目 rootPath 内的素材原文件
+  protocol.handle('shy-material', (request) => {
+    try {
+      const u = new URL(request.url)
+      const segments = decodeURIComponent(u.pathname).replace(/^\/+/, '').split('/')
+      const projectId = segments[0] ?? ''
+      const absPath = segments.slice(1).join('/')
+      const project = getProject(projectId)
+      if (!project) return new Response('not found', { status: 404 })
+      const abs = assertInsideRoot(project.rootPath, absPath)
+      return net.fetch(pathToFileURL(abs).toString())
     } catch {
       return new Response('bad request', { status: 400 })
     }

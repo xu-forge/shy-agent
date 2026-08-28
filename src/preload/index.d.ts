@@ -6,6 +6,13 @@ import type {
   ChatRequest,
   CreateScheduleTaskInput,
   LongMemoryEntry,
+  MaterialCanvasState,
+  MaterialCanvasStateGetResult,
+  MaterialCanvasStateSetResult,
+  MaterialThumbGetInput,
+  MaterialThumbGetResult,
+  MaterialThumbPutInput,
+  MaterialThumbPutResult,
   McpConfigFile,
   McpServerStatus,
   McpSetResult,
@@ -16,6 +23,7 @@ import type {
   ProjectFileWriteResult,
   ProjectMaterialsImportResult,
   ProjectMaterialsListResult,
+  ProjectFileOpenResult,
   ProjectFileReadDataUrlResult,
   ProjectPickFileResult,
   ProjectPickFolderResult,
@@ -76,9 +84,19 @@ export interface ShyApi {
   }) => Promise<SkillSummary>
   deleteSkill: (id: string) => Promise<{ ok: boolean }>
   setSkillEnabled: (name: string, enabled: boolean) => Promise<{ ok: boolean }>
-  browserShow: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ ok: boolean }>
+  browserShow: (bounds: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }) => Promise<{ ok: boolean }>
   browserHide: () => Promise<{ ok: boolean }>
-  browserSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<{ ok: boolean }>
+  browserSetBounds: (bounds: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }) => Promise<{ ok: boolean }>
   browserGetState: () => Promise<unknown>
   browserNavigate: (url: string) => Promise<{ ok: boolean }>
   browserScreenshot: () => Promise<string>
@@ -127,10 +145,7 @@ export interface ShyApi {
   }) => Promise<BindSessionProjectResult>
   pickFolder: () => Promise<ProjectPickFolderResult>
   pickFile: () => Promise<ProjectPickFileResult>
-  projectReveal: (input: {
-    projectId: string
-    absPath: string
-  }) => Promise<ProjectRevealResult>
+  projectReveal: (input: { projectId: string; absPath: string }) => Promise<ProjectRevealResult>
   projectFileReadDataUrl: (input: {
     projectId: string
     relativePath: string
@@ -150,12 +165,17 @@ export interface ShyApi {
     projectId: string
     sourceAbsPath: string
   }) => Promise<ProjectMaterialsImportResult>
+  materialThumbGet: (input: MaterialThumbGetInput) => Promise<MaterialThumbGetResult>
+  materialThumbPut: (input: MaterialThumbPutInput) => Promise<MaterialThumbPutResult>
+  materialCanvasStateGet: (projectId: string) => Promise<MaterialCanvasStateGetResult>
+  materialCanvasStateSet: (input: {
+    projectId: string
+    state: MaterialCanvasState
+  }) => Promise<MaterialCanvasStateSetResult>
+  projectFileOpen: (input: { projectId: string; absPath: string }) => Promise<ProjectFileOpenResult>
   dockOpenRoot: (sessionId: string) => Promise<DockOpenRootResult>
   dockTreeList: (sessionId: string) => Promise<DockTreeListResult>
-  dockFileRead: (input: {
-    sessionId: string
-    relativePath: string
-  }) => Promise<DockFileReadResult>
+  dockFileRead: (input: { sessionId: string; relativePath: string }) => Promise<DockFileReadResult>
   dockFileReadDataUrl: (input: {
     sessionId: string
     relativePath: string
@@ -164,12 +184,12 @@ export interface ShyApi {
     sessionId: string
     relativePath: string
   }) => Promise<DockFilePathResult>
-  dockFileOpen: (input: {
-    sessionId: string
-    relativePath: string
-  }) => Promise<DockFilePathResult>
+  dockFileOpen: (input: { sessionId: string; relativePath: string }) => Promise<DockFilePathResult>
   onEvent: (handler: (payload: unknown) => void) => () => void
-  onEventByType: <T extends { type: string }>(type: T['type'], handler: (event: T) => void) => () => void
+  onEventByType: <T extends { type: string }>(
+    type: T['type'],
+    handler: (event: T) => void
+  ) => () => void
   onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void) => () => void
 }
 

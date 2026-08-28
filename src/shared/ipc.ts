@@ -53,6 +53,11 @@ export const IPC = {
   projectReveal: 'shy:project-reveal',
   projectMaterialsList: 'shy:project-materials-list',
   projectMaterialsImport: 'shy:project-materials-import',
+  materialThumbGet: 'shy:material-thumb-get',
+  materialThumbPut: 'shy:material-thumb-put',
+  materialCanvasStateGet: 'shy:material-canvas-state-get',
+  materialCanvasStateSet: 'shy:material-canvas-state-set',
+  projectFileOpen: 'shy:project-file-open',
   dockOpenRoot: 'shy:dock-open-root',
   dockTreeList: 'shy:dock-tree-list',
   dockFileRead: 'shy:dock-file-read',
@@ -246,8 +251,7 @@ export type ProjectPickFolderResult = { ok: true; path: string } | { ok: false }
 
 export type ProjectPickFileResult = ProjectPickFolderResult
 
-export type ProjectRevealResult =
-  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' }
+export type ProjectRevealResult = { ok: true } | { ok: false; error: 'path_escape' | 'not_found' }
 
 export type ProjectFileReadDataUrlResult =
   { ok: true; dataUrl: string } | { ok: false; error: 'path_escape' | 'not_found' }
@@ -269,6 +273,43 @@ export type ProjectMaterialsListResult =
 
 export type ProjectMaterialsImportResult =
   { ok: true; item: MaterialItem } | { ok: false; error: 'path_escape' | 'not_found' }
+
+/* ────────── material canvas（material-canvas） ────────── */
+
+export type MaterialThumbGetInput = {
+  projectId: string
+  absPath: string
+  mtimeMs: number
+  size: number
+}
+
+export type MaterialThumbGetResult =
+  { ok: true; url: string } | { ok: false; reason: 'unsupported' | 'not_found' | 'path_escape' }
+
+export type MaterialThumbPutInput = MaterialThumbGetInput & {
+  /** data:image/png 或 data:image/jpeg 的 base64 data URL（renderer 截帧产物） */
+  dataUrl: string
+}
+
+export type MaterialThumbPutResult =
+  { ok: true; url: string } | { ok: false; reason: 'invalid_data' | 'path_escape' }
+
+export type MaterialCanvasSortBy = 'mtime_desc'
+
+export type MaterialCanvasState = {
+  x: number
+  y: number
+  scale: number
+  sortBy?: MaterialCanvasSortBy
+}
+
+export type MaterialCanvasStateGetResult =
+  { ok: true; state: MaterialCanvasState | null } | { ok: false; error: 'not_found' }
+
+export type MaterialCanvasStateSetResult = { ok: true } | { ok: false; error: 'not_found' }
+
+export type ProjectFileOpenResult =
+  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' | 'open_failed' }
 
 export type DockOpenRootResult =
   { ok: true; path: string } | { ok: false; error: 'not_found' | 'open_failed' }

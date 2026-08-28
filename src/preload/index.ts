@@ -24,6 +24,14 @@ import {
   type ProjectFileWriteResult,
   type ProjectMaterialsImportResult,
   type ProjectMaterialsListResult,
+  type MaterialCanvasState,
+  type MaterialCanvasStateGetResult,
+  type MaterialCanvasStateSetResult,
+  type MaterialThumbGetInput,
+  type MaterialThumbGetResult,
+  type MaterialThumbPutInput,
+  type MaterialThumbPutResult,
+  type ProjectFileOpenResult,
   type ProjectFileReadDataUrlResult,
   type ProjectPickFileResult,
   type ProjectPickFolderResult,
@@ -159,10 +167,8 @@ const shy = {
   }): Promise<BindSessionProjectResult> => ipcRenderer.invoke(IPC.sessionsBindProject, input),
   pickFolder: (): Promise<ProjectPickFolderResult> => ipcRenderer.invoke(IPC.projectPickFolder),
   pickFile: (): Promise<ProjectPickFileResult> => ipcRenderer.invoke(IPC.projectPickFile),
-  projectReveal: (input: {
-    projectId: string
-    absPath: string
-  }): Promise<ProjectRevealResult> => ipcRenderer.invoke(IPC.projectReveal, input),
+  projectReveal: (input: { projectId: string; absPath: string }): Promise<ProjectRevealResult> =>
+    ipcRenderer.invoke(IPC.projectReveal, input),
   projectFileReadDataUrl: (input: {
     projectId: string
     relativePath: string
@@ -186,14 +192,27 @@ const shy = {
     sourceAbsPath: string
   }): Promise<ProjectMaterialsImportResult> =>
     ipcRenderer.invoke(IPC.projectMaterialsImport, input),
+  materialThumbGet: (input: MaterialThumbGetInput): Promise<MaterialThumbGetResult> =>
+    ipcRenderer.invoke(IPC.materialThumbGet, input),
+  materialThumbPut: (input: MaterialThumbPutInput): Promise<MaterialThumbPutResult> =>
+    ipcRenderer.invoke(IPC.materialThumbPut, input),
+  materialCanvasStateGet: (projectId: string): Promise<MaterialCanvasStateGetResult> =>
+    ipcRenderer.invoke(IPC.materialCanvasStateGet, projectId),
+  materialCanvasStateSet: (input: {
+    projectId: string
+    state: MaterialCanvasState
+  }): Promise<MaterialCanvasStateSetResult> =>
+    ipcRenderer.invoke(IPC.materialCanvasStateSet, input),
+  projectFileOpen: (input: {
+    projectId: string
+    absPath: string
+  }): Promise<ProjectFileOpenResult> => ipcRenderer.invoke(IPC.projectFileOpen, input),
   dockOpenRoot: (sessionId: string): Promise<DockOpenRootResult> =>
     ipcRenderer.invoke(IPC.dockOpenRoot, sessionId),
   dockTreeList: (sessionId: string): Promise<DockTreeListResult> =>
     ipcRenderer.invoke(IPC.dockTreeList, sessionId),
-  dockFileRead: (input: {
-    sessionId: string
-    relativePath: string
-  }): Promise<DockFileReadResult> => ipcRenderer.invoke(IPC.dockFileRead, input),
+  dockFileRead: (input: { sessionId: string; relativePath: string }): Promise<DockFileReadResult> =>
+    ipcRenderer.invoke(IPC.dockFileRead, input),
   dockFileReadDataUrl: (input: {
     sessionId: string
     relativePath: string
@@ -202,10 +221,8 @@ const shy = {
     sessionId: string
     relativePath: string
   }): Promise<DockFilePathResult> => ipcRenderer.invoke(IPC.dockFileReveal, input),
-  dockFileOpen: (input: {
-    sessionId: string
-    relativePath: string
-  }): Promise<DockFilePathResult> => ipcRenderer.invoke(IPC.dockFileOpen, input),
+  dockFileOpen: (input: { sessionId: string; relativePath: string }): Promise<DockFilePathResult> =>
+    ipcRenderer.invoke(IPC.dockFileOpen, input),
   onEvent: (handler: (payload: unknown) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => {
       handler(payload)

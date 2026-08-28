@@ -1,13 +1,12 @@
 /**
- * SlashMenu — 输入框键首键入 `/` 弹出的命令菜单。
- * 含「模式（交互式 / 目标）」与「相关技能」两类；技能项显示 name + description，
- * 键入 `/` 后的文本实时过滤两个区块。
+ * SlashMenu — 输入框键首键入 `/` 弹出的命令菜单（模式 / 技能），
+ * 也承载 `@` 触发的素材引用项（type=material，显示文件名 + 相对路径）。
  */
 export type SlashItem = {
   key: string
   label: string
   description?: string
-  type: 'mode' | 'skill'
+  type: 'mode' | 'skill' | 'material'
 }
 
 type Props = {
@@ -44,8 +43,12 @@ export function SlashMenu({
             }}
             onMouseEnter={() => onHover(i)}
           >
-            <span className={`slash-badge${item.type === 'mode' ? ' mode' : ''}`}>
-              {item.type === 'mode' ? '模式' : '技能'}
+            <span
+              className={`slash-badge${item.type === 'mode' ? ' mode' : ''}${
+                item.type === 'material' ? ' material' : ''
+              }`}
+            >
+              {item.type === 'mode' ? '模式' : item.type === 'material' ? '素材' : '技能'}
             </span>
             <span className="slash-label">{item.label}</span>
             {item.description ? <span className="slash-desc">{item.description}</span> : null}

@@ -1,10 +1,23 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { EditorContent } from '@tiptap/react'
 import type { ModeKey } from './ModeToggle'
-import type { SessionFileRecord, SessionSummary, SkillSummary } from '../../../shared/ipc'
+import type {
+  MaterialItem,
+  SessionFileRecord,
+  SessionSummary,
+  SkillSummary
+} from '../../../shared/ipc'
 import { MarkdownBody } from './MarkdownBody'
 import { AgentTimeline } from './chat/AgentTimeline'
 import { messagesToSegments } from './chat/turnSegments'
 import { SlashMenu, type SlashItem } from './chat/SlashMenu'
+import { serializeComposerText } from './chat/composerMention'
+import { useComposerEditor } from './chat/ComposerEditor'
+import type { MentionMenuState, MentionSuggestionItem } from './chat/composerMention'
+import type { Editor } from '@tiptap/react'
+import type { SuggestionProps } from '@tiptap/suggestion'
+
+type SuggestionBridgeProps = SuggestionProps<MentionSuggestionItem>
 import { ProjectPicker } from './ProjectPicker'
 import {
   BIND_ERROR_LABEL,
@@ -96,7 +109,6 @@ export function ChatWorkspace({
   onDockModeChange
 }: Props): React.JSX.Element {
   const [mode, setMode] = useState<ModeKey>('interactive')
-  const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [paused, setPaused] = useState(false)
   const [status, setStatus] = useState('')
@@ -108,6 +120,11 @@ export function ChatWorkspace({
   const [alwaysAuthorize, setAlwaysAuthorize] = useState(false)
   const [sessionFiles, setSessionFiles] = useState<SessionFileRecord[]>([])
   const [slashIndex, setSlashIndex] = useState(0)
+  const [slashQuery, setSlashQuery] = useState<string | null>(null)
+  const [canSend, setCanSend] = useState(false)
+  const [mentionMaterials, setMentionMaterials] = useState<MaterialItem[]>([])
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [mentionMenu, setMentionMenu] = useState<MentionMenuState>({ open: false, items: [] })
   const [lastResult, setLastResult] = useState<{
     tokenUsed: number
     rounds: number
@@ -117,11 +134,28 @@ export function ChatWorkspace({
 
   const threadRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
-  const composerRef = useRef<HTMLTextAreaElement>(null)
   const currentSessionIdRef = useRef(sessionId)
   useEffect(() => {
     currentSessionIdRef.current = sessionId
   }, [sessionId])
+
+  // tiptap 输入区：以 ref 桥接最新闭包，editor 只创建一次
+  const materialsRef = useRef<MaterialItem[]>([])
+  materialsRef.current = mentionMaterials
+  const placeholderRef = useRef('')
+  placeholderRef.current =
+    mode === 'goal' ? '描述你的目标…' : '向 shy 提问，使用 / 选择命令，@ 引用素材'
+  const keydownRef = useRef<(event: KeyboardEvent) => boolean>(() => false)
+  const onUpdateRef = useRef<(editor: Editor) => void>(() => {})
+  const menuPropsRef = useRef<SuggestionBridgeProps | null>(null)
+  const slashOpenRef = useRef(false)
+  slashOpenRef.current = slashQuery !== null
+  const mentionOpenRef = useRef(false)
+  mentionOpenRef.current = mentionMenu.open && mentionMenu.items.length > 0
+  const mentionMenuBridgeRef = useRef<{
+    setMenu: (state: { open: boolean; items: MentionSuggestionItem[] }) => void
+    keyHandler: (event: KeyboardEvent) => boolean
+  } | null>(null)
 
   // 加载：设置(始终授权/模型)、技能、会话文件
   useEffect(() => {
@@ -177,8 +211,7 @@ export function ChatWorkspace({
     onConversationState?.(hasConversation)
   }, [hasConversation, onConversationState])
 
-  // 命令菜单：键入 `/` 触发，后续文本作为过滤查询
-  const slashQuery = draft.startsWith('/') ? draft.slice(1).trim() : null
+  // 命令菜单：编辑器文本以 `/` 开头时触发（slashQuery 由 onUpdate 派生为 state）
   const slashItems: SlashItem[] = useMemo(() => {
     if (slashQuery === null) return []
     const q = slashQuery.toLowerCase()
@@ -192,7 +225,8 @@ export function ChatWorkspace({
       .map((s) => ({
         key: s.id,
         label: s.name,
-        description: s.rootKind && s.rootKind !== 'user' ? `[${s.rootKind}] ${s.description}` : s.description,
+        description:
+          s.rootKind && s.rootKind !== 'user' ? `[${s.rootKind}] ${s.description}` : s.description,
         type: 'skill' as const
       }))
     return [...modeItems, ...skillItems]
@@ -201,14 +235,158 @@ export function ChatWorkspace({
   // slash 打开时的高亮索引(列表变化时钳制到范围内,避免越界)
   const activeSlashIndex = slashItems.length ? Math.min(slashIndex, slashItems.length - 1) : 0
 
+  // @ 素材引用：tiptap Mention suggestion 弹出菜单；仅绑定了素材项目时提供数据
+  const mentionProjectId = boundProjectId ?? pendingProjectId
+  const mentionOpen = mentionMenu.open && mentionMenu.items.length > 0
+
+  useEffect(() => {
+    // 菜单打开时拉取，避免导入新素材后列表过期；未绑定素材项目则清空数据源
+    if (!mentionProjectId) {
+      setMentionMaterials([])
+      return
+    }
+    let alive = true
+    void window.shy
+      .listProjects()
+      .then((projects) => {
+        const p = projects.find((x) => x.id === mentionProjectId)
+        if (p?.type !== 'material') return []
+        return window.shy.projectMaterialsList(mentionProjectId).then((r) => (r.ok ? r.items : []))
+      })
+      .then((items) => {
+        if (alive) setMentionMaterials(items ?? [])
+      })
+      .catch(() => {
+        if (alive) setMentionMaterials([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [mentionOpen, mentionProjectId])
+
+  const mentionItems: SlashItem[] = mentionMenu.items.map((i) => ({
+    key: i.id,
+    label: i.label,
+    description: i.path,
+    type: 'material' as const
+  }))
+
+  const activeMentionIndex = mentionItems.length
+    ? Math.min(mentionIndex, mentionItems.length - 1)
+    : 0
+
+  const selectMention = (item: SlashItem): void => {
+    const suggestion = mentionMenu.items.find((i) => i.id === item.key)
+    const bridge = menuPropsRef.current
+    if (!suggestion || !bridge) return
+    // v3 的 props.command(props) 会把入参整体作为 mention attrs（editor/range 由内部提供）
+    bridge.command(suggestion)
+    bridge.editor.commands.focus()
+    setMentionIndex(0)
+  }
+
   const selectSlash = (item: SlashItem): void => {
     if (item.type === 'mode') {
       setMode(item.key as ModeKey)
-      setDraft('')
+      editor?.commands.clearContent()
+      editor?.commands.focus()
     } else {
-      setDraft(`使用技能 ${item.label}：`)
+      editor?.commands.setContent(`<p>使用技能 ${item.label}：</p>`)
+      editor?.commands.focus('end')
     }
     setSlashIndex(0)
+  }
+
+  const editor = useComposerEditor({
+    keydownRef,
+    materialsRef,
+    placeholderRef,
+    onUpdateRef,
+    menuPropsRef,
+    mentionMenuRef: mentionMenuBridgeRef
+  })
+
+  // 键盘桥：@ 菜单打开时全部交给 suggestion 键控（Enter=选中素材）；
+  // slash 菜单键控 + Enter 发送
+  keydownRef.current = (event: KeyboardEvent): boolean => {
+    if (mentionOpenRef.current) return false
+    if (slashOpenRef.current) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        if (slashItems.length) setSlashIndex((activeSlashIndex + 1) % slashItems.length)
+        return true
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        if (slashItems.length)
+          setSlashIndex((activeSlashIndex - 1 + slashItems.length) % slashItems.length)
+        return true
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        const item = slashItems[activeSlashIndex]
+        if (item) selectSlash(item)
+        return true
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        editor?.commands.clearContent()
+        return true
+      }
+      return false
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault()
+      void onSend()
+      return true
+    }
+    return false
+  }
+
+  // suggestion 的 onKeyDown 桥：mention 菜单 ↑/↓/Enter/Esc
+  mentionMenuBridgeRef.current = {
+    setMenu: (state) => {
+      setMentionMenu((prev) =>
+        prev.open === state.open && prev.items.length === state.items.length
+          ? prev
+          : { open: state.open, items: state.items }
+      )
+      if (state.open) setMentionIndex(0)
+    },
+    keyHandler: (event: KeyboardEvent): boolean => {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        if (mentionItems.length) setMentionIndex((activeMentionIndex + 1) % mentionItems.length)
+        return true
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        if (mentionItems.length)
+          setMentionIndex((activeMentionIndex - 1 + mentionItems.length) % mentionItems.length)
+        return true
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        const item = mentionItems[activeMentionIndex]
+        if (item) selectMention(item)
+        return true
+      }
+      if (event.key === 'Escape') {
+        // 仅关闭菜单，保留已输入的 @token 文本
+        menuPropsRef.current = null
+        setMentionMenu({ open: false, items: [] })
+        return true
+      }
+      return false
+    }
+  }
+
+  // 内容更新：派生 slash 查询与可发送状态
+  onUpdateRef.current = (ed: Editor): void => {
+    const plain = serializeComposerText(ed)
+    const q = plain.startsWith('/') ? plain.slice(1).trim() : null
+    setSlashQuery((prev) => (prev === q ? prev : q))
+    setCanSend(!ed.isEmpty)
   }
 
   const onToggleAlwaysAuthorize = async (): Promise<void> => {
@@ -248,51 +426,18 @@ export function ChatWorkspace({
 
   const composerInner = (): React.JSX.Element => (
     <div className="composer-shell">
-      <textarea
-        ref={composerRef}
-        value={draft}
-        onChange={(e) => {
-          const v = e.target.value
-          setDraft(v)
-          if (v === '/') setSlashIndex(0)
-        }}
-        placeholder={
-          mode === 'goal' ? '描述你的目标…' : '向 shy 提问，使用 / 选择命令或能力'
-        }
-        aria-label="消息输入"
-        rows={1}
-        onKeyDown={(e) => {
-          if (slashQuery !== null) {
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              if (slashItems.length) setSlashIndex((activeSlashIndex + 1) % slashItems.length)
-              return
-            }
-            if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              if (slashItems.length)
-                setSlashIndex((activeSlashIndex - 1 + slashItems.length) % slashItems.length)
-              return
-            }
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              const item = slashItems[activeSlashIndex]
-              if (item) selectSlash(item)
-              return
-            }
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              setDraft('')
-              return
-            }
-            return
-          }
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            void onSend()
-          }
-        }}
-      />
+      <div className="composer-inputline">
+        <EditorContent editor={editor} />
+      </div>
+      {mentionOpen ? (
+        <SlashMenu
+          open
+          items={mentionItems}
+          activeIndex={activeMentionIndex}
+          onSelect={selectMention}
+          onHover={setMentionIndex}
+        />
+      ) : null}
       {slashQuery !== null ? (
         <SlashMenu
           open
@@ -350,7 +495,7 @@ export function ChatWorkspace({
               type="button"
               className="composer-send"
               onClick={() => void onSend()}
-              disabled={!draft.trim()}
+              disabled={!canSend}
               aria-label="发送"
               title="发送（回车）"
             >
@@ -668,34 +813,27 @@ export function ChatWorkspace({
     })
   }, [sessionId, onSessionsChanged])
 
-  const focusComposer = useCallback(() => {
-    composerRef.current?.focus()
-  }, [])
+  // 全局快捷键：/ 或 Cmd/Ctrl+K 聚焦输入区
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement | null
-      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
+      const typing =
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       if (e.key === '/' && !typing) {
         e.preventDefault()
-        focusComposer()
+        editor?.commands.focus('end')
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !typing) {
         e.preventDefault()
-        focusComposer()
+        editor?.commands.focus('end')
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [focusComposer])
-
-  useEffect(() => {
-    const el = composerRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
-  }, [draft])
+  }, [editor])
 
   const onSend = async (): Promise<void> => {
-    const text = draft.trim()
+    const text = serializeComposerText(editor).trim()
     if (!text || busy || !sessionId) return
     const detail = await window.shy.getSession(sessionId)
     const hasUser = detail?.messages.some((m) => m.role === 'user') ?? false
@@ -718,7 +856,8 @@ export function ChatWorkspace({
       setBoundProjectId(pendingProjectId)
       onSessionsChanged?.()
     }
-    setDraft('')
+    editor.commands.clearContent()
+    editor.commands.focus()
     stickToBottomRef.current = true
     setBusy(true)
     setPaused(false)
@@ -765,8 +904,7 @@ export function ChatWorkspace({
     runningText = status
   }
 
-  const sessionTitle =
-    sessions.find((s) => s.id === sessionId)?.title?.trim() || '未命名会话'
+  const sessionTitle = sessions.find((s) => s.id === sessionId)?.title?.trim() || '未命名会话'
 
   return (
     <div className="main chat-column">
@@ -843,8 +981,8 @@ export function ChatWorkspace({
                         type="button"
                         className="example-item"
                         onClick={() => {
-                          setDraft(s.text)
-                          focusComposer()
+                          editor?.commands.setContent(`<p>${s.text}</p>`)
+                          editor?.commands.focus('end')
                         }}
                       >
                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -872,9 +1010,7 @@ export function ChatWorkspace({
                             segments={messagesToSegments(block.items)}
                             streaming={streaming}
                           />
-                          {streaming ? (
-                            <span className="stream-cursor" aria-hidden="true" />
-                          ) : null}
+                          {streaming ? <span className="stream-cursor" aria-hidden="true" /> : null}
                         </div>
                       )
                     }

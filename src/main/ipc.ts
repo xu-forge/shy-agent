@@ -4,6 +4,9 @@ import {
   IPC,
   type AgentMode,
   type ChatRequest,
+  type MaterialCanvasState,
+  type MaterialThumbGetInput,
+  type MaterialThumbPutInput,
   type ModelSettings,
   type McpConfigFile,
   type ProjectType
@@ -63,6 +66,8 @@ import {
   collectProjectMaterialWrites,
   resolveProjectFilePath
 } from './projects/ipc-helpers'
+import { ensureImageThumb, putVideoThumb } from './materials/thumbs'
+import { readCanvasState, writeCanvasState } from './materials/canvas-state'
 import {
   ensureDockRoot,
   listDockTree,
@@ -94,9 +99,7 @@ function emitToRenderer(payload: unknown): void {
   getDefaultBus().emitSync(event as Parameters<ReturnType<typeof getDefaultBus>['emitSync']>[0])
 }
 
-function asDockIoFailure(
-  err: unknown
-): { ok: false; error: 'path_escape' | 'not_found' } | null {
+function asDockIoFailure(err: unknown): { ok: false; error: 'path_escape' | 'not_found' } | null {
   const mapped = asIpcFailure(err)
   if (mapped?.error === 'path_escape') return { ok: false as const, error: 'path_escape' as const }
   if (
@@ -190,13 +193,10 @@ export function registerCoreIpc(): void {
     await deleteSkill(id)
     return { ok: true }
   })
-  ipcMain.handle(
-    IPC.skillsSetEnabled,
-    async (_e, input: { name: string; enabled: boolean }) => {
-      await setSkillEnabled(input.name, input.enabled)
-      return { ok: true }
-    }
-  )
+  ipcMain.handle(IPC.skillsSetEnabled, async (_e, input: { name: string; enabled: boolean }) => {
+    await setSkillEnabled(input.name, input.enabled)
+    return { ok: true }
+  })
 
   ipcMain.handle(IPC.sessionsList, async () => listSessions())
   ipcMain.handle(IPC.sessionsGet, async (_e, id: string) => getSession(id))
@@ -212,9 +212,7 @@ export function registerCoreIpc(): void {
   // shell-session-side-panel: 会话文件追踪
   ipcMain.handle(IPC.sessionFilesList, async (_e, sessionId: string) => listSessionFiles(sessionId))
   // inspector-func-panel: 会话文件改动 diff
-  ipcMain.handle(IPC.sessionDiffsList, async (_e, sessionId: string) =>
-    listSessionDiffs(sessionId)
-  )
+  ipcMain.handle(IPC.sessionDiffsList, async (_e, sessionId: string) => listSessionDiffs(sessionId))
   ipcMain.handle(IPC.sessionFilesReveal, async (_e, _sessionId: string, filePath: string) => {
     await revealInFileManager(filePath)
     return { ok: true }
@@ -266,22 +264,19 @@ export function registerCoreIpc(): void {
     if (result.canceled || result.filePaths.length === 0) return { ok: false as const }
     return { ok: true as const, path: result.filePaths[0] }
   })
-  ipcMain.handle(
-    IPC.projectReveal,
-    async (_e, input: { projectId: string; absPath: string }) => {
-      const project = getProject(input.projectId)
-      if (!project) return { ok: false as const, error: 'not_found' as const }
-      try {
-        const abs = assertInsideRoot(project.rootPath, input.absPath)
-        await shell.openPath(abs)
-        return { ok: true as const }
-      } catch (err) {
-        const mapped = asIpcFailure(err)
-        if (mapped) return mapped
-        throw err
-      }
+  ipcMain.handle(IPC.projectReveal, async (_e, input: { projectId: string; absPath: string }) => {
+    const project = getProject(input.projectId)
+    if (!project) return { ok: false as const, error: 'not_found' as const }
+    try {
+      const abs = assertInsideRoot(project.rootPath, input.absPath)
+      await shell.openPath(abs)
+      return { ok: true as const }
+    } catch (err) {
+      const mapped = asIpcFailure(err)
+      if (mapped) return mapped
+      throw err
     }
-  )
+  })
   ipcMain.handle(
     IPC.projectFileReadDataUrl,
     async (_e, input: { projectId: string; relativePath: string }) => {
@@ -357,6 +352,57 @@ export function registerCoreIpc(): void {
       }
     }
   )
+
+  ipcMain.handle(IPC.materialThumbGet, async (_e, input: MaterialThumbGetInput) => {
+    const project = getProject(input.projectId)
+    if (!project) return { ok: false as const, reason: 'not_found' as const }
+    try {
+      assertInsideRoot(project.rootPath, input.absPath)
+    } catch {
+      return { ok: false as const, reason: 'path_escape' as const }
+    }
+    return ensureImageThumb(input)
+  })
+
+  ipcMain.handle(IPC.materialThumbPut, async (_e, input: MaterialThumbPutInput) => {
+    const project = getProject(input.projectId)
+    if (!project) return { ok: false as const, reason: 'invalid_data' as const }
+    try {
+      assertInsideRoot(project.rootPath, input.absPath)
+    } catch {
+      return { ok: false as const, reason: 'path_escape' as const }
+    }
+    return putVideoThumb(input)
+  })
+
+  ipcMain.handle(IPC.materialCanvasStateGet, async (_e, projectId: string) => {
+    if (!getProject(projectId)) return { ok: false as const, error: 'not_found' as const }
+    return { ok: true as const, state: readCanvasState(projectId) }
+  })
+
+  ipcMain.handle(
+    IPC.materialCanvasStateSet,
+    async (_e, input: { projectId: string; state: MaterialCanvasState }) => {
+      if (!getProject(input.projectId)) return { ok: false as const, error: 'not_found' as const }
+      writeCanvasState(input.projectId, input.state)
+      return { ok: true as const }
+    }
+  )
+
+  ipcMain.handle(IPC.projectFileOpen, async (_e, input: { projectId: string; absPath: string }) => {
+    const project = getProject(input.projectId)
+    if (!project) return { ok: false as const, error: 'not_found' as const }
+    try {
+      const abs = assertInsideRoot(project.rootPath, input.absPath)
+      const message = await shell.openPath(abs)
+      if (message) return { ok: false as const, error: 'open_failed' as const }
+      return { ok: true as const }
+    } catch (err) {
+      const mapped = asIpcFailure(err)
+      if (mapped) return mapped
+      return { ok: false as const, error: 'open_failed' as const }
+    }
+  })
 
   ipcMain.handle(IPC.dockOpenRoot, async (_e, sessionId: string) => {
     try {

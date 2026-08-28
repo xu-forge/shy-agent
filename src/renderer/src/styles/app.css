@@ -892,7 +892,7 @@
   padding: 16px 16px 12px;
 }
 
-.empty-composer .composer-shell textarea {
+.empty-composer .composer-shell .composer-editor-area {
   min-height: 40px;
   font-size: 15px;
 }
@@ -1319,6 +1319,82 @@
 
 .composer-shell textarea::placeholder {
   color: var(--text-muted);
+}
+
+/* ────────── @ 素材引用 chips（tiptap 内联混排） ────────── */
+
+.composer-inputline {
+  min-width: 0;
+}
+
+.composer-shell .composer-inputline .composer-editor-area {
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 4px 6px 6px;
+  min-height: 30px;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-align: left;
+  position: relative;
+}
+
+.composer-shell .composer-inputline .composer-editor-area p {
+  margin: 0;
+}
+
+.composer-shell .composer-inputline .composer-editor-area p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.mention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 280px;
+  padding: 1px 8px;
+  margin: 0 1px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12.5px;
+  font-weight: 560;
+  line-height: 1.5;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.mention-chip .mention-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mention-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mention-chip-x:hover {
+  background: var(--accent-hover);
 }
 
 .verify-command-input {
@@ -4131,6 +4207,10 @@
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
+.slash-badge.material {
+  background: var(--amber-soft);
+  color: var(--amber-strong);
+}
 .slash-label {
   font-weight: 540;
   white-space: nowrap;
@@ -5739,7 +5819,7 @@
   border-color: #c9d1dc;
   box-shadow: 0 10px 28px rgba(15, 20, 34, 0.1);
 }
-.empty-composer .composer-shell textarea {
+.empty-composer .composer-shell .composer-editor-area {
   min-height: 52px;
   font-size: 15px;
   color: #1f2328;
@@ -7742,6 +7822,7 @@
 }
 
 .material-library {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -7777,67 +7858,192 @@
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 
-.material-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-  padding: 14px;
-  overflow: auto;
+/* ────────── 素材画布（material-canvas） ────────── */
+
+.canvas-viewport {
+  position: relative;
+  flex: 1;
   min-height: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
-.material-card {
+.canvas-viewport:active {
+  cursor: grabbing;
+}
+
+.canvas-plane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.canvas-card {
+  position: absolute;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px;
+  gap: 4px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-panel);
-  color: var(--text);
+  box-shadow: var(--shadow-sm);
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
 }
 
-.material-card:hover {
-  border-color: color-mix(in srgb, var(--text) 28%, transparent);
+.canvas-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: var(--shadow-md);
 }
 
-.material-card-kind {
-  font-size: 11px;
+.canvas-card-media {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+
+.canvas-card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.canvas-card-loading {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    var(--bg-inset) 30%,
+    var(--bg-hover) 50%,
+    var(--bg-inset) 70%
+  );
+  background-size: 200% 100%;
+  animation: canvas-shimmer 1.4s linear infinite;
+}
+
+@keyframes canvas-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.canvas-card-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   color: var(--text-secondary);
 }
 
-.material-card-name {
-  font-size: 13px;
-  font-weight: 560;
-  word-break: break-all;
+.canvas-card-icon {
+  width: 34px;
+  height: 34px;
+  fill: var(--text-muted);
 }
 
-.material-viewer {
+.canvas-card-docext {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.canvas-card-duration {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-card-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.canvas-card-kind {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.canvas-card-name {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ────────── 素材 lightbox ────────── */
+
+.lightbox {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 1;
 }
 
-.material-viewer-bar {
+.lightbox-mask {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-deep) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.lightbox-bar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
+  background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
 }
 
-.material-viewer-actions {
+.lightbox-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.material-viewer-body {
+.lightbox-body {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -7847,11 +8053,61 @@
   overflow: auto;
 }
 
-.material-preview {
+.lightbox-media {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.lightbox-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+
+.lightbox-text {
+  max-width: 860px;
+  max-height: 100%;
+  overflow: auto;
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lightbox-text .md {
+  white-space: normal;
+}
+
+.lightbox-audio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 36px;
+  border-radius: 12px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-md);
+}
+
+.lightbox-audio p {
+  margin: 0;
+  font-weight: 560;
+}
+
+.lightbox-unsupported {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
 }
 
 /* ══════════ 标题栏拖拽 / 代码布局切换 / 二级页主题 ══════════ */

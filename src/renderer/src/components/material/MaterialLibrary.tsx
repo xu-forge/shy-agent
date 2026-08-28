@@ -1,25 +1,32 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MaterialItem } from '../../../../shared/ipc'
 import { SESSION_FILES_POLL_MS } from '../../lib/codeWorkspace'
 import {
+  DEFAULT_VIEWPORT,
   KIND_CHIPS,
-  fileNameOf,
-  filterMaterialsByKind,
-  type KindFilter
+  type CanvasViewport,
+  type KindFilter,
+  clampViewport,
+  filterMaterialsByKind
 } from '../../lib/materialLibrary'
-import { MaterialViewer } from './MaterialViewer'
+import { MaterialCanvas } from './MaterialCanvas'
+import { Lightbox } from './Lightbox'
 
 type Props = {
   projectId: string
   sessionId: string
 }
 
+const STATE_SAVE_DEBOUNCE_MS = 300
+
 export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Element {
   const [items, setItems] = useState<MaterialItem[]>([])
   const [truncated, setTruncated] = useState(false)
   const [filter, setFilter] = useState<KindFilter>('all')
   const [selected, setSelected] = useState<MaterialItem | null>(null)
+  const [viewport, setViewport] = useState<CanvasViewport | null>(null)
   const [error, setError] = useState('')
+  const saveTimer = useRef<number | null>(null)
 
   const refresh = useCallback(async (): Promise<void> => {
     const r = await window.shy.projectMaterialsList(projectId)
@@ -35,12 +42,28 @@ export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Elem
     setSelected((cur) => (cur ? (r.items.find((i) => i.id === cur.id) ?? null) : null))
   }, [projectId])
 
+  // 项目切换：重置并读回持久化的画布视口
   useEffect(() => {
     setFilter('all')
     setSelected(null)
     setItems([])
     setTruncated(false)
     setError('')
+    setViewport(null)
+    let alive = true
+    void window.shy
+      .materialCanvasStateGet(projectId)
+      .then((r) => {
+        if (!alive) return
+        const v = r.ok && r.state ? clampViewport(r.state) : DEFAULT_VIEWPORT
+        setViewport(v)
+      })
+      .catch(() => {
+        if (alive) setViewport(DEFAULT_VIEWPORT)
+      })
+    return () => {
+      alive = false
+    }
   }, [projectId])
 
   useEffect(() => {
@@ -59,6 +82,28 @@ export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Elem
       window.clearInterval(id)
     }
   }, [projectId, sessionId, refresh])
+
+  // 视口变化防抖持久化
+  const onViewportChange = useCallback(
+    (v: CanvasViewport): void => {
+      setViewport(v)
+      if (saveTimer.current != null) window.clearTimeout(saveTimer.current)
+      saveTimer.current = window.setTimeout(() => {
+        saveTimer.current = null
+        void window.shy
+          .materialCanvasStateSet({ projectId, state: { ...v, sortBy: 'mtime_desc' } })
+          .catch(() => {})
+      }, STATE_SAVE_DEBOUNCE_MS)
+    },
+    [projectId]
+  )
+
+  useEffect(
+    () => () => {
+      if (saveTimer.current != null) window.clearTimeout(saveTimer.current)
+    },
+    []
+  )
 
   const visible = useMemo(() => filterMaterialsByKind(items, filter), [items, filter])
 
@@ -98,41 +143,17 @@ export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Elem
       </div>
       {error ? <p className="history-empty">{error}</p> : null}
       {truncated ? <p className="file-tree-truncated">素材列表已截断（超过上限）</p> : null}
-      {selected ? (
-        <MaterialViewer projectId={projectId} item={selected} onClose={() => setSelected(null)} />
-      ) : (
-        <div className="material-grid" aria-label="素材网格">
-          {visible.length === 0 && !error ? (
-            <p className="history-empty">暂无素材</p>
-          ) : null}
-          {visible.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="material-card"
-              onClick={() => setSelected(item)}
-            >
-              <span className="material-card-kind">{kindLabel(item.kind)}</span>
-              <span className="material-card-name">{fileNameOf(item)}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {selected && viewport ? (
+        <Lightbox projectId={projectId} item={selected} onClose={() => setSelected(null)} />
+      ) : viewport ? (
+        <MaterialCanvas
+          projectId={projectId}
+          items={visible}
+          viewport={viewport}
+          onViewportChange={onViewportChange}
+          onOpen={setSelected}
+        />
+      ) : null}
     </div>
   )
-}
-
-function kindLabel(kind: MaterialItem['kind']): string {
-  switch (kind) {
-    case 'image':
-      return '图片'
-    case 'video':
-      return '视频'
-    case 'audio':
-      return '音频'
-    case 'doc':
-      return '文档'
-    default:
-      return '其他'
-  }
 }

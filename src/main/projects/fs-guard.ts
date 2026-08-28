@@ -150,6 +150,8 @@ export function listMaterials(
         continue
       }
       if (!entry.isFile()) continue
+      // 素材库只收媒体与文档；代码等不可展示类型不进素材列表
+      if (kindFromName(entry.name) === 'other') continue
       if (items.length >= TREE_NODE_LIMIT) {
         truncated = true
         return
