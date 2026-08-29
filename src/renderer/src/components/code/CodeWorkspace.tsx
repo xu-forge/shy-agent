@@ -25,13 +25,15 @@ type Props = {
   rootPath: string
   sessionId: string
   theme: Theme
+  onActivePathChange?: (path: string | null) => void
 }
 
 export function CodeWorkspace({
   projectId,
   rootPath,
   sessionId,
-  theme
+  theme,
+  onActivePathChange
 }: Props): React.JSX.Element {
   const [tabs, setTabs] = useState<TabState[]>([])
   const [activePath, setActivePath] = useState<string | null>(null)
@@ -41,6 +43,16 @@ export function CodeWorkspace({
   tabsRef.current = tabs
 
   const monacoTheme = monacoThemeFromDataset(theme)
+
+  useEffect(() => {
+    onActivePathChange?.(activePath)
+  }, [activePath, onActivePathChange])
+
+  useEffect(() => {
+    return () => {
+      onActivePathChange?.(null)
+    }
+  }, [onActivePathChange])
 
   const openFile = useCallback(
     async (relativePath: string): Promise<void> => {

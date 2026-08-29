@@ -23,6 +23,7 @@ import { RenameMaterialDialog } from './RenameMaterialDialog'
 type Props = {
   projectId: string
   sessionId: string
+  onLightboxPathChange?: (path: string | null) => void
 }
 
 const STATE_SAVE_DEBOUNCE_MS = 300
@@ -36,7 +37,11 @@ function renameErrorMessage(error: string): string {
   return '重命名失败'
 }
 
-export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Element {
+export function MaterialLibrary({
+  projectId,
+  sessionId,
+  onLightboxPathChange
+}: Props): React.JSX.Element {
   const [items, setItems] = useState<MaterialItem[]>([])
   const [truncated, setTruncated] = useState(false)
   const [filter, setFilter] = useState<KindFilter>('all')
@@ -55,6 +60,16 @@ export function MaterialLibrary({ projectId, sessionId }: Props): React.JSX.Elem
   const collapsedRef = useRef<string[]>([])
   viewportRef.current = viewport
   collapsedRef.current = collapsed
+
+  useEffect(() => {
+    onLightboxPathChange?.(selected?.relativePath ?? null)
+  }, [selected, onLightboxPathChange])
+
+  useEffect(() => {
+    return () => {
+      onLightboxPathChange?.(null)
+    }
+  }, [onLightboxPathChange])
 
   const persist = useCallback(
     (v: CanvasViewport, collapsedPaths: string[]): void => {

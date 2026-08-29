@@ -25,6 +25,7 @@ import {
   type CodeLayout,
   type NavKey
 } from './lib/shellLayout'
+import { resolveActiveView } from './lib/activeView'
 import {
   DOCK_MODE_KEY,
   LEGACY_INSPECTOR_OPEN_KEY,
@@ -95,6 +96,8 @@ function App(): React.JSX.Element {
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
+  const [codeActivePath, setCodeActivePath] = useState<string | null>(null)
+  const [materialLightboxPath, setMaterialLightboxPath] = useState<string | null>(null)
 
   // 主题：应用 + 持久化
   useEffect(() => {
@@ -224,6 +227,7 @@ function App(): React.JSX.Element {
   const activeSession = sessions.find((s) => s.id === sessionId)
   const boundProject = projects.find((p) => p.id === activeSession?.projectId) ?? null
   const workspaceKind = resolveWorkspaceKind(activeSession, projects)
+  const activeView = resolveActiveView(workspaceKind, codeActivePath, materialLightboxPath)
   const layout = resolveShellLayout({
     nav,
     workspaceKind,
@@ -308,13 +312,18 @@ function App(): React.JSX.Element {
             rootPath={boundProject.rootPath}
             sessionId={sessionId}
             theme={theme}
+            onActivePathChange={setCodeActivePath}
           />
         ) : null}
         {layout.main === 'code' && !boundProject ? (
           <PlaceholderView title="代码工作区" />
         ) : null}
         {layout.main === 'material' && boundProject ? (
-          <MaterialLibrary projectId={boundProject.id} sessionId={sessionId} />
+          <MaterialLibrary
+            projectId={boundProject.id}
+            sessionId={sessionId}
+            onLightboxPathChange={setMaterialLightboxPath}
+          />
         ) : null}
         {layout.main === 'material' && !boundProject ? (
           <PlaceholderView title="素材工作区" />
@@ -339,6 +348,7 @@ function App(): React.JSX.Element {
             showDockToggle={Boolean(layout.showInspector && sessionId)}
             dockMode={dockMode}
             onDockModeChange={setDockMode}
+            activeView={activeView}
           />
         </ChatWorkspaceHost>
       ) : null}

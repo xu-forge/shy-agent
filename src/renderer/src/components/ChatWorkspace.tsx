@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
 import type { ModeKey } from './ModeToggle'
 import type {
+  ActiveView,
   MaterialItem,
   SessionFileRecord,
   SessionSummary,
@@ -32,6 +33,7 @@ import { artifactDisplayPath } from '../lib/artifactTree'
 import type { CodeLayout } from '../lib/shellLayout'
 import { isNearBottom } from '../lib/scrollStick'
 import { toggleDockMode, type DockMode } from '../lib/dockMode'
+import { chatPayload } from '../lib/activeView'
 import { RightDockIcon } from './RightDockIcon'
 import { OpenWithMenu } from './dock/OpenWithMenu'
 import { FolderIcon, GlobeIcon } from './dock/DockIcons'
@@ -48,6 +50,7 @@ type Props = {
   showDockToggle?: boolean
   dockMode?: DockMode
   onDockModeChange?: (mode: DockMode) => void
+  activeView?: ActiveView
 }
 
 type Msg = {
@@ -106,7 +109,8 @@ export function ChatWorkspace({
   onCodeLayoutChange,
   showDockToggle = false,
   dockMode = null,
-  onDockModeChange
+  onDockModeChange,
+  activeView
 }: Props): React.JSX.Element {
   const [mode, setMode] = useState<ModeKey>('interactive')
   const [busy, setBusy] = useState(false)
@@ -866,11 +870,7 @@ export function ChatWorkspace({
       ...prev,
       { role: 'user', content: text, createdAt: new Date().toISOString() }
     ])
-    await window.shy.chat({
-      sessionId,
-      message: text,
-      mode
-    })
+    await window.shy.chat(chatPayload({ sessionId, message: text, mode }, activeView))
     onSessionsChanged?.()
   }
 
