@@ -42,7 +42,7 @@ function createWindow(): void {
           trafficLightPosition: { x: 18, y: 13 }
         }
       : {}),
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform !== 'darwin' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -97,6 +97,9 @@ app.whenReady().then(() => {
   }
 
   electronApp.setAppUserModelId('com.local.shy')
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(icon)
+  }
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
