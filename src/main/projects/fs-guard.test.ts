@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'fs'
 import { tmpdir } from 'os'
 import { basename, join, resolve } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -6,11 +14,14 @@ import {
   TREE_IGNORE,
   TREE_NODE_LIMIT,
   assertInsideRoot,
+  deleteMaterial,
   importMaterial,
+  isValidMaterialName,
   kindFromName,
   listMaterials,
   listProjectTree,
   readFileAsDataUrl,
+  renameMaterial,
   type TreeNode
 } from './fs-guard'
 
@@ -149,6 +160,28 @@ describe('listMaterials', () => {
     expect(md?.sourceSessionId).toBeUndefined()
   })
 
+  it('includes file symlinks whose target is outside the project root', () => {
+    const outside = join(tmpDir, '01-overview.md')
+    writeFileSync(outside, '# overview')
+    mkdirSync(join(root, 'autoClaw-源码分析'))
+    writeFileSync(join(root, 'autoClaw-源码分析', '00-索引.md'), '# idx')
+    symlinkSync(outside, join(root, 'autoClaw-源码分析', '01-overview.md'))
+    const { items } = listMaterials(root)
+    expect(items.map((i) => i.id).sort()).toEqual([
+      'autoClaw-源码分析/00-索引.md',
+      'autoClaw-源码分析/01-overview.md'
+    ])
+    const linked = items.find((i) => i.id.endsWith('01-overview.md'))
+    expect(linked?.kind).toBe('doc')
+    expect(linked?.absPath).toBe(resolve(join(root, 'autoClaw-源码分析', '01-overview.md')))
+  })
+
+  it('skips dangling file symlinks', () => {
+    symlinkSync(join(tmpDir, 'missing.md'), join(root, 'gone.md'))
+    const { items } = listMaterials(root)
+    expect(items.map((i) => i.id)).not.toContain('gone.md')
+  })
+
   it('truncates when files exceed TREE_NODE_LIMIT', () => {
     for (let i = 0; i < TREE_NODE_LIMIT + 1; i++) {
       writeFileSync(join(root, `m${String(i).padStart(4, '0')}.txt`), '')
@@ -193,5 +226,98 @@ describe('readFileAsDataUrl', () => {
 
   it('throws path_escape when the relative path walks out', () => {
     expect(() => readFileAsDataUrl(root, join('..', 'secret.png'))).toThrow(/path_escape/)
+  })
+})
+
+describe('isValidMaterialName', () => {
+  it('rejects empty, separator-containing and dot names', () => {
+    expect(isValidMaterialName('new.png')).toBe(true)
+    expect(isValidMaterialName('')).toBe(false)
+    expect(isValidMaterialName('a/b.png')).toBe(false)
+    expect(isValidMaterialName('a\\b.png')).toBe(false)
+    expect(isValidMaterialName('.')).toBe(false)
+    expect(isValidMaterialName('..')).toBe(false)
+  })
+})
+
+describe('renameMaterial', () => {
+  it('renames a file and returns the refreshed item', () => {
+    const file = join(root, 'old.png')
+    writeFileSync(file, 'img')
+    const r = renameMaterial(root, file, 'new.png')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(existsSync(file)).toBe(false)
+    expect(existsSync(join(root, 'new.png'))).toBe(true)
+    expect(r.item.id).toBe('new.png')
+    expect(r.item.kind).toBe('image')
+  })
+
+  it('renames a directory and moves its subtree', () => {
+    const dir = join(root, 'a')
+    mkdirSync(dir)
+    writeFileSync(join(dir, 'x.png'), 'x')
+    const r = renameMaterial(root, dir, 'b')
+    expect(r.ok).toBe(true)
+    expect(existsSync(join(root, 'b', 'x.png'))).toBe(true)
+    expect(r.ok && r.item.id).toBe('b')
+  })
+
+  it('treats renaming to the same name as a no-op success', () => {
+    const file = join(root, 'keep.png')
+    writeFileSync(file, 'x')
+    const r = renameMaterial(root, file, 'keep.png')
+    expect(r.ok).toBe(true)
+    expect(existsSync(file)).toBe(true)
+  })
+
+  it('rejects invalid names and taken names', () => {
+    const file = join(root, 'keep.png')
+    writeFileSync(file, 'x')
+    writeFileSync(join(root, 'taken.png'), 'y')
+    expect(renameMaterial(root, file, '')).toEqual({ ok: false, error: 'invalid_name' })
+    expect(renameMaterial(root, file, 'sub/x.png')).toEqual({ ok: false, error: 'invalid_name' })
+    expect(renameMaterial(root, file, 'taken.png')).toEqual({ ok: false, error: 'name_taken' })
+    expect(existsSync(file)).toBe(true)
+  })
+
+  it('rejects escapes and missing sources', () => {
+    expect(renameMaterial(root, join(root, '..', 'out.png'), 'x.png')).toEqual({
+      ok: false,
+      error: 'path_escape'
+    })
+    expect(renameMaterial(root, join(root, 'none.png'), 'x.png')).toEqual({
+      ok: false,
+      error: 'not_found'
+    })
+  })
+})
+
+describe('deleteMaterial', () => {
+  it('deletes a file', () => {
+    const file = join(root, 'gone.png')
+    writeFileSync(file, 'x')
+    expect(deleteMaterial(root, file)).toEqual({ ok: true })
+    expect(existsSync(file)).toBe(false)
+  })
+
+  it('deletes a directory recursively', () => {
+    const dir = join(root, 'doomed')
+    mkdirSync(join(dir, 'nested'), { recursive: true })
+    writeFileSync(join(dir, 'nested', 'x.png'), 'x')
+    expect(deleteMaterial(root, dir)).toEqual({ ok: true })
+    expect(existsSync(dir)).toBe(false)
+  })
+
+  it('refuses to delete the project root itself and escapes', () => {
+    expect(deleteMaterial(root, root)).toEqual({ ok: false, error: 'path_escape' })
+    expect(deleteMaterial(root, join(root, '..', 'elsewhere.png'))).toEqual({
+      ok: false,
+      error: 'path_escape'
+    })
+    expect(deleteMaterial(root, join(root, 'missing.png'))).toEqual({
+      ok: false,
+      error: 'not_found'
+    })
   })
 })

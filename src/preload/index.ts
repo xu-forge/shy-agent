@@ -31,7 +31,10 @@ import {
   type MaterialThumbGetResult,
   type MaterialThumbPutInput,
   type MaterialThumbPutResult,
+  type ProjectFileDeleteResult,
   type ProjectFileOpenResult,
+  type ProjectFileRenameInput,
+  type ProjectFileRenameResult,
   type ProjectFileReadDataUrlResult,
   type ProjectPickFileResult,
   type ProjectPickFolderResult,
@@ -207,6 +210,12 @@ const shy = {
     projectId: string
     absPath: string
   }): Promise<ProjectFileOpenResult> => ipcRenderer.invoke(IPC.projectFileOpen, input),
+  projectFileRename: (input: ProjectFileRenameInput): Promise<ProjectFileRenameResult> =>
+    ipcRenderer.invoke(IPC.projectFileRename, input),
+  projectFileDelete: (input: {
+    projectId: string
+    absPath: string
+  }): Promise<ProjectFileDeleteResult> => ipcRenderer.invoke(IPC.projectFileDelete, input),
   dockOpenRoot: (sessionId: string): Promise<DockOpenRootResult> =>
     ipcRenderer.invoke(IPC.dockOpenRoot, sessionId),
   dockTreeList: (sessionId: string): Promise<DockTreeListResult> =>

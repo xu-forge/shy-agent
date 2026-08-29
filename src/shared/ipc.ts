@@ -58,6 +58,8 @@ export const IPC = {
   materialCanvasStateGet: 'shy:material-canvas-state-get',
   materialCanvasStateSet: 'shy:material-canvas-state-set',
   projectFileOpen: 'shy:project-file-open',
+  projectFileRename: 'shy:project-file-rename',
+  projectFileDelete: 'shy:project-file-delete',
   dockOpenRoot: 'shy:dock-open-root',
   dockTreeList: 'shy:dock-tree-list',
   dockFileRead: 'shy:dock-file-read',
@@ -301,6 +303,8 @@ export type MaterialCanvasState = {
   y: number
   scale: number
   sortBy?: MaterialCanvasSortBy
+  /** 折叠分组的目录 relativePath 集合（material-canvas-groups） */
+  collapsed?: string[]
 }
 
 export type MaterialCanvasStateGetResult =
@@ -310,6 +314,19 @@ export type MaterialCanvasStateSetResult = { ok: true } | { ok: false; error: 'n
 
 export type ProjectFileOpenResult =
   { ok: true } | { ok: false; error: 'path_escape' | 'not_found' | 'open_failed' }
+
+export type ProjectFileRenameInput = {
+  projectId: string
+  absPath: string
+  newName: string
+}
+
+export type ProjectFileRenameResult =
+  { ok: true; item: MaterialItem }
+  | { ok: false; error: 'path_escape' | 'not_found' | 'name_taken' | 'invalid_name' }
+
+export type ProjectFileDeleteResult =
+  { ok: true } | { ok: false; error: 'path_escape' | 'not_found' | 'delete_failed' }
 
 export type DockOpenRootResult =
   { ok: true; path: string } | { ok: false; error: 'not_found' | 'open_failed' }

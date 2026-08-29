@@ -2,22 +2,27 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MaterialItem } from '../../../../shared/ipc'
 import {
   type CanvasViewport,
-  canvasColumnsFor,
-  layoutMaterials,
+  type PlacedGroup,
+  buildMaterialGroups,
+  layoutGroupedMaterials,
   panViewport,
   scrollViewport,
-  sortMaterialsByRecency,
   visiblePlaced,
   zoomViewportAt
 } from '../../lib/materialLibrary'
 import { CanvasCard } from './CanvasCard'
+import { MaterialGroup } from './MaterialGroup'
 
 type Props = {
   projectId: string
   items: MaterialItem[]
   viewport: CanvasViewport
+  collapsed: readonly string[]
   onViewportChange: (v: CanvasViewport) => void
   onOpen: (item: MaterialItem) => void
+  onToggleGroup: (path: string) => void
+  onFileContext: (e: React.MouseEvent, item: MaterialItem) => void
+  onGroupContext: (e: React.MouseEvent, group: PlacedGroup) => void
 }
 
 type DragState = {
@@ -32,8 +37,12 @@ export function MaterialCanvas({
   projectId,
   items,
   viewport,
+  collapsed,
   onViewportChange,
-  onOpen
+  onOpen,
+  onToggleGroup,
+  onFileContext,
+  onGroupContext
 }: Props): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -75,7 +84,7 @@ export function MaterialCanvas({
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return
-    if ((e.target as HTMLElement).closest('.canvas-card')) return
+    if ((e.target as HTMLElement).closest('button, .material-context-menu')) return
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -103,19 +112,19 @@ export function MaterialCanvas({
     e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
-  const ordered = useMemo(() => sortMaterialsByRecency(items), [items])
-  const columns = canvasColumnsFor(size.width, viewport.scale)
-  const plane = useMemo(() => layoutMaterials(ordered, columns), [ordered, columns])
-  const visible = useMemo(
-    () =>
-      visiblePlaced(plane.placed, {
-        x: viewport.x,
-        y: viewport.y,
-        width: size.width / viewport.scale,
-        height: size.height / viewport.scale
-      }),
-    [plane, viewport.x, viewport.y, viewport.scale, size.width, size.height]
+  const forest = useMemo(() => buildMaterialGroups(items), [items])
+  const plane = useMemo(() => layoutGroupedMaterials(forest, collapsed), [forest, collapsed])
+  const view = useMemo(
+    () => ({
+      x: viewport.x,
+      y: viewport.y,
+      width: size.width / viewport.scale,
+      height: size.height / viewport.scale
+    }),
+    [viewport.x, viewport.y, viewport.scale, size.width, size.height]
   )
+  const visibleRoot = useMemo(() => visiblePlaced(plane.rootPlaced, view), [plane.rootPlaced, view])
+  const visibleGroups = useMemo(() => visiblePlaced(plane.groups, view), [plane.groups, view])
 
   return (
     <div
@@ -125,6 +134,7 @@ export function MaterialCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <div
         className="canvas-plane"
@@ -134,8 +144,26 @@ export function MaterialCanvas({
           transform: `scale(${viewport.scale}) translate(${-viewport.x}px, ${-viewport.y}px)`
         }}
       >
-        {visible.map((p) => (
-          <CanvasCard key={p.item.id} projectId={projectId} placed={p} onOpen={onOpen} />
+        {visibleRoot.map((p) => (
+          <CanvasCard
+            key={p.item.id}
+            projectId={projectId}
+            placed={p}
+            onOpen={onOpen}
+            onContextMenu={onFileContext}
+          />
+        ))}
+        {visibleGroups.map((g) => (
+          <MaterialGroup
+            key={g.path}
+            projectId={projectId}
+            group={g}
+            view={view}
+            onOpen={onOpen}
+            onToggle={onToggleGroup}
+            onFileContext={onFileContext}
+            onGroupContext={onGroupContext}
+          />
         ))}
       </div>
       {items.length === 0 ? <div className="canvas-empty">暂无素材</div> : null}

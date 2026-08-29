@@ -43,6 +43,18 @@ describe('writeCanvasState / readCanvasState', () => {
     expect(readCanvasState('none', home)).toBeNull()
   })
 
+  it('round-trips collapsed group paths', () => {
+    writeCanvasState('p1', { x: 0, y: 0, scale: 1, collapsed: ['a', 'a/b'] }, home)
+    expect(readCanvasState('p1', home)?.collapsed).toEqual(['a', 'a/b'])
+  })
+
+  it('treats missing collapsed as fully expanded', () => {
+    const dir = join(home, 'state', 'material-canvas')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'old.json'), JSON.stringify({ x: 1, y: 2, scale: 1 }))
+    expect(readCanvasState('old', home)).toEqual({ x: 1, y: 2, scale: 1, sortBy: 'mtime_desc' })
+  })
+
   it('falls back to null on corrupt or non-numeric state', () => {
     const dir = join(home, 'state', 'material-canvas')
     mkdirSync(dir, { recursive: true })

@@ -1,5 +1,14 @@
-import { copyFileSync, existsSync, readFileSync, readdirSync, statSync } from 'fs'
-import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'path'
+import {
+  copyFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync
+} from 'fs'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'path'
 import type { MaterialItem, MaterialKind, TreeNode } from '../../shared/ipc'
 
 export type { MaterialItem, MaterialKind, TreeNode }
@@ -149,7 +158,15 @@ export function listMaterials(
         walk(abs)
         continue
       }
-      if (!entry.isFile()) continue
+      if (entry.isSymbolicLink()) {
+        try {
+          if (!statSync(abs).isFile()) continue
+        } catch {
+          continue
+        }
+      } else if (!entry.isFile()) {
+        continue
+      }
       // 素材库只收媒体与文档；代码等不可展示类型不进素材列表
       if (kindFromName(entry.name) === 'other') continue
       if (items.length >= TREE_NODE_LIMIT) {
@@ -157,7 +174,11 @@ export function listMaterials(
         return
       }
       const resolved = resolve(abs)
-      items.push(toMaterialItem(root, resolved, writeByAbs.get(resolved)))
+      try {
+        items.push(toMaterialItem(root, resolved, writeByAbs.get(resolved)))
+      } catch {
+        continue
+      }
     }
   }
 
@@ -189,4 +210,74 @@ export function readFileAsDataUrl(rootPath: string, relativePath: string): strin
   const abs = assertInsideRoot(rootPath, join(rootPath, relativePath))
   const buf = readFileSync(abs)
   return `data:${mimeFromName(basename(abs))};base64,${buf.toString('base64')}`
+}
+
+/** 名称合法性：非空、不含路径分隔符、不能是相对路径特殊段 */
+export function isValidMaterialName(name: string): boolean {
+  return (
+    name.length > 0 &&
+    name !== '.' &&
+    name !== '..' &&
+    !name.includes('/') &&
+    !name.includes('\\') &&
+    !name.includes(sep)
+  )
+}
+
+export type MaterialMutationError =
+  'path_escape' | 'not_found' | 'name_taken' | 'invalid_name' | 'delete_failed'
+
+export function renameMaterial(
+  rootPath: string,
+  absPath: string,
+  newName: string
+): { ok: true; item: MaterialItem } | { ok: false; error: MaterialMutationError } {
+  if (!isValidMaterialName(newName)) return { ok: false, error: 'invalid_name' }
+  const root = resolve(rootPath)
+  let from: string
+  try {
+    from = assertInsideRoot(root, absPath)
+  } catch {
+    return { ok: false, error: 'path_escape' }
+  }
+  if (!existsSync(from)) return { ok: false, error: 'not_found' }
+  const to = join(dirname(from), newName)
+  try {
+    assertInsideRoot(root, to)
+  } catch {
+    return { ok: false, error: 'path_escape' }
+  }
+  if (resolve(from) === resolve(to)) return { ok: true, item: toMaterialItem(root, from) }
+  if (existsSync(to)) return { ok: false, error: 'name_taken' }
+  try {
+    renameSync(from, to)
+  } catch {
+    return { ok: false, error: 'not_found' }
+  }
+  return { ok: true, item: toMaterialItem(root, to) }
+}
+
+export function deleteMaterial(
+  rootPath: string,
+  absPath: string
+): { ok: true } | { ok: false; error: MaterialMutationError } {
+  const root = resolve(rootPath)
+  let target: string
+  try {
+    target = assertInsideRoot(root, absPath)
+  } catch {
+    return { ok: false, error: 'path_escape' }
+  }
+  if (target === root) return { ok: false, error: 'path_escape' }
+  if (!existsSync(target)) return { ok: false, error: 'not_found' }
+  try {
+    if (statSync(target).isDirectory()) {
+      rmSync(target, { recursive: true })
+    } else {
+      unlinkSync(target)
+    }
+  } catch {
+    return { ok: false, error: 'delete_failed' }
+  }
+  return { ok: true }
 }

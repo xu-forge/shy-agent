@@ -5,25 +5,35 @@ import {
   CANVAS_BUFFER,
   CANVAS_CARD_H,
   CANVAS_CARD_W,
+  CANVAS_COLUMNS,
   CANVAS_GAP,
   CANVAS_MAX_COORD,
   DEFAULT_VIEWPORT,
+  GROUP_HEADER_H,
+  GROUP_PAD,
   KIND_CHIPS,
-  canvasColumnsFor,
+  absDirOf,
+  buildMaterialGroups,
   clampScale,
   clampViewport,
+  docForestOf,
+  docSequenceOf,
   extOf,
   filterMaterialsByKind,
   isInlineDoc,
+  isValidMaterialName,
+  layoutGroupedMaterials,
   layoutMaterials,
   materialSourceUrl,
   mentionQueryBefore,
   panViewport,
+  remapCollapsedAfterRename,
   screenToWorld,
   scrollViewport,
   sessionFilesFingerprint,
   shouldShowEditButton,
   sortMaterialsByRecency,
+  toggleCollapsedPath,
   visiblePlaced,
   zoomViewportAt
 } from './materialLibrary'
@@ -112,13 +122,136 @@ describe('sortMaterialsByRecency', () => {
   })
 })
 
-describe('canvasColumnsFor', () => {
-  it('scales columns with viewport width and zoom level', () => {
-    const step = CANVAS_CARD_W + CANVAS_GAP
-    expect(canvasColumnsFor(step * 3 + CANVAS_GAP, 1)).toBe(3)
-    expect(canvasColumnsFor(step * 3 + CANVAS_GAP, 2)).toBe(1)
-    expect(canvasColumnsFor(400, 0.1)).toBeGreaterThan(3)
-    expect(canvasColumnsFor(0, 1)).toBe(1)
+describe('buildMaterialGroups', () => {
+  it('nests directories up to three levels and keeps files on their own level', () => {
+    const forest = buildMaterialGroups([
+      item('image', 'a/b/c/x.png', 1),
+      item('image', 'a/y.png', 2)
+    ])
+    expect(forest.rootFiles).toEqual([])
+    expect(forest.groups).toHaveLength(1)
+    const a = forest.groups[0]
+    expect(a?.path).toBe('a')
+    expect(a?.files.map((f) => f.relativePath)).toEqual(['a/y.png'])
+    expect(a?.children).toHaveLength(1)
+    expect(a?.children[0]?.path).toBe('a/b')
+    expect(a?.children[0]?.files).toEqual([])
+    expect(a?.children[0]?.children[0]?.path).toBe('a/b/c')
+    expect(a?.children[0]?.children[0]?.files.map((f) => f.relativePath)).toEqual(['a/b/c/x.png'])
+    expect(a?.absPath).toBe('/proj/a')
+    expect(a?.children[0]?.children[0]?.absPath).toBe('/proj/a/b/c')
+  })
+
+  it('flattens files deeper than three directory levels into the third group', () => {
+    const forest = buildMaterialGroups([item('image', 'a/b/c/d/deep.png')])
+    const leaf = forest.groups[0]?.children[0]?.children[0]
+    expect(leaf?.path).toBe('a/b/c')
+    expect(leaf?.children).toEqual([])
+    expect(leaf?.files.map((f) => f.relativePath)).toEqual(['a/b/c/d/deep.png'])
+  })
+
+  it('puts root files in the ungrouped list and skips empty directories', () => {
+    const forest = buildMaterialGroups([item('image', 'r.png', 9), item('image', 'a/x.png', 1)])
+    expect(forest.rootFiles.map((f) => f.relativePath)).toEqual(['r.png'])
+    expect(forest.groups.map((g) => g.path)).toEqual(['a'])
+    expect(forest.groups.some((g) => g.path === 'empty')).toBe(false)
+  })
+})
+
+describe('layoutGroupedMaterials', () => {
+  it('lays group files in a fixed 5-column grid independent of scale', () => {
+    const files = Array.from({ length: 6 }, (_, i) => item('image', `a/${i}.png`, 10 - i))
+    const forest = buildMaterialGroups(files)
+    const plane = layoutGroupedMaterials(forest, [])
+    const group = plane.groups[0]
+    expect(group?.placed).toHaveLength(6)
+    const xs = new Set(group?.placed.map((p) => p.x))
+    expect(xs.size).toBe(CANVAS_COLUMNS)
+    expect(group?.placed[5]?.y).toBeGreaterThan(group?.placed[0]?.y ?? 0)
+    expect(group?.w).toBe(
+      CANVAS_COLUMNS * CANVAS_CARD_W + (CANVAS_COLUMNS - 1) * CANVAS_GAP + GROUP_PAD * 2
+    )
+  })
+
+  it('keeps existing cards in sequence when a newer file is prepended', () => {
+    const older = [item('image', 'a/old.png', 1), item('image', 'a/mid.png', 2)]
+    const first = layoutGroupedMaterials(buildMaterialGroups(older), [])
+    const second = layoutGroupedMaterials(
+      buildMaterialGroups([item('image', 'a/new.png', 9), ...older]),
+      []
+    )
+    const before = first.groups[0]?.placed.map((p) => p.item.relativePath)
+    const after = second.groups[0]?.placed.map((p) => p.item.relativePath)
+    expect(after?.[0]).toBe('a/new.png')
+    expect(after?.slice(1)).toEqual(before)
+  })
+
+  it('collapses a group to the header height and hides nested content', () => {
+    const forest = buildMaterialGroups([item('image', 'a/b/x.png'), item('image', 'a/y.png')])
+    const plane = layoutGroupedMaterials(forest, ['a'])
+    expect(plane.groups[0]?.collapsed).toBe(true)
+    expect(plane.groups[0]?.h).toBe(GROUP_HEADER_H)
+    expect(plane.groups[0]?.placed).toEqual([])
+    expect(plane.groups[0]?.children).toEqual([])
+  })
+})
+
+describe('docSequenceOf', () => {
+  it('lists readable docs grouped by directory with recency inside each group', () => {
+    const seq = docSequenceOf([
+      item('image', 'a/pic.png', 99),
+      item('doc', 'a/old.md', 1),
+      item('doc', 'a/new.md', 5),
+      item('doc', 'z/note.txt', 3),
+      item('doc', 'skip.docx', 8)
+    ])
+    expect(seq.groups.map((g) => g.dir)).toEqual(['a', 'z'])
+    expect(seq.groups[0]?.items.map((i) => i.relativePath)).toEqual(['a/new.md', 'a/old.md'])
+    expect(seq.items.map((i) => i.relativePath)).toEqual(['a/new.md', 'a/old.md', 'z/note.txt'])
+  })
+
+  it('builds a nested forest of only readable docs for the lightbox tree', () => {
+    const forest = docForestOf([
+      item('image', 'a/pic.png'),
+      item('doc', 'autoClaw-源码分析/00-索引.md', 7),
+      item('doc', 'autoClaw-源码分析/01-overview.md', 6),
+      item('doc', 'notes/deep/x.md', 1)
+    ])
+    expect(forest.rootFiles).toEqual([])
+    expect(forest.groups.map((g) => g.path)).toEqual(['autoClaw-源码分析', 'notes'])
+    expect(forest.groups[0]?.files.map((f) => f.relativePath)).toEqual([
+      'autoClaw-源码分析/00-索引.md',
+      'autoClaw-源码分析/01-overview.md'
+    ])
+    expect(forest.groups[1]?.children[0]?.files.map((f) => f.relativePath)).toEqual([
+      'notes/deep/x.md'
+    ])
+  })
+})
+
+describe('remapCollapsedAfterRename / toggleCollapsedPath / isValidMaterialName', () => {
+  it('rewrites a collapsed path and its descendants after a directory rename', () => {
+    expect(remapCollapsedAfterRename(['a', 'a/b', 'other'], 'a', 'z')).toEqual([
+      'z',
+      'z/b',
+      'other'
+    ])
+  })
+
+  it('toggles a path in the collapsed set', () => {
+    expect(toggleCollapsedPath(['a'], 'b')).toEqual(['a', 'b'])
+    expect(toggleCollapsedPath(['a', 'b'], 'a')).toEqual(['b'])
+  })
+
+  it('rejects empty names and path separators', () => {
+    expect(isValidMaterialName('ok.png')).toBe(true)
+    expect(isValidMaterialName('')).toBe(false)
+    expect(isValidMaterialName('a/b')).toBe(false)
+    expect(isValidMaterialName('a\\b')).toBe(false)
+  })
+
+  it('derives a directory abs path from a descendant file', () => {
+    expect(absDirOf(item('image', 'a/b/c.png'), 'a/b')).toBe('/proj/a/b')
   })
 })
 

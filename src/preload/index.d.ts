@@ -23,8 +23,11 @@ import type {
   ProjectFileWriteResult,
   ProjectMaterialsImportResult,
   ProjectMaterialsListResult,
+  ProjectFileDeleteResult,
   ProjectFileOpenResult,
   ProjectFileReadDataUrlResult,
+  ProjectFileRenameInput,
+  ProjectFileRenameResult,
   ProjectPickFileResult,
   ProjectPickFolderResult,
   ProjectRevealResult,
@@ -173,6 +176,11 @@ export interface ShyApi {
     state: MaterialCanvasState
   }) => Promise<MaterialCanvasStateSetResult>
   projectFileOpen: (input: { projectId: string; absPath: string }) => Promise<ProjectFileOpenResult>
+  projectFileRename: (input: ProjectFileRenameInput) => Promise<ProjectFileRenameResult>
+  projectFileDelete: (input: {
+    projectId: string
+    absPath: string
+  }) => Promise<ProjectFileDeleteResult>
   dockOpenRoot: (sessionId: string) => Promise<DockOpenRootResult>
   dockTreeList: (sessionId: string) => Promise<DockTreeListResult>
   dockFileRead: (input: { sessionId: string; relativePath: string }) => Promise<DockFileReadResult>

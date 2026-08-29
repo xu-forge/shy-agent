@@ -12,7 +12,7 @@ function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v)
 }
 
-/** 损坏或缺失的状态一律回退 null（渲染层用默认视口） */
+/** 损坏或缺失的状态一律回退 null（渲染层用默认视口）；旧格式（无 collapsed）按全展开兼容 */
 export function readCanvasState(
   projectId: string,
   home = resolveShyHome()
@@ -24,7 +24,12 @@ export function readCanvasState(
     if (!raw || typeof raw !== 'object') return null
     const s = raw as Record<string, unknown>
     if (!isFiniteNumber(s.x) || !isFiniteNumber(s.y) || !isFiniteNumber(s.scale)) return null
-    return { x: s.x, y: s.y, scale: s.scale, sortBy: 'mtime_desc' }
+    const collapsed = Array.isArray(s.collapsed)
+      ? s.collapsed.filter((p): p is string => typeof p === 'string')
+      : []
+    const state: MaterialCanvasState = { x: s.x, y: s.y, scale: s.scale, sortBy: 'mtime_desc' }
+    if (collapsed.length > 0) state.collapsed = collapsed
+    return state
   } catch {
     return null
   }

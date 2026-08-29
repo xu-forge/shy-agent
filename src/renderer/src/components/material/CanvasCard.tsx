@@ -11,6 +11,7 @@ type Props = {
   projectId: string
   placed: PlacedMaterial
   onOpen: (item: MaterialItem) => void
+  onContextMenu?: (e: React.MouseEvent, item: MaterialItem) => void
 }
 
 type ThumbState = { url: string | null; failed: boolean }
@@ -259,7 +260,7 @@ function useAudioDuration(projectId: string, item: MaterialItem): number | null 
   return duration
 }
 
-export function CanvasCard({ projectId, placed, onOpen }: Props): React.JSX.Element {
+export function CanvasCard({ projectId, placed, onOpen, onContextMenu }: Props): React.JSX.Element {
   const { item, x, y, w, h } = placed
   const ext = extOf(item)
   const duration = useAudioDuration(projectId, item)
@@ -269,6 +270,12 @@ export function CanvasCard({ projectId, placed, onOpen }: Props): React.JSX.Elem
       className="canvas-card"
       style={{ left: x, top: y, width: w, height: h }}
       onClick={() => onOpen(item)}
+      onContextMenu={(e) => {
+        if (!onContextMenu) return
+        e.preventDefault()
+        e.stopPropagation()
+        onContextMenu(e, item)
+      }}
     >
       <div className="canvas-card-media">
         {item.kind === 'image' ? (

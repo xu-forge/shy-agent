@@ -9,6 +9,7 @@ import {
   type MaterialThumbPutInput,
   type ModelSettings,
   type McpConfigFile,
+  type ProjectFileRenameInput,
   type ProjectType
 } from '../shared/ipc'
 import { getSettings, setSettings } from './settings/store'
@@ -56,10 +57,12 @@ import {
 } from './projects/store'
 import {
   assertInsideRoot,
+  deleteMaterial,
   importMaterial,
   listMaterials,
   listProjectTree,
-  readFileAsDataUrl
+  readFileAsDataUrl,
+  renameMaterial
 } from './projects/fs-guard'
 import {
   asIpcFailure,
@@ -402,6 +405,18 @@ export function registerCoreIpc(): void {
       if (mapped) return mapped
       return { ok: false as const, error: 'open_failed' as const }
     }
+  })
+
+  ipcMain.handle(IPC.projectFileRename, async (_e, input: ProjectFileRenameInput) => {
+    const project = getProject(input.projectId)
+    if (!project) return { ok: false as const, error: 'not_found' as const }
+    return renameMaterial(project.rootPath, input.absPath, input.newName)
+  })
+
+  ipcMain.handle(IPC.projectFileDelete, async (_e, input: { projectId: string; absPath: string }) => {
+    const project = getProject(input.projectId)
+    if (!project) return { ok: false as const, error: 'not_found' as const }
+    return deleteMaterial(project.rootPath, input.absPath)
   })
 
   ipcMain.handle(IPC.dockOpenRoot, async (_e, sessionId: string) => {

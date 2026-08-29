@@ -42,6 +42,13 @@ export const CANVAS_CARD_W = 220
 export const CANVAS_CARD_H = 208
 export const CANVAS_GAP = 16
 export const CANVAS_BUFFER = 400
+/** 组内固定列数，不随缩放变化 */
+export const CANVAS_COLUMNS = 5
+export const GROUP_MAX_DEPTH = 3
+export const GROUP_PAD = 16
+export const GROUP_HEADER_H = 44
+export const GROUP_STACK_GAP = 20
+export const GROUP_CHILD_GAP = 12
 export const DEFAULT_VIEWPORT: CanvasViewport = { x: 0, y: 0, scale: 1 }
 
 export function sortMaterialsByRecency(items: MaterialItem[]): MaterialItem[] {
@@ -61,11 +68,8 @@ export function clampViewport(v: CanvasViewport): CanvasViewport {
   return { x: clamp(v.x), y: clamp(v.y), scale: clampScale(v.scale) }
 }
 
-/** 缩放级别与视口宽度共同决定列数 */
-export function canvasColumnsFor(viewportWidthPx: number, scale: number): number {
-  const step = (CANVAS_CARD_W + CANVAS_GAP) * clampScale(scale)
-  if (step <= 0) return 1
-  return Math.max(1, Math.floor((Math.max(0, viewportWidthPx) - CANVAS_GAP) / step))
+export function canvasInnerWidth(): number {
+  return CANVAS_COLUMNS * CANVAS_CARD_W + (CANVAS_COLUMNS - 1) * CANVAS_GAP
 }
 
 export type PlacedMaterial = {
@@ -102,6 +106,252 @@ export function layoutMaterials(items: MaterialItem[], columns: number): Materia
     width: cols * CANVAS_CARD_W + (cols - 1) * CANVAS_GAP,
     height: rows * CANVAS_CARD_H + (rows - 1) * CANVAS_GAP
   }
+}
+
+export type MaterialGroupNode = {
+  path: string
+  name: string
+  absPath: string
+  files: MaterialItem[]
+  children: MaterialGroupNode[]
+}
+
+export type MaterialForest = {
+  rootFiles: MaterialItem[]
+  groups: MaterialGroupNode[]
+}
+
+export function dirOf(relativePath: string): string {
+  const i = relativePath.lastIndexOf('/')
+  return i >= 0 ? relativePath.slice(0, i) : ''
+}
+
+/** 由文件 absPath 反推某级目录的绝对路径 */
+export function absDirOf(item: MaterialItem, dirPath: string): string {
+  const rel = item.relativePath.replace(/\\/g, '/')
+  const rest = rel.slice(dirPath.length)
+  const abs = item.absPath
+  if (rest && abs.endsWith(rest)) return abs.slice(0, abs.length - rest.length)
+  const winRest = rest.replace(/\//g, '\\')
+  if (rest && abs.endsWith(winRest)) return abs.slice(0, abs.length - winRest.length)
+  return abs
+}
+
+export function isValidMaterialName(name: string): boolean {
+  return (
+    name.length > 0 && name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\\')
+  )
+}
+
+export function toggleCollapsedPath(collapsed: readonly string[], path: string): string[] {
+  return collapsed.includes(path) ? collapsed.filter((p) => p !== path) : [...collapsed, path]
+}
+
+export function countGroupFiles(node: MaterialGroupNode): number {
+  return node.files.length + node.children.reduce((n, c) => n + countGroupFiles(c), 0)
+}
+
+/** relativePath 推导分组树：最多三级目录，更深文件拍平进第三级；空目录剔除 */
+export function buildMaterialGroups(items: MaterialItem[]): MaterialForest {
+  const rootFiles: MaterialItem[] = []
+  const top = new Map<string, MaterialGroupNode>()
+
+  const ensure = (dirPath: string, item: MaterialItem): MaterialGroupNode => {
+    const parts = dirPath.split('/').filter(Boolean)
+    const topName = parts[0] ?? dirPath
+    let node = top.get(topName)
+    if (!node) {
+      node = {
+        path: topName,
+        name: topName,
+        absPath: absDirOf(item, topName),
+        files: [],
+        children: []
+      }
+      top.set(topName, node)
+    }
+    let cur = node
+    for (let i = 1; i < parts.length; i++) {
+      const nextPath = parts.slice(0, i + 1).join('/')
+      let child = cur.children.find((c) => c.path === nextPath)
+      if (!child) {
+        child = {
+          path: nextPath,
+          name: parts[i] ?? nextPath,
+          absPath: absDirOf(item, nextPath),
+          files: [],
+          children: []
+        }
+        cur.children.push(child)
+      }
+      cur = child
+    }
+    return cur
+  }
+
+  for (const item of items) {
+    const parts = item.relativePath.split('/').filter(Boolean)
+    if (parts.length <= 1) {
+      rootFiles.push(item)
+      continue
+    }
+    const dirParts = parts.slice(0, -1)
+    const capped = dirParts.slice(0, GROUP_MAX_DEPTH)
+    ensure(capped.join('/'), item).files.push(item)
+  }
+
+  const sortTree = (nodes: MaterialGroupNode[]): MaterialGroupNode[] =>
+    [...nodes]
+      .sort((a, b) => a.path.localeCompare(b.path))
+      .map((n) => ({
+        ...n,
+        files: sortMaterialsByRecency(n.files),
+        children: sortTree(n.children)
+      }))
+
+  return { rootFiles: sortMaterialsByRecency(rootFiles), groups: sortTree([...top.values()]) }
+}
+
+export type PlacedGroup = {
+  path: string
+  name: string
+  absPath: string
+  x: number
+  y: number
+  w: number
+  h: number
+  collapsed: boolean
+  fileCount: number
+  placed: PlacedMaterial[]
+  children: PlacedGroup[]
+}
+
+export type GroupedPlane = {
+  rootPlaced: PlacedMaterial[]
+  groups: PlacedGroup[]
+  placed: PlacedMaterial[]
+  width: number
+  height: number
+}
+
+function layoutGroupNode(
+  node: MaterialGroupNode,
+  x: number,
+  y: number,
+  collapsed: ReadonlySet<string>
+): PlacedGroup {
+  const innerW = canvasInnerWidth()
+  const w = innerW + GROUP_PAD * 2
+  const isCollapsed = collapsed.has(node.path)
+  const fileCount = countGroupFiles(node)
+  if (isCollapsed) {
+    return {
+      path: node.path,
+      name: node.name,
+      absPath: node.absPath,
+      x,
+      y,
+      w,
+      h: GROUP_HEADER_H,
+      collapsed: true,
+      fileCount,
+      placed: [],
+      children: []
+    }
+  }
+  const innerX = x + GROUP_PAD
+  let cy = y + GROUP_HEADER_H + GROUP_PAD
+  const children = node.children.map((child) => {
+    const placed = layoutGroupNode(child, innerX, cy, collapsed)
+    cy += placed.h + GROUP_CHILD_GAP
+    return placed
+  })
+  const grid = layoutMaterials(node.files, CANVAS_COLUMNS)
+  const placed = grid.placed.map((p) => ({ ...p, x: innerX + p.x, y: cy + p.y }))
+  cy += node.files.length === 0 ? 0 : grid.height
+  cy += GROUP_PAD
+  return {
+    path: node.path,
+    name: node.name,
+    absPath: node.absPath,
+    x,
+    y,
+    w,
+    h: Math.max(GROUP_HEADER_H + GROUP_PAD * 2, cy - y),
+    collapsed: false,
+    fileCount,
+    placed,
+    children
+  }
+}
+
+export function layoutGroupedMaterials(
+  forest: MaterialForest,
+  collapsedPaths: readonly string[]
+): GroupedPlane {
+  const collapsed = new Set(collapsedPaths)
+  const rootGrid = layoutMaterials(forest.rootFiles, CANVAS_COLUMNS)
+  let y = forest.rootFiles.length === 0 ? 0 : rootGrid.height + GROUP_STACK_GAP
+  const groups = forest.groups.map((g) => {
+    const placed = layoutGroupNode(g, 0, y, collapsed)
+    y += placed.h + GROUP_STACK_GAP
+    return placed
+  })
+  const flattenCards = (gs: PlacedGroup[]): PlacedMaterial[] =>
+    gs.flatMap((g) => [...g.placed, ...flattenCards(g.children)])
+  const placed = [...rootGrid.placed, ...flattenCards(groups)]
+  const groupW = groups.reduce((m, g) => Math.max(m, g.w), 0)
+  return {
+    rootPlaced: rootGrid.placed,
+    groups,
+    placed,
+    width: Math.max(rootGrid.width, groupW, canvasInnerWidth()),
+    height: Math.max(0, y - GROUP_STACK_GAP)
+  }
+}
+
+export function remapCollapsedAfterRename(
+  collapsed: readonly string[],
+  oldPath: string,
+  newPath: string
+): string[] {
+  return collapsed.map((p) => {
+    if (p === oldPath) return newPath
+    if (p.startsWith(`${oldPath}/`)) return `${newPath}${p.slice(oldPath.length)}`
+    return p
+  })
+}
+
+export function isReadableDoc(item: MaterialItem): boolean {
+  return item.kind === 'doc' && ['pdf', 'md', 'txt'].includes(extOf(item))
+}
+
+export type DocSequenceGroup = { dir: string; items: MaterialItem[] }
+
+export type DocSequence = {
+  items: MaterialItem[]
+  groups: DocSequenceGroup[]
+}
+
+export function docSequenceOf(items: MaterialItem[]): DocSequence {
+  const docs = items.filter(isReadableDoc)
+  const byDir = new Map<string, MaterialItem[]>()
+  for (const doc of docs) {
+    const dir = dirOf(doc.relativePath)
+    const list = byDir.get(dir) ?? []
+    list.push(doc)
+    byDir.set(dir, list)
+  }
+  const dirs = [...byDir.keys()].sort((a, b) => a.localeCompare(b))
+  const groups = dirs.map((dir) => ({
+    dir,
+    items: sortMaterialsByRecency(byDir.get(dir) ?? [])
+  }))
+  return { items: groups.flatMap((g) => g.items), groups }
+}
+
+export function docForestOf(items: MaterialItem[]): MaterialForest {
+  return buildMaterialGroups(items.filter(isReadableDoc))
 }
 
 /** 视口矩形（世界坐标）与卡片相交判定，含外扩缓冲 */
