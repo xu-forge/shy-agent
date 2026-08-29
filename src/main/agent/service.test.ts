@@ -138,6 +138,62 @@ describe('runAgent mode routing', () => {
     )
     expect(buildAgentGraph).not.toHaveBeenCalled()
   })
+
+  it('interactive 带 activeView 时 appendMessage 只存用户原文，graph 收到快照', async () => {
+    const { runAgent } = await import('./service')
+
+    await runAgent({
+      sessionId: 'sess-interactive',
+      message: '这段怎么改',
+      mode: 'interactive',
+      activeView: { kind: 'code', relativePath: 'src/a.ts' },
+      emit: () => undefined,
+      waitConfirm: async () => true
+    })
+
+    expect(appendMessage).toHaveBeenCalledWith(expect.any(String), 'user', '这段怎么改')
+    expect(appendMessage).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'user',
+      expect.stringContaining('src/a.ts')
+    )
+    expect(buildAgentGraph).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeView: { kind: 'code', relativePath: 'src/a.ts' }
+      })
+    )
+  })
+
+  it('goal 带 activeView 时传给 runGoalDriver 且 appendMessage 仍为原文', async () => {
+    getSession.mockReturnValue({
+      id: 'sess-goal',
+      title: 'g',
+      mode: 'goal',
+      messages: [],
+      checklist: [],
+      goal: '完成目标',
+      shortMemory: '',
+      paused: false,
+      runStatus: 'idle'
+    })
+    const { runAgent } = await import('./service')
+
+    await runAgent({
+      sessionId: 'sess-goal',
+      message: '这段怎么改',
+      mode: 'goal',
+      activeView: { kind: 'code', relativePath: 'src/a.ts' },
+      emit: () => undefined,
+      waitConfirm: async () => true
+    })
+
+    expect(appendMessage).toHaveBeenCalledWith(expect.any(String), 'user', '这段怎么改')
+    expect(runGoalDriver).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeView: { kind: 'code', relativePath: 'src/a.ts' }
+      })
+    )
+  })
 })
 
 describe('pause / resume waiters', () => {

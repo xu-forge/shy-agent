@@ -148,6 +148,71 @@ describe('runTurn 端到端', () => {
     expect(sysPrompt).toContain('<system-reminder>')
   })
 
+  it('system-reminder 接入:TurnInput 有 activeView 时 buildReminder 收到 env.activeView', async () => {
+    callCount = 0
+    seenSystemPrompts.length = 0
+    const systemReminder = {
+      buildReminder: vi.fn(
+        () => '<system-reminder>\n<active-file>src/a.ts</active-file>\n</system-reminder>'
+      )
+    }
+    const tools = buildTools({
+      emit: () => undefined,
+      confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
+      sessionId: 'ses-test'
+    }).filter((t) => t.name === 'runtime_ping')
+
+    await runTurn(
+      { ...baseInput, activeView: { kind: 'code', relativePath: 'src/a.ts' } },
+      {
+        emit: () => undefined,
+        getReactGuide: (mode) => `【${mode}】`,
+        tools,
+        mode: 'act',
+        startTurn: 0,
+        systemReminder
+      }
+    )
+
+    expect(systemReminder.buildReminder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        env: expect.objectContaining({
+          activeView: { kind: 'code', relativePath: 'src/a.ts' }
+        })
+      })
+    )
+  })
+
+  it('system-reminder 接入:TurnInput 无 activeView 时 env 不含该字段', async () => {
+    callCount = 0
+    seenSystemPrompts.length = 0
+    const systemReminder = {
+      buildReminder: vi.fn((_input: { env: Record<string, unknown> }) => {
+        return '<system-reminder>\n<agent-context>test-agent</agent-context>\n</system-reminder>'
+      })
+    }
+    const tools = buildTools({
+      emit: () => undefined,
+      confirmHighRisk: async () => true,
+      workspaceDir: '/tmp/shy-test-workspace',
+      sessionId: 'ses-test'
+    }).filter((t) => t.name === 'runtime_ping')
+
+    await runTurn(baseInput, {
+      emit: () => undefined,
+      getReactGuide: (mode) => `【${mode}】`,
+      tools,
+      mode: 'act',
+      startTurn: 0,
+      systemReminder
+    })
+
+    expect(systemReminder.buildReminder).toHaveBeenCalledTimes(1)
+    const reminderArg = systemReminder.buildReminder.mock.calls[0][0]
+    expect(reminderArg.env).not.toHaveProperty('activeView')
+  })
+
   it('Stage 2.4 compaction 集成:长 history 触发 light 档压缩', async () => {
     callCount = 0
     seenSystemPrompts.length = 0

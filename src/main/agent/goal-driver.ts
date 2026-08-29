@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import type { GoalChecklistItem, RunStatus } from '../../shared/ipc'
+import type { ActiveView, GoalChecklistItem, RunStatus } from '../../shared/ipc'
 import { getSession, updateSessionRuntime, appendMessage, getCheckpoint } from '../sessions/store'
 import { getSettings } from '../settings/store'
 import { getShyPaths } from '../paths'
@@ -50,6 +50,8 @@ export async function runGoalDriver(args: {
   emit: (event: AgentEvent) => void
   waitConfirm: (action: string, detail: string) => Promise<boolean>
   resume?: boolean
+  /** 本轮发送瞬间的查看文件快照；不写入 session */
+  activeView?: ActiveView
   planChecklist?: (goal: string) => Promise<{ goal: string; checklist: GoalChecklistItem[] }>
   runBurst?: (input: {
     goal: string
@@ -124,7 +126,8 @@ export async function runGoalDriver(args: {
         input,
         auditOkRef,
         blockedRoundsRef,
-        tokenUsedRef
+        tokenUsedRef,
+        ...(args.activeView ? { activeView: args.activeView } : {})
       }))
 
   if (checklist.length === 0) {
@@ -556,6 +559,7 @@ async function defaultRunBurst(opts: {
   auditOkRef: { current: boolean }
   blockedRoundsRef: { current: number }
   tokenUsedRef: { current: number }
+  activeView?: ActiveView
 }): Promise<{ tokenUsed: number; round: number }> {
   const { sessionId, emit, waitConfirm, signal, input } = opts
   const { waitIfPaused } = await import('./service')
@@ -685,7 +689,8 @@ async function defaultRunBurst(opts: {
       segmentSteps: settings.segmentSteps ?? 60,
       blockedAuditRounds: settings.blockedAuditRounds ?? 3
     },
-    signal
+    signal,
+    ...(opts.activeView ? { activeView: opts.activeView } : {})
   })
 
   const fresh = getSession(sessionId)

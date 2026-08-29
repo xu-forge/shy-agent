@@ -9,11 +9,13 @@
  * 当 USE_V2 = true 时用 turn-runner;false 时跑 LangGraph 旧实现(已注释掉)。
  * 任何 regression 把 USE_V2 改 false 即可回退到 LangGraph。
  */
-import type { AgentMode, GoalChecklistItem } from '../../shared/ipc'
+import type { AgentMode, GoalChecklistItem, ActiveView } from '../../shared/ipc'
 import { getReactGuide } from './react-prompt'
 import { runTurn } from './turn-runner'
 import { buildGoalState } from './goal/service'
 import { schemaToJson, type ShyTool } from './tools/dispatcher'
+import { SystemReminderService } from './prompts/system-reminder/service'
+import { createDefaultRegistry } from './prompts/system-reminder/providers'
 
 export type GraphEmit = (event: {
   type: string
@@ -102,6 +104,8 @@ export function buildAgentGraph(opts: {
   signal?: AbortSignal
   /** Stage 2.5: 模型 contextWindow,用于 compaction 触发线计算 */
   contextWindow?: number
+  /** 本轮发送瞬间的查看文件快照 */
+  activeView?: ActiveView
 }): {
   invoke: (
     state: AgentGraphState,
@@ -137,6 +141,7 @@ function buildV2Graph(opts: {
   signal?: AbortSignal
   /** Stage 2.5: 模型 contextWindow,用于 compaction 触发线计算 */
   contextWindow?: number
+  activeView?: ActiveView
 }): {
   invoke: (
     state: AgentGraphState,
@@ -149,6 +154,7 @@ function buildV2Graph(opts: {
     segmentSteps: opts.budget?.segmentSteps ?? 0,
     blockedAuditRounds: opts.budget?.blockedAuditRounds ?? 3
   }
+  const systemReminder = new SystemReminderService(createDefaultRegistry())
 
   return {
     async invoke(
@@ -229,7 +235,8 @@ function buildV2Graph(opts: {
             enabled: true,
             contextWindow: opts.contextWindow ?? 0,
             generateSummary: llmSummarizer ?? undefined
-          }
+          },
+          ...(opts.activeView ? { activeView: opts.activeView } : {})
         },
         {
           emit: (e) => {
@@ -254,7 +261,8 @@ function buildV2Graph(opts: {
           getReactGuide,
           tools: opts.tools,
           mode: state.mode === 'goal' ? 'act' : 'act',
-          startTurn: state.round ?? 0
+          startTurn: state.round ?? 0,
+          systemReminder
         }
       )
 

@@ -40,12 +40,30 @@ describe('SystemReminderService', () => {
 
   it('criticalOnly=true 时只跑 critical provider（identity + platform）', () => {
     const svc = new SystemReminderService(createDefaultRegistry())
-    const out = svc.buildReminder(baseInput({ criticalOnly: true }))
+    const out = svc.buildReminder(
+      baseInput({
+        criticalOnly: true,
+        env: { ...baseInput().env, activeView: { kind: 'code', relativePath: 'src/a.ts' } }
+      })
+    )
     expect(out).toContain('<agent-context>')
     expect(out).toContain('<platform-context>')
-    // 进度 + 记忆 是 non-critical,criticalOnly 时不跑
+    // 进度 + 记忆 + 当前查看文件 是 non-critical,criticalOnly 时不跑
     expect(out).not.toContain('<goal-progress>')
     expect(out).not.toContain('<memory-context>')
+    expect(out).not.toContain('<active-file>')
+  })
+
+  it('有 activeView 且非 criticalOnly 时注入 <active-file>', () => {
+    const svc = new SystemReminderService(createDefaultRegistry())
+    const out = svc.buildReminder(
+      baseInput({
+        env: { ...baseInput().env, activeView: { kind: 'material', relativePath: 'notes/a.md' } }
+      })
+    )
+    expect(out).toContain('<active-file>')
+    expect(out).toContain('notes/a.md')
+    expect(out).toContain('material')
   })
 
   it('allowlist 只放 identity 时,其他 provider 全被过滤', () => {

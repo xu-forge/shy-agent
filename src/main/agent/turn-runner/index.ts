@@ -25,6 +25,7 @@ import { streamChatCompletion, type LLMMessage } from '../llm-client'
 import { ThinkingStreamParser } from '../../../shared/thinking-stream'
 import { compactHistory, type CompactionSettings } from '../compaction'
 import { runToolCalls, type ShyTool } from '../tools/dispatcher'
+import type { ActiveView } from '../../../shared/ipc'
 import type {
   TurnInput,
   TurnResult,
@@ -72,6 +73,7 @@ export type RunTurnDeps = {
         cwd: string
         shell: 'zsh' | 'bash' | 'powershell' | 'cmd'
         teamModeOff: boolean
+        activeView?: ActiveView
       }
       turnCount: number
       memoryBlock: string
@@ -180,7 +182,8 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
             platform: process.platform,
             cwd: process.cwd(),
             shell: process.platform === 'win32' ? 'powershell' : 'zsh',
-            teamModeOff: true
+            teamModeOff: true,
+            ...(input.activeView ? { activeView: input.activeView } : {})
           },
           turnCount: deps.startTurn + 1,
           memoryBlock: input.memoryBlock ?? '',

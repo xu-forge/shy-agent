@@ -7,11 +7,12 @@
  * - Registry 管理 provider 列表（按注册顺序）
  * - Service 编排 collect + buildReminder
  *
- * 4 类 provider（首批）：
+ * 5 类 provider（首批 + 当前查看文件）：
  * - identity:  agent / user / session ID（turn 1 full / turn 2+ slim）
  * - platform:  OS / shell / 路径 / 权限层
  * - progress:  goal / 验收清单 / 当前段 / 进度
  * - memory:    长期记忆摘录 + 短期压缩态
+ * - active-file: 本轮发送瞬间正在查看的文件（非 critical）
  *
  * Cooldown 机制：
  * - 每个 reminder 可有独立 cooldown（默认 6h / 15min / 5min 三档）
@@ -20,6 +21,8 @@
  * Critical 机制：
  * - critical reminder 即使 SR 关闭也会跑（identity / platform 等核心信息）
  */
+
+import type { ActiveView } from '../../../../shared/ipc'
 
 /** 提醒器输入 — 由 service.collect() 构造 */
 export type ReminderInput = {
@@ -34,6 +37,8 @@ export type ReminderInput = {
     cwd: string
     shell: 'zsh' | 'bash' | 'powershell' | 'cmd'
     teamModeOff: boolean
+    /** 本轮发送瞬间的查看文件快照；无则省略 */
+    activeView?: ActiveView
   }
   /** 当前 turn number（1 = 首次对话） */
   turnCount: number

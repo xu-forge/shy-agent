@@ -1,4 +1,5 @@
 import type {
+  ActiveView,
   AgentLogFileSummary,
   AgentMode,
   AppPaths,
@@ -206,5 +207,7 @@ declare global {
     shy: ShyApi
   }
 }
+
+export type { ActiveView }
 
 export {}

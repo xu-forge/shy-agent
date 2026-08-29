@@ -10,7 +10,7 @@ import { compressWithLlm } from '../memory/compress'
 import { appendMessage, getSession, updateSessionRuntime } from '../sessions/store'
 import { resolveAgentWorkspace } from '../projects/workspace'
 import { summarizeSessionTitle } from '../sessions/title'
-import type { AgentEvent, AgentMode, GoalChecklistItem, TaskSource } from '../../shared/ipc'
+import type { AgentEvent, AgentMode, GoalChecklistItem, TaskSource, ActiveView } from '../../shared/ipc'
 import { runGoalDriver } from './goal-driver'
 import { waitAskUser } from '../ask-user'
 
@@ -25,6 +25,7 @@ type RunArgs = {
   waitConfirm: (action: string, detail: string) => Promise<boolean>
   resume?: boolean
   verifyCommand?: string
+  activeView?: ActiveView
 }
 
 type SessionRuntime = {
@@ -159,7 +160,8 @@ export async function runAgent(args: RunArgs): Promise<void> {
         verifyCommand: args.verifyCommand,
         emit,
         waitConfirm,
-        resume
+        resume,
+        ...(args.activeView ? { activeView: args.activeView } : {})
       })
       return
     }
@@ -346,7 +348,8 @@ export async function runAgent(args: RunArgs): Promise<void> {
           stagnationRounds: settings.stagnationRounds ?? 20,
           tokenBudget: settings.tokenBudget ?? 0,
           segmentSteps: settings.segmentSteps ?? 60
-        }
+        },
+        ...(args.activeView ? { activeView: args.activeView } : {})
       })
 
       updateSessionRuntime(sessionId, { mode, paused: false })

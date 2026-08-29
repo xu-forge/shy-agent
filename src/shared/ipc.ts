@@ -101,11 +101,15 @@ export type AgentMode = 'interactive' | 'goal'
 
 export type RunStatus = 'idle' | 'running' | 'paused' | 'completed' | 'cancelled'
 
+export type ActiveView = { kind: 'code' | 'material'; relativePath: string }
+
 export type ChatRequest = {
   sessionId: string
   message: string
   mode: AgentMode
   verifyCommand?: string
+  /** 发送瞬间正在查看的文件；不写入用户消息正文 */
+  activeView?: ActiveView
 }
 
 export type GoalChecklistItem = {

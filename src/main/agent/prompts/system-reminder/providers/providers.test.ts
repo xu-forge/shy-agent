@@ -3,6 +3,7 @@ import { identityReminderProvider } from './identity'
 import { platformReminderProvider } from './platform'
 import { progressReminderProvider } from './progress'
 import { memoryReminderProvider, _resetMemoryCooldownForTests } from './memory'
+import { activeFileReminderProvider } from './active-file'
 import type { ReminderInput } from '../types'
 
 function baseInput(overrides: Partial<ReminderInput> = {}): ReminderInput {
@@ -161,5 +162,36 @@ describe('memoryReminderProvider', () => {
 
   it('memory 与 shortMemory 都空 → undefined', () => {
     expect(memoryReminderProvider(baseInput({ memoryBlock: '', shortMemory: '' }))).toBeUndefined()
+  })
+})
+
+describe('activeFileReminderProvider', () => {
+  it('有 env.activeView 时输出含 <active-file>、kind、relativePath、fs_read、无关则忽略且不要主动提及', () => {
+    const out = activeFileReminderProvider(
+      baseInput({
+        env: { ...baseInput().env, activeView: { kind: 'code', relativePath: 'src/a.ts' } }
+      })
+    )
+    expect(out).toContain('<active-file>')
+    expect(out).toContain('code')
+    expect(out).toContain('src/a.ts')
+    expect(out).toContain('fs_read')
+    expect(out).toMatch(/忽略/)
+    expect(out).toMatch(/不要主动提及/)
+    expect(out).toContain('</active-file>')
+  })
+
+  it('无 activeView 字段 → undefined', () => {
+    expect(activeFileReminderProvider(baseInput())).toBeUndefined()
+  })
+
+  it('空 relativePath → undefined', () => {
+    expect(
+      activeFileReminderProvider(
+        baseInput({
+          env: { ...baseInput().env, activeView: { kind: 'code', relativePath: '' } }
+        })
+      )
+    ).toBeUndefined()
   })
 })

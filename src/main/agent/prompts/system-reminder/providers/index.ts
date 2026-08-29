@@ -1,19 +1,21 @@
 /**
  * Provider 注册中心 — createDefaultRegistry()。
  *
- * 4 类 provider（每类 critical 标记 + cooldown 配置）：
+ * 5 类 provider（每类 critical 标记 + cooldown 配置）：
  * - identityReminderProvider       critical  no cooldown
  * - platformReminderProvider       critical  no cooldown
  * - progressReminderProvider       optional  no cooldown (per-goal gate)
  * - memoryReminderProvider         optional  6h cooldown
+ * - activeFileReminderProvider     optional  no cooldown (per-turn snapshot)
  *
- * 共 2 critical + 2 optional = 4 provider,follows minimax mavis-09 §3.2 设计。
+ * 共 2 critical + 3 optional = 5 provider。
  */
 import { SystemReminderRegistry } from '../registry'
 import { identityReminderProvider } from './identity'
 import { platformReminderProvider } from './platform'
 import { progressReminderProvider } from './progress'
 import { memoryReminderProvider } from './memory'
+import { activeFileReminderProvider } from './active-file'
 
 export function createDefaultRegistry(): SystemReminderRegistry {
   const r = new SystemReminderRegistry()
@@ -23,7 +25,14 @@ export function createDefaultRegistry(): SystemReminderRegistry {
   // 普通（受 allowlist + criticalOnly 控制）
   r.append('progressReminderProvider', progressReminderProvider)
   r.append('memoryReminderProvider', memoryReminderProvider)
+  r.append('activeFileReminderProvider', activeFileReminderProvider)
   return r
 }
 
-export { identityReminderProvider, platformReminderProvider, progressReminderProvider, memoryReminderProvider }
+export {
+  identityReminderProvider,
+  platformReminderProvider,
+  progressReminderProvider,
+  memoryReminderProvider,
+  activeFileReminderProvider
+}

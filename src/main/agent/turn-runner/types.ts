@@ -15,6 +15,8 @@
  * Stage 1.5 集成时切换。
  */
 
+import type { ActiveView } from '../../../shared/ipc'
+
 export type TurnStep =
   | 'incrementTurn' // 1
   | 'collectInput' // 2
@@ -98,6 +100,8 @@ export type TurnInput = {
       }>
     ) => Promise<string>
   }
+  /** 本轮发送瞬间的查看文件快照（不从实时 UI 读取） */
+  activeView?: ActiveView
 }
 
 /** 单步执行结果（用于 observability） */

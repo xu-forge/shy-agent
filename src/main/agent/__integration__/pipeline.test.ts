@@ -7,7 +7,7 @@
  * - 只验证 4 个新模块能端到端串通：
  *   1. turn-runner 8 步生命周期
  *   2. goal 5 状态机转换
- *   3. system-reminder 4 类 provider 链式注入
+ *   3. system-reminder 5 类 provider 链式注入
  *   4. sub-agent 派活（前台阻塞）
  *
  * 目的：
@@ -178,15 +178,16 @@ describe('Stage 1+2 集成可行性证明', () => {
     expect(canTransition('complete', 'active')).toBe(false)
   })
 
-  it('system-reminder 4 类 provider 全部跑通', () => {
+  it('system-reminder 5 类 provider 全部跑通', () => {
     const r = createDefaultRegistry()
     const list = r.list()
-    expect(list).toHaveLength(4)
+    expect(list).toHaveLength(5)
     expect(list.filter((e) => e.critical).map((e) => e.name).sort()).toEqual([
       'identityReminderProvider',
       'platformReminderProvider'
     ])
     expect(list.filter((e) => !e.critical).map((e) => e.name).sort()).toEqual([
+      'activeFileReminderProvider',
       'memoryReminderProvider',
       'progressReminderProvider'
     ])
