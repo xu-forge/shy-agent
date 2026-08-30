@@ -31,8 +31,10 @@ import {
   LEGACY_INSPECTOR_OPEN_KEY,
   parseDockMode,
   serializeDockMode,
+  shouldRenderSessionDock,
   type DockMode
 } from './lib/dockMode'
+import { OpenInBrowserContext } from './lib/openInBrowser'
 import { projectDeleteConfirmDetail } from './lib/projectBind'
 import './styles/tokens.css'
 import './styles/app.css'
@@ -98,6 +100,7 @@ function App(): React.JSX.Element {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
   const [codeActivePath, setCodeActivePath] = useState<string | null>(null)
   const [materialLightboxPath, setMaterialLightboxPath] = useState<string | null>(null)
+  const [browserLaunchUrl, setBrowserLaunchUrl] = useState<string | null>(null)
 
   // 主题：应用 + 持久化
   useEffect(() => {
@@ -284,7 +287,17 @@ function App(): React.JSX.Element {
     await refreshSessions()
   }
 
+  const onLaunchUrlConsumed = useCallback(() => {
+    setBrowserLaunchUrl(null)
+  }, [])
+
+  const openInBrowser = useCallback((url: string) => {
+    setBrowserLaunchUrl(url)
+    setDockMode('browser')
+  }, [])
+
   return (
+    <OpenInBrowserContext.Provider value={openInBrowser}>
     <div className="app-shell">
       <Sidebar
         active={nav}
@@ -352,8 +365,14 @@ function App(): React.JSX.Element {
           />
         </ChatWorkspaceHost>
       ) : null}
-      {layout.showInspector && sessionId ? (
-        <SessionDock sessionId={sessionId} mode={dockMode} onClose={() => setDockMode(null)} />
+      {sessionId && shouldRenderSessionDock(layout.showInspector, dockMode) ? (
+        <SessionDock
+          sessionId={sessionId}
+          mode={dockMode}
+          launchUrl={browserLaunchUrl}
+          onLaunchUrlConsumed={onLaunchUrlConsumed}
+          onClose={() => setDockMode(null)}
+        />
       ) : null}
       <SettingsDialog
         open={settingsOpen}
@@ -406,6 +425,7 @@ function App(): React.JSX.Element {
         ))}
       </div>
     </div>
+    </OpenInBrowserContext.Provider>
   )
 }
 

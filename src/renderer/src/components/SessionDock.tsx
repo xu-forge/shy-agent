@@ -23,6 +23,8 @@ type Props = {
   sessionId: string
   mode: DockMode
   onClose: () => void
+  launchUrl?: string | null
+  onLaunchUrlConsumed?: () => void
 }
 
 function loadDockWidth(): number {
@@ -41,7 +43,13 @@ function persistDockWidth(w: number): void {
   }
 }
 
-export function SessionDock({ sessionId, mode, onClose }: Props): React.JSX.Element {
+export function SessionDock({
+  sessionId,
+  mode,
+  onClose,
+  launchUrl,
+  onLaunchUrlConsumed
+}: Props): React.JSX.Element {
   const open = mode !== null
   const title = mode ? TITLES[mode] : '任务详情'
   const [dockWidth, setDockWidth] = useState(loadDockWidth)
@@ -125,7 +133,11 @@ export function SessionDock({ sessionId, mode, onClose }: Props): React.JSX.Elem
           {mode === 'tasks' ? <DockTasksView sessionId={sessionId} /> : null}
           {mode === 'browser' ? (
             <div className="inspector-browser dock-page">
-              <BrowserPanel embedded />
+              <BrowserPanel
+                embedded
+                launchUrl={launchUrl}
+                onLaunchUrlConsumed={onLaunchUrlConsumed}
+              />
             </div>
           ) : null}
           {mode === 'files' ? <DockFilesView sessionId={sessionId} /> : null}

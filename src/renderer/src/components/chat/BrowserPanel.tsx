@@ -17,11 +17,16 @@ function assetUrl(path: string): string {
 
 export function BrowserPanel({
   onClose,
-  embedded = false
+  embedded = false,
+  launchUrl,
+  onLaunchUrlConsumed
 }: {
   onClose?: () => void
   /** 嵌入右侧功能面板：隐藏关闭按钮（切 tab 即关闭），紧凑布局 */
   embedded?: boolean
+  /** 从文档链接等外部打开时要加载的 URL */
+  launchUrl?: string | null
+  onLaunchUrlConsumed?: () => void
 }): React.JSX.Element {
   const slotRef = useRef<HTMLDivElement>(null)
   const [url, setUrl] = useState('about:blank')
@@ -73,6 +78,12 @@ export function BrowserPanel({
       void window.shy.browserHide()
     }
   }, [applyBounds])
+
+  useEffect(() => {
+    if (!launchUrl) return
+    void window.shy.browserNavigate(launchUrl)
+    onLaunchUrlConsumed?.()
+  }, [launchUrl, onLaunchUrlConsumed])
 
   return (
     <div className="browser-panel">

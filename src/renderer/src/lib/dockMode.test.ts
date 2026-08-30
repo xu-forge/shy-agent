@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { parseDockMode, serializeDockMode, toggleDockMode, clampDockWidth, parseDockWidth } from './dockMode'
+import {
+  parseDockMode,
+  serializeDockMode,
+  toggleDockMode,
+  clampDockWidth,
+  parseDockWidth,
+  shouldRenderSessionDock
+} from './dockMode'
 
 describe('parseDockMode', () => {
   it('识别 tasks / browser / files', () => {
@@ -43,6 +50,19 @@ describe('toggleDockMode', () => {
     expect(toggleDockMode(null, 'tasks')).toBe('tasks')
     expect(toggleDockMode('tasks', 'tasks')).toBe(null)
     expect(toggleDockMode('tasks', 'browser')).toBe('browser')
+  })
+})
+
+describe('shouldRenderSessionDock', () => {
+  it('会话主列有 inspector 时始终渲染（含收起）', () => {
+    expect(shouldRenderSessionDock(true, null)).toBe(true)
+    expect(shouldRenderSessionDock(true, 'browser')).toBe(true)
+  })
+
+  it('素材/代码 IDE 无 inspector 时，仅在 Dock 被打开时渲染', () => {
+    expect(shouldRenderSessionDock(false, null)).toBe(false)
+    expect(shouldRenderSessionDock(false, 'browser')).toBe(true)
+    expect(shouldRenderSessionDock(false, 'files')).toBe(true)
   })
 })
 

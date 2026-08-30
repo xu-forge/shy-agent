@@ -36,6 +36,14 @@ export function toggleDockMode(current: DockMode, next: Exclude<DockMode, null>)
   return current === next ? null : next
 }
 
+/**
+ * 会话主列本身有 inspector 时始终挂载 Dock（可收起）。
+ * 素材/代码 IDE 默认不挂；用户打开链接等把 dockMode 设为非 null 时再挂上。
+ */
+export function shouldRenderSessionDock(showInspector: boolean, dockMode: DockMode): boolean {
+  return showInspector || dockMode !== null
+}
+
 export function clampDockWidth(w: number): number {
   if (!Number.isFinite(w)) return DOCK_DEFAULT_WIDTH
   return Math.min(DOCK_MAX_WIDTH, Math.max(DOCK_MIN_WIDTH, Math.round(w)))

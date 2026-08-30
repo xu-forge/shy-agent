@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { registerCoreIpc, resumeInterruptedGoalSessions, setMainWindow } from './ipc'
 import { startSkillWatch } from './skills/store'
 import { registerBrowserIpc, setBrowserWindowProvider, getEmbeddedBrowserManager } from './browser'
+import { shouldBlockRendererNavigation } from './browser/renderer-navigation'
 import { setBrowserManagerGetter } from './agent/tools/browser'
 import { protocol, net } from 'electron'
 import { pathToFileURL } from 'url'
@@ -67,6 +68,12 @@ function createWindow(): void {
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (shouldBlockRendererNavigation(mainWindow.webContents.getURL(), url)) {
+      event.preventDefault()
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
