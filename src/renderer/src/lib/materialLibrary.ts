@@ -241,7 +241,7 @@ function layoutGroupNode(
   collapsed: ReadonlySet<string>
 ): PlacedGroup {
   const innerW = canvasInnerWidth()
-  const w = innerW + GROUP_PAD * 2
+  let w = innerW + GROUP_PAD * 2
   const isCollapsed = collapsed.has(node.path)
   const fileCount = countGroupFiles(node)
   if (isCollapsed) {
@@ -266,6 +266,10 @@ function layoutGroupNode(
     cy += placed.h + GROUP_CHILD_GAP
     return placed
   })
+  // Nested groups are offset by the parent padding; grow the parent to keep
+  // the child border inside it instead of letting every level use the same width.
+  const childRight = children.reduce((right, child) => Math.max(right, child.x + child.w), x)
+  w = Math.max(innerX + innerW, childRight) - x + GROUP_PAD
   const grid = layoutMaterials(node.files, CANVAS_COLUMNS)
   const placed = grid.placed.map((p) => ({ ...p, x: innerX + p.x, y: cy + p.y }))
   cy += node.files.length === 0 ? 0 : grid.height

@@ -39,6 +39,8 @@ import {
   deleteSession,
   ensureSessionTables,
   getSession,
+  getSessionSummary,
+  getSessionMessagesPage,
   listGoalSessionsByRunStatus,
   listSessions,
   updateSessionRuntime
@@ -203,6 +205,8 @@ export function registerCoreIpc(): void {
 
   ipcMain.handle(IPC.sessionsList, async () => listSessions())
   ipcMain.handle(IPC.sessionsGet, async (_e, id: string) => getSession(id))
+  ipcMain.handle(IPC.sessionsGetSummary, async (_e, id: string) => getSessionSummary(id))
+  ipcMain.handle(IPC.sessionMessagesPage, async (_e, input) => getSessionMessagesPage(input))
   ipcMain.handle(IPC.sessionsCreate, async (_e, input?: { mode?: AgentMode; title?: string }) =>
     createSession(input?.mode ?? 'interactive', input?.title)
   )

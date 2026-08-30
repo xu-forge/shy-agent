@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { httpUrlFromMarkdownHref } from '../lib/markdownLink'
@@ -7,7 +8,7 @@ type Props = {
   content: string
 }
 
-export function MarkdownBody({ content }: Props): React.JSX.Element {
+export const MarkdownBody = memo(function MarkdownBody({ content }: Props): React.JSX.Element {
   const openInBrowser = useOpenInBrowser()
   if (!content.trim()) return <></>
   return (
@@ -36,4 +37,4 @@ export function MarkdownBody({ content }: Props): React.JSX.Element {
       </ReactMarkdown>
     </div>
   )
-}
+})

@@ -16,6 +16,7 @@ export const CODE_LAYOUT_KEY = 'shy.codeLayout'
 export const CHAT_ASIDE_WIDTH_KEY = 'shy.chatAsideWidth'
 export const CHAT_ASIDE_MIN_WIDTH = 350
 export const CHAT_ASIDE_MAX_WIDTH = 450
+export const CHAT_ASIDE_MAX_RATIO = 0.5
 export const CHAT_ASIDE_DEFAULT_WIDTH = 350
 export const NAV_GROUP_COLLAPSED_KEY = 'shy.nav-group-collapsed'
 export const INSPECTOR_OPEN_KEY = 'shy.inspectorOpen'
@@ -49,8 +50,9 @@ export function parseCodeLayout(raw: string | null): CodeLayout {
   return raw === 'chat' ? 'chat' : 'ide'
 }
 
-export function chatAsideMaxWidth(): number {
-  return CHAT_ASIDE_MAX_WIDTH
+export function chatAsideMaxWidth(viewportWidth = 0): number {
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return CHAT_ASIDE_MAX_WIDTH
+  return Math.max(CHAT_ASIDE_MIN_WIDTH, Math.floor(viewportWidth * CHAT_ASIDE_MAX_RATIO))
 }
 
 export function clampChatAsideWidth(
@@ -62,9 +64,9 @@ export function clampChatAsideWidth(
   return Math.min(max, Math.max(effectiveMin, Math.round(w)))
 }
 
-export function parseChatAsideWidth(raw: string | null): number {
+export function parseChatAsideWidth(raw: string | null, max = CHAT_ASIDE_MAX_WIDTH): number {
   const saved = Number(raw)
-  return clampChatAsideWidth(saved > 0 ? saved : CHAT_ASIDE_DEFAULT_WIDTH)
+  return clampChatAsideWidth(saved > 0 ? saved : CHAT_ASIDE_DEFAULT_WIDTH, max)
 }
 
 export function groupStorageKey(id: string | null): string {

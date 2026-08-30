@@ -5,6 +5,8 @@ import type {
   GoalChecklistItem,
   RunStatus,
   SessionDetail,
+  SessionMessagesPage,
+  SessionMessagesPageInput,
   SessionSummary
 } from '../../shared/ipc'
 import { getDb } from '../memory/db'
@@ -134,6 +136,51 @@ export function getSession(id: string): SessionDetail | null {
     approvedChecks: JSON.parse(String(row.approved_checks || '[]')) as string[],
     resultContent: row.result_content ? String(row.result_content) : undefined,
     resultReportPath: row.result_report_path ? String(row.result_report_path) : undefined
+  }
+}
+
+export function getSessionSummary(id: string): SessionSummary | null {
+  ensureSessionTables()
+  const row = getDb().prepare(`SELECT * FROM sessions WHERE id = ?`).get(id) as
+    | Record<string, unknown>
+    | undefined
+  return row ? rowToSummary(row) : null
+}
+
+const DEFAULT_MESSAGE_PAGE_SIZE = 50
+
+export function getSessionMessagesPage(input: SessionMessagesPageInput): SessionMessagesPage {
+  ensureSessionTables()
+  const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? DEFAULT_MESSAGE_PAGE_SIZE)))
+  const cursor = input.cursor
+  const rows = (cursor
+    ? getDb()
+        .prepare(
+          `SELECT * FROM session_messages
+           WHERE session_id = ? AND (created_at < ? OR (created_at = ? AND id < ?))
+           ORDER BY created_at DESC, id DESC LIMIT ?`
+        )
+        .all(input.sessionId, cursor.beforeCreatedAt, cursor.beforeCreatedAt, cursor.beforeId, limit + 1)
+    : getDb()
+        .prepare(
+          `SELECT * FROM session_messages
+           WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`
+        )
+        .all(input.sessionId, limit + 1)) as Record<string, unknown>[]
+  const hasMore = rows.length > limit
+  const pageRows = rows.slice(0, limit).reverse()
+  const messages = pageRows.map((m) => ({
+    id: String(m.id),
+    role: m.role as ChatMessage['role'],
+    content: String(m.content),
+    createdAt: String(m.created_at),
+    kind: m.kind === 'result' ? ('result' as const) : undefined
+  }))
+  const oldest = messages[0]
+  return {
+    messages,
+    hasMore,
+    nextCursor: hasMore && oldest ? { beforeCreatedAt: oldest.createdAt, beforeId: oldest.id } : null
   }
 }
 

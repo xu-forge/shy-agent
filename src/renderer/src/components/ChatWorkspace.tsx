@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { EditorContent } from '@tiptap/react'
 import type { ModeKey } from './ModeToggle'
 import type {
@@ -32,6 +32,7 @@ import { artifactDisplayPath } from '../lib/artifactTree'
 import { artifactFilesForTurns, isTurnEndBlock } from '../lib/turnArtifacts'
 import type { CodeLayout } from '../lib/shellLayout'
 import { isNearBottom } from '../lib/scrollStick'
+import { useDynamicVirtualList } from '../lib/dynamicVirtualList'
 import { toggleDockMode, type DockMode } from '../lib/dockMode'
 import { chatPayload } from '../lib/activeView'
 import { RightDockIcon } from './RightDockIcon'
@@ -54,6 +55,7 @@ type Props = {
 }
 
 type Msg = {
+  id?: string
   role: 'user' | 'assistant' | 'system' | 'tool' | 'reasoning'
   content: string
   createdAt?: string
@@ -67,6 +69,16 @@ type Msg = {
   toolError?: string
   durationMs?: number
   reasoningStartedAt?: number
+}
+
+function toMsg(m: {
+  id: string
+  role: Msg['role']
+  content: string
+  createdAt: string
+  kind?: 'result'
+}): Msg {
+  return { id: m.id, role: m.role, content: m.content, createdAt: m.createdAt, kind: m.kind, streaming: false, toolStatus: m.role === 'tool' ? 'done' : undefined }
 }
 
 // zcode-home-replica：3 条列表式示例（替换原 pills 建议）
@@ -156,6 +168,11 @@ export function ChatWorkspace({
   const [paused, setPaused] = useState(false)
   const [status, setStatus] = useState('')
   const [messages, setMessages] = useState<Msg[]>([])
+  const [streamingTurn, setStreamingTurn] = useState<Msg[]>([])
+  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  const [loadingHistory, setLoadingHistory] = useState(false)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null)
   const [boundProjectId, setBoundProjectId] = useState<string | null>(null)
   const [skills, setSkills] = useState<SkillSummary[]>([])
@@ -179,6 +196,10 @@ export function ChatWorkspace({
   const threadRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const currentSessionIdRef = useRef(sessionId)
+  const historyCursorRef = useRef<{ beforeCreatedAt: string; beforeId: string } | null>(null)
+  const streamingTurnRef = useRef<Msg[]>([])
+  const pendingDeltaRef = useRef<{ role: 'assistant' | 'reasoning'; content: string } | null>(null)
+  const deltaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     currentSessionIdRef.current = sessionId
   }, [sessionId])
@@ -258,7 +279,8 @@ export function ChatWorkspace({
       .catch(() => {})
   }, [sessionId])
 
-  const hasConversation = messages.some((m) => m.role === 'user' || m.role === 'assistant')
+  const allMessages = useMemo(() => [...messages, ...streamingTurn], [messages, streamingTurn])
+  const hasConversation = allMessages.some((m) => m.role === 'user' || m.role === 'assistant')
 
   // 通知 App 是否已有对话，用于隐藏空态时的右侧环境面板
   useEffect(() => {
@@ -455,8 +477,8 @@ export function ChatWorkspace({
   }
 
   const filesByTurn = useMemo(
-    () => artifactFilesForTurns(messages, sessionFiles),
-    [messages, sessionFiles]
+    () => artifactFilesForTurns([...messages, ...streamingTurn], sessionFiles),
+    [messages, sessionFiles, streamingTurn]
   )
 
   // 把连续的工具消息聚成一个时间轴块，其余消息独立渲染
@@ -469,7 +491,7 @@ export function ChatWorkspace({
         timeline = []
       }
     }
-    for (const m of messages) {
+    for (const m of allMessages) {
       if (m.role === 'user' || m.role === 'system') {
         flush()
         blocks.push({ kind: 'msg', msg: m })
@@ -479,7 +501,7 @@ export function ChatWorkspace({
     }
     flush()
     return blocks
-  }, [messages])
+  }, [allMessages])
 
   const turnShape = useMemo(
     () =>
@@ -490,6 +512,35 @@ export function ChatWorkspace({
       ),
     [renderBlocks]
   )
+
+  const virtual = useDynamicVirtualList(renderBlocks.length, scrollTop, viewportHeight)
+  const segmentsCacheRef = useRef(new Map<string, ReturnType<typeof messagesToSegments>>())
+  const segmentsFor = (items: Msg[]): ReturnType<typeof messagesToSegments> => {
+    const key = items
+      .map(
+        (item) =>
+          `${item.id ?? ''}:${item.content.length}:${item.content.slice(-24)}:${item.streaming ? '1' : '0'}`
+      )
+      .join('|')
+    const cached = segmentsCacheRef.current.get(key)
+    if (cached) return cached
+    const next = messagesToSegments(items)
+    segmentsCacheRef.current.set(key, next)
+    if (segmentsCacheRef.current.size > 100) {
+      const oldest = segmentsCacheRef.current.keys().next().value
+      if (oldest) segmentsCacheRef.current.delete(oldest)
+    }
+    return next
+  }
+  useEffect(() => {
+    const el = threadRef.current
+    if (!el) return
+    const update = (): void => setViewportHeight(el.clientHeight)
+    update()
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null
+    observer?.observe(el)
+    return () => observer?.disconnect()
+  }, [])
 
   const composerInner = (): React.JSX.Element => (
     <div className="composer-shell">
@@ -581,7 +632,10 @@ export function ChatWorkspace({
     setPendingProjectId(null)
     setBoundProjectId(null)
     let alive = true
-    window.shy.getSession(sessionId).then((detail) => {
+    historyCursorRef.current = null
+    setMessages([])
+    setStreamingTurn([])
+    window.shy.getSessionSummary(sessionId).then((detail) => {
       if (!alive || currentSessionIdRef.current !== sessionId || !detail) return
       setMode(detail.mode)
       setPaused(detail.paused)
@@ -589,23 +643,84 @@ export function ChatWorkspace({
       setBoundProjectId(resolveBoundProjectId(detail.projectId))
       setStatus('')
       setLastResult(null)
-      setMessages(
-        detail.messages.length
-          ? detail.messages.map((m) => ({
-              role: m.role,
-              content: m.content,
-              createdAt: m.createdAt,
-              kind: m.kind,
-              streaming: false,
-              toolStatus: m.role === 'tool' ? ('done' as const) : undefined
-            }))
-          : []
-      )
+       void window.shy
+         .getSessionMessagesPage({ sessionId, limit: 50 })
+         .then((page) => {
+           if (!alive || currentSessionIdRef.current !== sessionId) return
+           historyCursorRef.current = page.nextCursor
+           setHasMoreHistory(page.hasMore)
+           setMessages(page.messages.map(toMsg))
+         })
+         .catch(() => setMessages([]))
     })
     return () => {
       alive = false
     }
   }, [sessionId])
+
+  const loadOlderMessages = useCallback(async (): Promise<void> => {
+    if (loadingHistory || !hasMoreHistory || !historyCursorRef.current) return
+    const el = threadRef.current
+    if (!el) return
+    setLoadingHistory(true)
+    const anchor = el.querySelector<HTMLElement>('[data-message-block]')
+    const anchorId = anchor?.dataset.messageId
+    const beforeTop = anchor?.getBoundingClientRect().top ?? 0
+    const beforeHeight = el.scrollHeight
+    try {
+      const page = await window.shy.getSessionMessagesPage({
+        sessionId,
+        limit: 50,
+        cursor: historyCursorRef.current
+      })
+      if (currentSessionIdRef.current !== sessionId) return
+      historyCursorRef.current = page.nextCursor
+      setHasMoreHistory(page.hasMore)
+      setMessages((prev) => {
+        const known = new Set(prev.map((m) => m.id))
+        return [...page.messages.map(toMsg).filter((m) => !m.id || !known.has(m.id)), ...prev]
+      })
+      requestAnimationFrame(() => {
+        const nextAnchor = anchorId
+          ? el.querySelector<HTMLElement>(`[data-message-id="${anchorId}"]`)
+          : null
+        if (nextAnchor) el.scrollTop += nextAnchor.getBoundingClientRect().top - beforeTop
+        else el.scrollTop += el.scrollHeight - beforeHeight
+      })
+    } finally {
+      if (currentSessionIdRef.current === sessionId) setLoadingHistory(false)
+    }
+  }, [hasMoreHistory, loadingHistory, sessionId])
+
+  const flushStreaming = useCallback((): void => {
+    const pending = pendingDeltaRef.current
+    if (pending) {
+      const current = streamingTurnRef.current
+      const last = current.at(-1)
+      const next = last?.role === pending.role
+        ? [...current.slice(0, -1), { ...last, content: last.content + pending.content, streaming: true }]
+        : [...current, { role: pending.role, content: pending.content, createdAt: new Date().toISOString(), streaming: true, ...(pending.role === 'reasoning' ? { reasoningStartedAt: Date.now() } : {}) }]
+      streamingTurnRef.current = next
+      setStreamingTurn(next)
+      pendingDeltaRef.current = null
+    }
+    if (deltaTimerRef.current) clearTimeout(deltaTimerRef.current)
+    deltaTimerRef.current = null
+  }, [])
+
+  const queueStreamingDelta = useCallback((role: 'assistant' | 'reasoning', content: string): void => {
+    const pending = pendingDeltaRef.current
+    pendingDeltaRef.current = { role, content: pending?.role === role ? pending.content + content : content }
+    if (!deltaTimerRef.current) deltaTimerRef.current = setTimeout(flushStreaming, 50)
+  }, [flushStreaming])
+
+  const commitStreaming = useCallback((): void => {
+    flushStreaming()
+    const turn = streamingTurnRef.current
+    if (turn.length) setMessages((prev) => [...prev, ...turn.map((m) => ({ ...m, streaming: false }))])
+    streamingTurnRef.current = []
+    setStreamingTurn([])
+  }, [flushStreaming])
 
   useLayoutEffect(() => {
     stickToBottomRef.current = true
@@ -620,6 +735,8 @@ export function ChatWorkspace({
     const el = threadRef.current
     if (!el) return
     stickToBottomRef.current = isNearBottom(el)
+    setScrollTop(el.scrollTop)
+    if (el.scrollTop < 120) void loadOlderMessages()
   }
 
   useEffect(() => {
@@ -646,8 +763,13 @@ export function ChatWorkspace({
       }
       if (ev.sessionId && ev.sessionId !== sessionId) return
       if (ev.type === 'result' && ev.content) {
+        flushStreaming()
+        const streamed = streamingTurnRef.current
+        streamingTurnRef.current = []
+        setStreamingTurn([])
         setMessages((prev) => [
-          ...prev.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+          ...prev,
+          ...streamed.map((m) => ({ ...m, streaming: false })),
           {
             role: 'assistant',
             content: ev.content!,
@@ -656,25 +778,7 @@ export function ChatWorkspace({
           }
         ])
       } else if (ev.type === 'reasoning_delta' && ev.content) {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'reasoning' && last.streaming) {
-            return [
-              ...prev.slice(0, -1),
-              { ...last, content: last.content + ev.content!, streaming: true }
-            ]
-          }
-          return [
-            ...prev,
-            {
-              role: 'reasoning',
-              content: ev.content!,
-              createdAt: new Date().toISOString(),
-              streaming: true,
-              reasoningStartedAt: Date.now()
-            }
-          ]
-        })
+        queueStreamingDelta('reasoning', ev.content)
       } else if (ev.type === 'reasoning_done') {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -692,24 +796,7 @@ export function ChatWorkspace({
           return prev
         })
       } else if (ev.type === 'assistant_delta' && ev.content) {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'assistant' && !last.kind) {
-            return [
-              ...prev.slice(0, -1),
-              { ...last, content: last.content + ev.content!, streaming: true }
-            ]
-          }
-          return [
-            ...prev,
-            {
-              role: 'assistant',
-              content: ev.content!,
-              createdAt: new Date().toISOString(),
-              streaming: true
-            }
-          ]
-        })
+        queueStreamingDelta('assistant', ev.content)
       } else if (ev.type === 'assistant' && ev.content) {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
@@ -728,11 +815,7 @@ export function ChatWorkspace({
         })
       } else if (ev.type === 'assistant_done') {
         // 流式渲染完毕：停掉打字光标
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.streaming) return [...prev.slice(0, -1), { ...last, streaming: false }]
-          return prev
-        })
+        commitStreaming()
       } else if (ev.type === 'tool_call' && ev.id) {
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.role === 'tool' && m.toolId === ev.id)
@@ -832,6 +915,7 @@ export function ChatWorkspace({
           { role: 'system', content: `错误：${ev.message}`, createdAt: new Date().toISOString() }
         ])
       } else if (ev.type === 'done') {
+        commitStreaming()
         setBusy(false)
         setMessages((prev) =>
           prev.map((m) => (m.role === 'assistant' ? { ...m, streaming: false } : m))
@@ -904,8 +988,8 @@ export function ChatWorkspace({
   const onSend = async (): Promise<void> => {
     const text = serializeComposerText(editor).trim()
     if (!text || busy || !sessionId) return
-    const detail = await window.shy.getSession(sessionId)
-    const hasUser = detail?.messages.some((m) => m.role === 'user') ?? false
+    const detail = await window.shy.getSessionSummary(sessionId)
+    const hasUser = messages.some((m) => m.role === 'user')
     const boundId = resolveBoundProjectId(detail?.projectId)
     if (
       shouldBindOnSend({
@@ -1060,9 +1144,11 @@ export function ChatWorkspace({
                 </div>
               ) : (
                 <>
-                  {(() => {
+                  <div className="virtual-thread" style={{ height: virtual.totalHeight, position: 'relative' }}>
+                    {(() => {
                     let userTurn = -1
-                    return renderBlocks.map((block, bi) => {
+                    return renderBlocks.slice(virtual.startIndex, virtual.endIndex).map((block, localIndex) => {
+                      const bi = localIndex + virtual.startIndex
                       if (block.kind === 'msg' && block.msg.role === 'user') userTurn += 1
                       const turnEnd = isTurnEndBlock(turnShape, bi)
                       const group = turnEnd && userTurn >= 0 ? filesByTurn[userTurn] : undefined
@@ -1081,7 +1167,11 @@ export function ChatWorkspace({
                       if (block.kind === 'timeline') {
                         const streaming = block.items.some((t) => t.streaming)
                         return (
-                          <Fragment key={bi}>
+                          <div
+                            key={bi}
+                            {...virtual.itemProps(bi)}
+                            data-message-id={block.items[0]?.id ?? `block-${bi}`}
+                          >
                             <div className="msg msg-assistant">
                               <div className="msg-head">
                                 <span className="msg-avatar" aria-hidden="true">
@@ -1090,7 +1180,7 @@ export function ChatWorkspace({
                                 <span className="msg-name">shy</span>
                               </div>
                               <AgentTimeline
-                                segments={messagesToSegments(block.items)}
+                                segments={segmentsFor(block.items)}
                                 streaming={streaming}
                               />
                               {streaming ? (
@@ -1098,12 +1188,12 @@ export function ChatWorkspace({
                               ) : null}
                             </div>
                             {turnEnd ? filesCard : null}
-                          </Fragment>
+                          </div>
                         )
                       }
                       const m = block.msg
                       return (
-                        <Fragment key={bi}>
+                        <div key={bi} {...virtual.itemProps(bi)} data-message-id={m.id ?? `block-${bi}`}>
                           <div className={`msg msg-${m.role}`}>
                             {m.role === 'user' ? (
                               <div className="msg-bubble">
@@ -1113,10 +1203,11 @@ export function ChatWorkspace({
                             {m.role === 'system' ? <div className="msg-pill">{m.content}</div> : null}
                           </div>
                           {turnEnd ? filesCard : null}
-                        </Fragment>
+                        </div>
                       )
                     })
-                  })()}
+                    })()}
+                  </div>
                 </>
               )}
             </div>

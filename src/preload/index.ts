@@ -10,6 +10,8 @@ import {
   type McpServerStatus,
   type McpSetResult,
   type SessionDetail,
+  type SessionMessagesPage,
+  type SessionMessagesPageInput,
   type SessionFileRecord,
   type SessionDiffRecord,
   type SessionSummary,
@@ -76,6 +78,10 @@ const shy = {
   listSessions: (): Promise<SessionSummary[]> => ipcRenderer.invoke(IPC.sessionsList),
   getSession: (id: string): Promise<SessionDetail | null> =>
     ipcRenderer.invoke(IPC.sessionsGet, id),
+  getSessionSummary: (id: string): Promise<SessionSummary | null> =>
+    ipcRenderer.invoke(IPC.sessionsGetSummary, id),
+  getSessionMessagesPage: (input: SessionMessagesPageInput): Promise<SessionMessagesPage> =>
+    ipcRenderer.invoke(IPC.sessionMessagesPage, input),
   createSession: (input?: { mode?: AgentMode; title?: string }): Promise<SessionSummary> =>
     ipcRenderer.invoke(IPC.sessionsCreate, input),
   deleteSession: (id: string): Promise<{ ok: boolean }> =>

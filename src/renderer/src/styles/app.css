@@ -819,6 +819,11 @@
   padding: 8px 6px 20px;
 }
 
+.virtual-thread > [data-message-block] {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 120px;
+}
+
 /* 空状态：大标题 + 居中输入 */
 .empty-state {
   flex: 1;

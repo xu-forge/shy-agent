@@ -1,4 +1,5 @@
 import { ReActContent } from './ReActContent'
+import { memo } from 'react'
 import { ReasoningBlock } from './ReasoningBlock'
 import { getToolRenderer, registerToolRenderer } from './toolRenderers'
 import { SearchToolRenderer, WebFetchRenderer } from './toolRenderers/SearchFetch'
@@ -52,7 +53,7 @@ type Props = {
   streaming?: boolean
 }
 
-export function AgentTimeline({ segments, streaming }: Props): React.JSX.Element {
+export const AgentTimeline = memo(function AgentTimeline({ segments, streaming }: Props): React.JSX.Element {
   ensureRenderers()
   const skipThinking = hasReasoning(segments)
   const lastIdx = segments.length - 1
@@ -86,10 +87,10 @@ export function AgentTimeline({ segments, streaming }: Props): React.JSX.Element
         }
         return (
           <div key={seg.id} className="timeline-text">
-            <ReActContent content={seg.content} skipThinking={skipThinking} />
+            <ReActContent content={seg.content} skipThinking={skipThinking} streaming={isLast && streaming} />
           </div>
         )
       })}
     </div>
   )
-}
+})

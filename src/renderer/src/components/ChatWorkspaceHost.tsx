@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CHAT_ASIDE_DEFAULT_WIDTH,
-  CHAT_ASIDE_MAX_WIDTH,
   CHAT_ASIDE_MIN_WIDTH,
   CHAT_ASIDE_WIDTH_KEY,
+  chatAsideMaxWidth,
   clampChatAsideWidth,
   parseChatAsideWidth,
   type ChatHostClass
@@ -16,11 +16,12 @@ type Props = {
 
 function loadChatAsideWidth(): number {
   try {
-    const w = parseChatAsideWidth(localStorage.getItem(CHAT_ASIDE_WIDTH_KEY))
+    const maxWidth = chatAsideMaxWidth(window.innerWidth)
+    const w = parseChatAsideWidth(localStorage.getItem(CHAT_ASIDE_WIDTH_KEY), maxWidth)
     // 旧版可能存了超出当前上限的宽度；恢复默认
-    if (w > CHAT_ASIDE_MAX_WIDTH) {
+    if (w > maxWidth) {
       persistChatAsideWidth(CHAT_ASIDE_DEFAULT_WIDTH)
-      return CHAT_ASIDE_DEFAULT_WIDTH
+      return Math.min(CHAT_ASIDE_DEFAULT_WIDTH, maxWidth)
     }
     return w
   } catch {
@@ -49,7 +50,8 @@ export function ChatWorkspaceHost({
 
   useEffect(() => {
     if (!isSessionAside) return
-    const onResize = (): void => setAsideWidth((w) => clampChatAsideWidth(w))
+    const onResize = (): void =>
+      setAsideWidth((w) => clampChatAsideWidth(w, chatAsideMaxWidth(window.innerWidth)))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [isSessionAside])
@@ -57,7 +59,7 @@ export function ChatWorkspaceHost({
   const finishDrag = useCallback((): void => {
     dragState.current = null
     setAsideWidth((w) => {
-      const next = clampChatAsideWidth(w)
+      const next = clampChatAsideWidth(w, chatAsideMaxWidth(window.innerWidth))
       persistChatAsideWidth(next)
       return next
     })
@@ -75,12 +77,15 @@ export function ChatWorkspaceHost({
   const onResizerPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
     const d = dragState.current
     if (!d) return
-    setAsideWidth(clampChatAsideWidth(d.startW + (d.startX - e.clientX)))
+    setAsideWidth(
+      clampChatAsideWidth(d.startW + (d.startX - e.clientX), chatAsideMaxWidth(window.innerWidth))
+    )
   }, [])
 
   const onResizerDoubleClick = useCallback((): void => {
-    setAsideWidth(CHAT_ASIDE_DEFAULT_WIDTH)
-    persistChatAsideWidth(CHAT_ASIDE_DEFAULT_WIDTH)
+    const next = Math.min(CHAT_ASIDE_DEFAULT_WIDTH, chatAsideMaxWidth(window.innerWidth))
+    setAsideWidth(next)
+    persistChatAsideWidth(next)
   }, [])
 
   if (hostClass === 'chat-hidden') {
@@ -92,7 +97,7 @@ export function ChatWorkspaceHost({
       width: asideWidth,
       flex: `0 0 ${asideWidth}px`,
       minWidth: CHAT_ASIDE_MIN_WIDTH,
-      maxWidth: asideWidth
+      maxWidth: chatAsideMaxWidth(window.innerWidth)
     }
 
     return (
@@ -103,7 +108,7 @@ export function ChatWorkspaceHost({
           aria-orientation="vertical"
           aria-valuenow={asideWidth}
           aria-valuemin={CHAT_ASIDE_MIN_WIDTH}
-          aria-valuemax={CHAT_ASIDE_MAX_WIDTH}
+          aria-valuemax={chatAsideMaxWidth(window.innerWidth)}
           aria-label="拖拽调整会话区宽度"
           title="拖拽调整会话区宽度（双击恢复默认）"
           onPointerDown={onResizerPointerDown}

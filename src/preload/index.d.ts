@@ -41,6 +41,8 @@ import type {
   ScheduleTasksExpandInput,
   ScheduleTasksListResult,
   SessionDetail,
+  SessionMessagesPage,
+  SessionMessagesPageInput,
   SessionFileRecord,
   SessionDiffRecord,
   SessionSummary,
@@ -68,6 +70,8 @@ export interface ShyApi {
   resume: (sessionId: string) => Promise<{ ok: boolean; started: boolean }>
   listSessions: () => Promise<SessionSummary[]>
   getSession: (id: string) => Promise<SessionDetail | null>
+  getSessionSummary: (id: string) => Promise<SessionSummary | null>
+  getSessionMessagesPage: (input: SessionMessagesPageInput) => Promise<SessionMessagesPage>
   createSession: (input?: { mode?: AgentMode; title?: string }) => Promise<SessionSummary>
   deleteSession: (id: string) => Promise<{ ok: boolean }>
   listMemory: () => Promise<LongMemoryEntry[]>

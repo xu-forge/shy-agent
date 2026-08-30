@@ -21,6 +21,41 @@ afterEach(() => {
 })
 
 describe('sessions runStatus', () => {
+  it('按复合游标稳定分页，并在同毫秒消息间不重不漏', async () => {
+    const store = await import('./store')
+    const s = store.createSession()
+    const { getDb } = await import('../memory/db')
+    const rows = ['a', 'b', 'c', 'd'].map((id) => ({ id, content: id }))
+    for (const row of rows) {
+      getDb()
+        .prepare(
+          `INSERT INTO session_messages (id, session_id, role, content, created_at, kind)
+           VALUES (?, ?, 'user', ?, '2026-01-01T00:00:00.000Z', NULL)`
+        )
+        .run(row.id, s.id, row.content)
+    }
+    const first = store.getSessionMessagesPage({ sessionId: s.id, limit: 2 })
+    expect(first.messages.map((m) => m.id)).toEqual(['c', 'd'])
+    expect(first.hasMore).toBe(true)
+    const second = store.getSessionMessagesPage({
+      sessionId: s.id,
+      limit: 2,
+      cursor: first.nextCursor ?? undefined
+    })
+    expect(second.messages.map((m) => m.id)).toEqual(['a', 'b'])
+    expect(second.hasMore).toBe(false)
+  })
+
+  it('空会话返回空页', async () => {
+    const store = await import('./store')
+    const s = store.createSession()
+    expect(store.getSessionMessagesPage({ sessionId: s.id })).toMatchObject({
+      messages: [],
+      hasMore: false,
+      nextCursor: null
+    })
+  })
+
   it('新会话默认为 idle，paused 为 false', async () => {
     const store = await import('./store')
     const s = store.createSession('goal', 't')

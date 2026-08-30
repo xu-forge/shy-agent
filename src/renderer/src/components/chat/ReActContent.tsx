@@ -8,7 +8,7 @@
 import { useMemo } from 'react'
 import { MarkdownBody } from '../MarkdownBody'
 
-type Props = { content: string; skipThinking?: boolean }
+type Props = { content: string; skipThinking?: boolean; streaming?: boolean }
 
 /** 提取推理块并去掉 think 标签，剩余作为正文 */
 function splitReasoning(content: string): { reasoning: string; reply: string } {
@@ -32,7 +32,7 @@ function countThinkBlocks(content: string): number {
   return m ? m.length : 0
 }
 
-export function ReActContent({ content, skipThinking = false }: Props): React.JSX.Element {
+export function ReActContent({ content, skipThinking = false, streaming = false }: Props): React.JSX.Element {
   const { reasoning, reply } = useMemo(() => splitReasoning(content), [content])
   const thinkCount = useMemo(() => countThinkBlocks(content), [content])
   const showThinking = Boolean(reasoning) && !skipThinking
@@ -54,7 +54,7 @@ export function ReActContent({ content, skipThinking = false }: Props): React.JS
           </div>
         </details>
       ) : null}
-      <MarkdownBody content={reply} />
+      {streaming ? <div className="react-streaming-text">{reply}</div> : <MarkdownBody content={reply} />}
     </div>
   )
 }

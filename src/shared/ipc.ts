@@ -22,6 +22,8 @@ export const IPC = {
   askUserReply: 'shy:ask-user-reply',
   sessionsList: 'shy:sessions-list',
   sessionsGet: 'shy:sessions-get',
+  sessionsGetSummary: 'shy:sessions-get-summary',
+  sessionMessagesPage: 'shy:session-messages-page',
   sessionsCreate: 'shy:sessions-create',
   sessionsDelete: 'shy:sessions-delete',
   sessionFilesList: 'shy:session-files-list',
@@ -199,6 +201,23 @@ export type ChatMessage = {
   content: string
   createdAt: string
   kind?: 'result'
+}
+
+export type SessionMessagesPageCursor = {
+  beforeCreatedAt: string
+  beforeId: string
+}
+
+export type SessionMessagesPageInput = {
+  sessionId: string
+  limit?: number
+  cursor?: SessionMessagesPageCursor
+}
+
+export type SessionMessagesPage = {
+  messages: ChatMessage[]
+  hasMore: boolean
+  nextCursor: SessionMessagesPageCursor | null
 }
 
 export type SessionSummary = {

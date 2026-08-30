@@ -194,6 +194,20 @@ describe('layoutGroupedMaterials', () => {
     expect(plane.groups[0]?.placed).toEqual([])
     expect(plane.groups[0]?.children).toEqual([])
   })
+
+  it('keeps nested group borders inside the parent border', () => {
+    const forest = buildMaterialGroups([item('image', 'a/b/c/file.png')])
+    const plane = layoutGroupedMaterials(forest, [])
+    const parent = plane.groups[0]
+    const child = parent?.children[0]
+    const leaf = child?.children[0]
+    expect(child && parent ? child.x + child.w : 0).toBeLessThanOrEqual(
+      (parent?.x ?? 0) + (parent?.w ?? 0) - GROUP_PAD
+    )
+    expect(leaf && parent ? leaf.x + leaf.w : 0).toBeLessThanOrEqual(
+      (parent?.x ?? 0) + (parent?.w ?? 0) - GROUP_PAD
+    )
+  })
 })
 
 describe('docSequenceOf', () => {
