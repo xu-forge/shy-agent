@@ -11,6 +11,8 @@ import {
 
 type Props = {
   hostClass: ChatHostClass
+  /** 侧栏收起时，会话主列顶栏需要避开 mac 红绿灯与导航开关 */
+  chromePad?: boolean
   children: React.ReactNode
 }
 
@@ -40,6 +42,7 @@ function persistChatAsideWidth(w: number): void {
 /** 会话宿主：未绑定主区 / 代码·素材右侧会话栏（可拖拽调宽）。 */
 export function ChatWorkspaceHost({
   hostClass,
+  chromePad = false,
   children
 }: Props): React.JSX.Element {
   const isSessionAside = hostClass === 'chat-aside'
@@ -123,7 +126,10 @@ export function ChatWorkspaceHost({
   }
 
   return (
-    <div className={hostClass} data-panel="session-main">
+    <div
+      className={`${hostClass}${hostClass === 'chat-main' && chromePad ? ' chrome-pad' : ''}`}
+      data-panel="session-main"
+    >
       {children}
     </div>
   )

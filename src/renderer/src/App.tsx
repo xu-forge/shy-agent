@@ -348,6 +348,7 @@ function App(): React.JSX.Element {
         <ChatWorkspaceHost
           key="chat-workspace-host"
           hostClass={resolveChatHostClass(nav, workspaceKind, codeLayout)}
+          chromePad={!navExpanded}
         >
           <ChatWorkspace
             notice={notice}

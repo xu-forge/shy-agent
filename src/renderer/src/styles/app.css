@@ -6189,6 +6189,20 @@
   backdrop-filter: blur(8px);
 }
 
+/* 侧栏收起时：标题与左上角导航开关同一高度，仅左缩进避开开关按钮 */
+.chat-main.chrome-pad .topbar {
+  padding-left: max(112px, calc((100% - var(--content-max)) / 2));
+}
+
+/* 会话主列：标题与内容列左缘对齐，去掉整条工具栏分隔线，融入会话面板 */
+.chat-main .topbar {
+  border-bottom: none;
+  background: transparent;
+  backdrop-filter: none;
+  padding: 14px 24px 4px;
+  padding-left: max(24px, calc((100% - var(--content-max)) / 2));
+}
+
 /* ── 2. 设置弹窗：白卡 + 左 tab rail + amber 激活竖条 ── */
 .dialog-backdrop {
   background: rgba(15, 20, 34, 0.32);
@@ -7268,85 +7282,59 @@
   color: var(--text);
 }
 
+/* 收起：不保留窄栏，仅左缘热区 + 悬浮开关（与展开时同位）；hover 以浮层展开 */
 .sidebar.sidebar-collapsed {
-  width: var(--rail-width) !important;
-  min-width: var(--rail-width) !important;
-  max-width: var(--rail-width);
-  padding: 36px 8px 12px;
-  align-items: center;
-  justify-content: space-between;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  padding: 0;
+  border-right: none;
+  background: transparent;
   overflow: visible;
   z-index: 6;
-  -webkit-app-region: drag;
   user-select: none;
 }
 
-.sidebar.sidebar-collapsed button {
-  -webkit-app-region: no-drag;
+.sidebar-hover-zone {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 40;
 }
 
-.icon-rail-top,
-.icon-rail-bottom {
+/* 收起态：开关按钮浮在悬浮导航层之上，浮层展开时仍可见可点 */
+.sidebar-collapsed .sb-nav-toggle {
+  z-index: 60;
+}
+
+.sidebar-flyout {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 50;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
+  min-height: 0;
+  padding: 34px 10px 10px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  user-select: none;
+  animation: sidebar-flyout-in 140ms var(--ease);
 }
 
-.icon-rail-btn {
-  appearance: none;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--text-secondary);
-  display: inline-grid;
-  place-items: center;
-  cursor: pointer;
-  transition:
-    background 150ms var(--ease),
-    color 150ms var(--ease);
-}
-
-.icon-rail-btn svg {
-  width: 20px;
-  height: 20px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.icon-rail-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.icon-rail-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
-.icon-rail-status {
-  width: 40px;
-  height: 24px;
-  display: inline-grid;
-  place-items: center;
-}
-
-.icon-rail-status .status-dot {
-  width: 7px;
-  height: 7px;
-}
-
-.icon-rail-status.ok .status-dot {
-  background: var(--ok);
-}
-
-.icon-rail-status.err .status-dot {
-  background: var(--danger);
+@keyframes sidebar-flyout-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .sb-group {
@@ -8430,14 +8418,6 @@
 
 .app-shell > .sidebar {
   z-index: 6;
-}
-
-.sidebar.sidebar-collapsed .sb-nav-toggle {
-  position: static;
-  left: auto;
-  top: auto;
-  width: 40px;
-  height: 40px;
 }
 
 .main-column.main-with-inset {

@@ -144,13 +144,54 @@ export function Sidebar({
   const [width, setWidth] = useState<number>(() =>
     typeof window === 'undefined' ? SIDEBAR_DEFAULT_WIDTH : loadSidebarWidth()
   )
+  const [hoverOpen, setHoverOpen] = useState(false)
   const dragState = useRef<{ startX: number; startW: number } | null>(null)
+  const hoverCloseTimer = useRef<number | null>(null)
 
   useEffect(() => {
     const onResize = (): void => setWidth((w) => clampSidebarWidth(w))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (!expanded) return
+    setHoverOpen(false)
+    if (hoverCloseTimer.current != null) {
+      window.clearTimeout(hoverCloseTimer.current)
+      hoverCloseTimer.current = null
+    }
+  }, [expanded])
+
+  useEffect(() => {
+    return () => {
+      if (hoverCloseTimer.current != null) window.clearTimeout(hoverCloseTimer.current)
+    }
+  }, [])
+
+  const openFlyout = (): void => {
+    if (hoverCloseTimer.current != null) {
+      window.clearTimeout(hoverCloseTimer.current)
+      hoverCloseTimer.current = null
+    }
+    setHoverOpen(true)
+  }
+
+  const scheduleFlyoutClose = (): void => {
+    if (hoverCloseTimer.current != null) window.clearTimeout(hoverCloseTimer.current)
+    hoverCloseTimer.current = window.setTimeout(() => {
+      hoverCloseTimer.current = null
+      setHoverOpen(false)
+    }, 160)
+  }
+
+  /** 浮层内点击导航类入口后自动收回（分组折叠等非导航点击不收回） */
+  const flyoutAware =
+    <A extends unknown[]>(fn: (...args: A) => void) =>
+    (...args: A): void => {
+      setHoverOpen(false)
+      fn(...args)
+    }
 
   const onToggleGroup = (key: string): void => {
     setCollapsedGroups((prev) => {
@@ -168,57 +209,171 @@ export function Sidebar({
       aria-expanded={expanded}
       title={expanded ? '收起导航' : '展开导航'}
       onClick={onToggleExpanded}
+      onMouseEnter={expanded ? undefined : openFlyout}
     >
       {SIDEBAR_PANEL_ICON}
     </button>
   )
 
+  const renderBody = (flyout: boolean): React.JSX.Element => {
+    const onNavigate = flyout
+      ? <A extends unknown[]>(fn: (...args: A) => void) => flyoutAware(fn)
+      : <A extends unknown[]>(fn: (...args: A) => void) => fn
+    return (
+      <>
+        <div className="sidebar-top">
+          <div className="sb-brand">shy</div>
+          <button type="button" className="sb-new-task" onClick={onNavigate(onNewSession)}>
+            {PLUS_ICON}
+            新建任务
+          </button>
+          <nav className="sb-subnav">
+            {SUB_NAV.map((n) => (
+              <button
+                key={n.key}
+                type="button"
+                className={`sb-subnav-item${active === n.key ? ' active' : ''}`}
+                onClick={onNavigate(() => onChange(n.key))}
+              >
+                {n.icon}
+                <span>{n.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="sb-list">
+          {groups.map((group) => {
+            const key = groupStorageKey(group.id)
+            const groupOpen = !collapsedGroups.has(key)
+            return (
+              <div key={key} className="sb-group">
+                <div className="sb-group-head">
+                  <button
+                    type="button"
+                    className="sb-group-head-toggle"
+                    aria-expanded={groupOpen}
+                    onClick={() => onToggleGroup(key)}
+                  >
+                    {GROUP_CHEVRON}
+                    <span className="sb-group-head-label">
+                      {group.title}
+                      <span className="sb-section-count">{group.sessions.length}</span>
+                    </span>
+                  </button>
+                  {group.id ? (
+                    <span
+                      className="session-delete"
+                      role="button"
+                      aria-label="删除项目"
+                      title="删除项目"
+                      onClick={() => {
+                        const id = group.id
+                        if (id) onDeleteProject(id, group.title)
+                      }}
+                    >
+                      {TRASH_ICON}
+                    </span>
+                  ) : null}
+                </div>
+                {groupOpen ? (
+                  group.sessions.length === 0 ? (
+                    group.id === null && groups.every((g) => g.sessions.length === 0) ? (
+                      <p className="history-empty">还没有会话，点击「新建任务」开始。</p>
+                    ) : null
+                  ) : (
+                    <div className="project-list">
+                      {group.sessions.map((s) => {
+                        const isActive = s.id === activeSessionId && active === 'projects'
+                        return (
+                          <div key={s.id} className={`project-item${isActive ? ' active' : ''}`}>
+                            <button
+                              type="button"
+                              className="project-item-main"
+                              onClick={() => onNavigate(onSelectSession)(s)}
+                              title={s.title}
+                            >
+                              <span className="project-item-title">{s.title}</span>
+                              <span className="project-item-meta">
+                                <span className="project-item-time">{timeAgo(s.updatedAt)}</span>
+                                <span
+                                  className="session-delete"
+                                  role="button"
+                                  aria-label="删除会话"
+                                  title="删除会话"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    onDeleteSession(s.id, s.title)
+                                  }}
+                                >
+                                  {TRASH_ICON}
+                                </span>
+                              </span>
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+        <div className="sidebar-bottom">
+          <div
+            className="sb-account"
+            onClick={() => onNavigate(onOpenSettings)()}
+            onMouseEnter={() => setMenuOpen(true)}
+            onMouseLeave={() => setMenuOpen(false)}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="sb-avatar">s</div>
+            <div className="sb-account-meta">
+              <span className="sb-account-name">shy</span>
+              <span className={`sb-account-status${ipcOk === null ? '' : ipcOk ? ' ok' : ' err'}`}>
+                <span className="status-dot" aria-hidden="true" />
+                {ipcLabel(ipcOk)}
+              </span>
+            </div>
+            <button type="button" className="icon-btn" aria-label="设置" title="设置">
+              {SETTINGS_ICON}
+            </button>
+            {menuOpen ? (
+              <div className="settings-popover" onClick={(e) => e.stopPropagation()}>
+                {SETTINGS_OPTS.map((o) => (
+                  <button
+                    key={o.tab}
+                    type="button"
+                    className="settings-pop-item"
+                    onClick={() => onNavigate(onOpenSettings)(o.tab)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </>
+    )
+  }
+
   if (!expanded) {
     return (
       <aside className="sidebar sidebar-collapsed" aria-label="主导航">
-        <div className="icon-rail-top">
-          {navToggle}
-          {SUB_NAV.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={`icon-rail-btn${active === item.key ? ' active' : ''}`}
-              aria-label={item.label}
-              aria-current={active === item.key ? 'page' : undefined}
-              title={item.label}
-              onClick={() => onChange(item.key)}
-            >
-              {item.icon}
-            </button>
-          ))}
-          <button
-            type="button"
-            className="icon-rail-btn"
-            aria-label="新建任务"
-            title="新建任务"
-            onClick={onNewSession}
+        <div className="sidebar-hover-zone" onMouseEnter={openFlyout} />
+        {navToggle}
+        {hoverOpen ? (
+          <div
+            className="sidebar-flyout"
+            style={{ width }}
+            onMouseEnter={openFlyout}
+            onMouseLeave={scheduleFlyoutClose}
           >
-            {PLUS_ICON}
-          </button>
-        </div>
-        <div className="icon-rail-bottom">
-          <span
-            className={`icon-rail-status${ipcOk === null ? '' : ipcOk ? ' ok' : ' err'}`}
-            title={ipcLabel(ipcOk)}
-            aria-label={ipcLabel(ipcOk)}
-          >
-            <span className="status-dot" aria-hidden="true" />
-          </span>
-          <button
-            type="button"
-            className="icon-rail-btn"
-            aria-label="设置"
-            title="设置"
-            onClick={() => onOpenSettings('general')}
-          >
-            {SETTINGS_ICON}
-          </button>
-        </div>
+            {renderBody(true)}
+          </div>
+        ) : null}
       </aside>
     )
   }
@@ -251,142 +406,7 @@ export function Sidebar({
         }}
         onDoubleClick={() => setWidth(SIDEBAR_DEFAULT_WIDTH)}
       />
-      <div className="sidebar-top">
-        <div className="sb-brand">shy</div>
-        <button type="button" className="sb-new-task" onClick={onNewSession}>
-          {PLUS_ICON}
-          新建任务
-        </button>
-        <nav className="sb-subnav">
-          {SUB_NAV.map((n) => (
-            <button
-              key={n.key}
-              type="button"
-              className={`sb-subnav-item${active === n.key ? ' active' : ''}`}
-              onClick={() => onChange(n.key)}
-            >
-              {n.icon}
-              <span>{n.label}</span>
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      <div className="sb-list">
-        {groups.map((group) => {
-          const key = groupStorageKey(group.id)
-          const groupOpen = !collapsedGroups.has(key)
-          return (
-          <div key={key} className="sb-group">
-            <div className="sb-group-head">
-              <button
-                type="button"
-                className="sb-group-head-toggle"
-                aria-expanded={groupOpen}
-                onClick={() => onToggleGroup(key)}
-              >
-                {GROUP_CHEVRON}
-                <span className="sb-group-head-label">
-                  {group.title}
-                  <span className="sb-section-count">{group.sessions.length}</span>
-                </span>
-              </button>
-              {group.id ? (
-                <span
-                  className="session-delete"
-                  role="button"
-                  aria-label="删除项目"
-                  title="删除项目"
-                  onClick={() => {
-                    const id = group.id
-                    if (id) onDeleteProject(id, group.title)
-                  }}
-                >
-                  {TRASH_ICON}
-                </span>
-              ) : null}
-            </div>
-            {groupOpen ? (
-              group.sessions.length === 0 ? (
-                group.id === null && groups.every((g) => g.sessions.length === 0) ? (
-                  <p className="history-empty">还没有会话，点击「新建任务」开始。</p>
-                ) : null
-              ) : (
-                <div className="project-list">
-                  {group.sessions.map((s) => {
-                    const isActive = s.id === activeSessionId && active === 'projects'
-                    return (
-                      <div key={s.id} className={`project-item${isActive ? ' active' : ''}`}>
-                        <button
-                          type="button"
-                          className="project-item-main"
-                          onClick={() => onSelectSession(s)}
-                          title={s.title}
-                        >
-                          <span className="project-item-title">{s.title}</span>
-                          <span className="project-item-meta">
-                            <span className="project-item-time">{timeAgo(s.updatedAt)}</span>
-                            <span
-                              className="session-delete"
-                              role="button"
-                              aria-label="删除会话"
-                              title="删除会话"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                onDeleteSession(s.id, s.title)
-                              }}
-                            >
-                              {TRASH_ICON}
-                            </span>
-                          </span>
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            ) : null}
-          </div>
-          )
-        })}
-      </div>
-
-      <div className="sidebar-bottom">
-        <div
-          className="sb-account"
-          onClick={() => onOpenSettings()}
-          onMouseEnter={() => setMenuOpen(true)}
-          onMouseLeave={() => setMenuOpen(false)}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="sb-avatar">s</div>
-          <div className="sb-account-meta">
-            <span className="sb-account-name">shy</span>
-            <span className={`sb-account-status${ipcOk === null ? '' : ipcOk ? ' ok' : ' err'}`}>
-              <span className="status-dot" aria-hidden="true" />
-              {ipcLabel(ipcOk)}
-            </span>
-          </div>
-          <button type="button" className="icon-btn" aria-label="设置" title="设置">
-            {SETTINGS_ICON}
-          </button>
-          {menuOpen ? (
-            <div className="settings-popover" onClick={(e) => e.stopPropagation()}>
-              {SETTINGS_OPTS.map((o) => (
-                <button
-                  key={o.tab}
-                  type="button"
-                  className="settings-pop-item"
-                  onClick={() => onOpenSettings(o.tab)}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
+      {renderBody(false)}
     </aside>
   )
 }
