@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from 'react'
 import { EditorContent } from '@tiptap/react'
 import type { ModeKey } from './ModeToggle'
 import type {
@@ -23,13 +23,13 @@ import { ProjectPicker } from './ProjectPicker'
 import {
   BIND_ERROR_LABEL,
   chatStatusTone,
-  artifactFiles,
   isProjectPickerLocked,
   resolveBoundProjectId,
   shouldBindOnSend,
   shouldShowProjectPicker
 } from '../lib/projectBind'
 import { artifactDisplayPath } from '../lib/artifactTree'
+import { artifactFilesForTurns, isTurnEndBlock } from '../lib/turnArtifacts'
 import type { CodeLayout } from '../lib/shellLayout'
 import { isNearBottom } from '../lib/scrollStick'
 import { toggleDockMode, type DockMode } from '../lib/dockMode'
@@ -98,6 +98,45 @@ const MODE_ITEMS: SlashItem[] = [
   { key: 'goal', label: '目标', description: '自动续跑并验收', type: 'mode' }
 ]
 
+function ProductFilesCard({
+  files,
+  lastResult
+}: {
+  files: SessionFileRecord[]
+  lastResult: { tokenUsed: number; rounds: number; durationMs: number } | null
+}): React.JSX.Element | null {
+  if (files.length === 0 && !lastResult) return null
+  return (
+    <div className="product-files">
+      <div className="product-files-head">
+        <span className="product-files-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 7h5l1.5 2H20v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+          </svg>
+        </span>
+        <span>
+          {lastResult ? '✓ 任务完成' : '已编辑'} {files.length} 个文件
+        </span>
+      </div>
+      {lastResult ? (
+        <div className="product-files-meta">
+          {lastResult.rounds} 轮 · {(lastResult.durationMs / 60000).toFixed(1)} 分钟 ·{' '}
+          {lastResult.tokenUsed.toLocaleString()} tokens
+        </div>
+      ) : null}
+      {files.length > 0 ? (
+        <ul className="product-files-list">
+          {files.map((f) => (
+            <li key={f.path} className="product-file" title={f.path}>
+              {artifactDisplayPath('', f.path)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 export function ChatWorkspace({
   notice,
   sessionId,
@@ -134,6 +173,7 @@ export function ChatWorkspace({
     rounds: number
     durationMs: number
     reportPath?: string
+    at: number
   } | null>(null)
 
   const threadRef = useRef<HTMLDivElement>(null)
@@ -206,6 +246,16 @@ export function ChatWorkspace({
     return () => {
       alive = false
     }
+  }, [sessionId])
+
+  const refreshSessionFiles = useCallback((): void => {
+    const sid = sessionId
+    void window.shy
+      .listSessionFiles(sid)
+      .then((list) => {
+        if (currentSessionIdRef.current === sid) setSessionFiles(list)
+      })
+      .catch(() => {})
   }, [sessionId])
 
   const hasConversation = messages.some((m) => m.role === 'user' || m.role === 'assistant')
@@ -404,7 +454,10 @@ export function ChatWorkspace({
     }
   }
 
-  const editFiles = useMemo(() => artifactFiles(sessionFiles), [sessionFiles])
+  const filesByTurn = useMemo(
+    () => artifactFilesForTurns(messages, sessionFiles),
+    [messages, sessionFiles]
+  )
 
   // 把连续的工具消息聚成一个时间轴块，其余消息独立渲染
   const renderBlocks = useMemo(() => {
@@ -427,6 +480,16 @@ export function ChatWorkspace({
     flush()
     return blocks
   }, [messages])
+
+  const turnShape = useMemo(
+    () =>
+      renderBlocks.map((b) =>
+        b.kind === 'timeline'
+          ? ({ kind: 'timeline' } as const)
+          : ({ kind: 'msg', role: b.msg.role } as const)
+      ),
+    [renderBlocks]
+  )
 
   const composerInner = (): React.JSX.Element => (
     <div className="composer-shell">
@@ -551,7 +614,7 @@ export function ChatWorkspace({
   useLayoutEffect(() => {
     const el = threadRef.current
     if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight
-  }, [messages, busy])
+  }, [messages, busy, sessionFiles, lastResult])
 
   const onThreadScroll = (): void => {
     const el = threadRef.current
@@ -781,6 +844,7 @@ export function ChatWorkspace({
           setStatus(ev.reason === 'cancelled' ? '已取消' : '')
         }
         onSessionsChanged?.()
+        refreshSessionFiles()
       } else if (ev.type === 'notify' && ev.message) {
         setMessages((prev) => [
           ...prev,
@@ -804,7 +868,8 @@ export function ChatWorkspace({
         const rounds = Number(ev.rounds ?? 0)
         const durationMs = Number(ev.durationMs ?? 0)
         const durationMin = (durationMs / 60_000).toFixed(1)
-        setLastResult({ tokenUsed, rounds, durationMs, reportPath: ev.reportPath })
+        setLastResult({ tokenUsed, rounds, durationMs, reportPath: ev.reportPath, at: Date.now() })
+        refreshSessionFiles()
         setMessages((prev) => [
           ...prev,
           {
@@ -815,7 +880,7 @@ export function ChatWorkspace({
         ])
       }
     })
-  }, [sessionId, onSessionsChanged])
+  }, [sessionId, onSessionsChanged, refreshSessionFiles])
 
   // 全局快捷键：/ 或 Cmd/Ctrl+K 聚焦输入区
   useEffect(() => {
@@ -995,66 +1060,63 @@ export function ChatWorkspace({
                 </div>
               ) : (
                 <>
-                  {renderBlocks.map((block, bi) => {
-                    if (block.kind === 'timeline') {
-                      const streaming = block.items.some((t) => t.streaming)
-                      return (
-                        <div key={bi} className="msg msg-assistant">
-                          <div className="msg-head">
-                            <span className="msg-avatar" aria-hidden="true">
-                              s
-                            </span>
-                            <span className="msg-name">shy</span>
-                          </div>
-                          <AgentTimeline
-                            segments={messagesToSegments(block.items)}
-                            streaming={streaming}
-                          />
-                          {streaming ? <span className="stream-cursor" aria-hidden="true" /> : null}
-                        </div>
+                  {(() => {
+                    let userTurn = -1
+                    return renderBlocks.map((block, bi) => {
+                      if (block.kind === 'msg' && block.msg.role === 'user') userTurn += 1
+                      const turnEnd = isTurnEndBlock(turnShape, bi)
+                      const group = turnEnd && userTurn >= 0 ? filesByTurn[userTurn] : undefined
+                      const showResult = Boolean(
+                        lastResult &&
+                          group &&
+                          lastResult.at >= group.startMs &&
+                          lastResult.at < group.endMs
                       )
-                    }
-                    const m = block.msg
-                    return (
-                      <div key={bi} className={`msg msg-${m.role}`}>
-                        {m.role === 'user' ? (
-                          <div className="msg-bubble">
-                            <MarkdownBody content={m.content} />
+                      const filesCard = (
+                        <ProductFilesCard
+                          files={group?.files ?? []}
+                          lastResult={showResult ? lastResult : null}
+                        />
+                      )
+                      if (block.kind === 'timeline') {
+                        const streaming = block.items.some((t) => t.streaming)
+                        return (
+                          <Fragment key={bi}>
+                            <div className="msg msg-assistant">
+                              <div className="msg-head">
+                                <span className="msg-avatar" aria-hidden="true">
+                                  s
+                                </span>
+                                <span className="msg-name">shy</span>
+                              </div>
+                              <AgentTimeline
+                                segments={messagesToSegments(block.items)}
+                                streaming={streaming}
+                              />
+                              {streaming ? (
+                                <span className="stream-cursor" aria-hidden="true" />
+                              ) : null}
+                            </div>
+                            {turnEnd ? filesCard : null}
+                          </Fragment>
+                        )
+                      }
+                      const m = block.msg
+                      return (
+                        <Fragment key={bi}>
+                          <div className={`msg msg-${m.role}`}>
+                            {m.role === 'user' ? (
+                              <div className="msg-bubble">
+                                <MarkdownBody content={m.content} />
+                              </div>
+                            ) : null}
+                            {m.role === 'system' ? <div className="msg-pill">{m.content}</div> : null}
                           </div>
-                        ) : null}
-                        {m.role === 'system' ? <div className="msg-pill">{m.content}</div> : null}
-                      </div>
-                    )
-                  })}
-                  {editFiles.length > 0 || lastResult ? (
-                    <div className="product-files">
-                      <div className="product-files-head">
-                        <span className="product-files-icon" aria-hidden="true">
-                          <svg viewBox="0 0 24 24">
-                            <path d="M4 7h5l1.5 2H20v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-                          </svg>
-                        </span>
-                        <span>
-                          {lastResult ? '✓ 任务完成' : '已编辑'} {editFiles.length} 个文件
-                        </span>
-                      </div>
-                      {lastResult ? (
-                        <div className="product-files-meta">
-                          {lastResult.rounds} 轮 · {(lastResult.durationMs / 60000).toFixed(1)} 分钟
-                          · {lastResult.tokenUsed.toLocaleString()} tokens
-                        </div>
-                      ) : null}
-                      {editFiles.length > 0 ? (
-                        <ul className="product-files-list">
-                          {editFiles.map((f) => (
-                            <li key={f.path} className="product-file" title={f.path}>
-                              {artifactDisplayPath('', f.path)}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  ) : null}
+                          {turnEnd ? filesCard : null}
+                        </Fragment>
+                      )
+                    })
+                  })()}
                 </>
               )}
             </div>
