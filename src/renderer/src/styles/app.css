@@ -7505,6 +7505,14 @@
   overflow: hidden;
 }
 
+/* 素材/代码模式：右侧会话栏顶栏与主区工具栏同高（50px），底边分隔线对齐 */
+.session-aside-panel > .main.chat-column .topbar {
+  height: 50px;
+  box-sizing: border-box;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
 .session-aside-panel .workspace,
 .session-aside-panel .workspace-inner,
 .session-aside-panel .thread,
@@ -7841,7 +7849,9 @@
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
-  padding: 10px 14px;
+  height: 50px;
+  box-sizing: border-box;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -8209,7 +8219,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
+  height: 50px;
+  box-sizing: border-box;
+  padding: 0 14px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
 }
