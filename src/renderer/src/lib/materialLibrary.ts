@@ -388,6 +388,33 @@ export function zoomViewportAt(
   return clampViewport({ scale, x: world.x - sx / scale, y: world.y - sy / scale })
 }
 
+export function fitViewportToBounds(
+  bounds: { width: number; height: number },
+  viewport: { width: number; height: number },
+  padding = 48
+): CanvasViewport {
+  const availableWidth = Math.max(1, viewport.width - padding * 2)
+  const availableHeight = Math.max(1, viewport.height - padding * 2)
+  const scale = clampScale(
+    bounds.width > 0 && bounds.height > 0
+      ? Math.min(availableWidth / bounds.width, availableHeight / bounds.height)
+      : 1
+  )
+  return clampViewport({
+    scale,
+    x: Math.max(0, (bounds.width - viewport.width / scale) / 2),
+    y: Math.max(0, (bounds.height - viewport.height / scale) / 2)
+  })
+}
+
+export function placedIntersectsRect(
+  placed: { x: number; y: number; w: number; h: number },
+  rect: { x: number; y: number; width: number; height: number }
+): boolean {
+  return placed.x < rect.x + rect.width && placed.x + placed.w > rect.x &&
+    placed.y < rect.y + rect.height && placed.y + placed.h > rect.y
+}
+
 /** 拖拽平移：屏幕位移换算为世界位移（反向） */
 export function panViewport(
   start: CanvasViewport,

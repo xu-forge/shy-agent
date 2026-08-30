@@ -11,6 +11,8 @@ type Props = {
   projectId: string
   placed: PlacedMaterial
   onOpen: (item: MaterialItem) => void
+  onSelect?: (item: MaterialItem) => void
+  selected?: boolean
   onContextMenu?: (e: React.MouseEvent, item: MaterialItem) => void
 }
 
@@ -260,16 +262,16 @@ function useAudioDuration(projectId: string, item: MaterialItem): number | null 
   return duration
 }
 
-export function CanvasCard({ projectId, placed, onOpen, onContextMenu }: Props): React.JSX.Element {
+export function CanvasCard({ projectId, placed, onOpen, onSelect, selected, onContextMenu }: Props): React.JSX.Element {
   const { item, x, y, w, h } = placed
   const ext = extOf(item)
   const duration = useAudioDuration(projectId, item)
   return (
     <button
       type="button"
-      className="canvas-card"
+      className={`canvas-card${selected ? ' is-selected' : ''}`}
       style={{ left: x, top: y, width: w, height: h }}
-      onClick={() => onOpen(item)}
+      onClick={() => (onSelect ? onSelect(item) : onOpen(item))}
       onContextMenu={(e) => {
         if (!onContextMenu) return
         e.preventDefault()

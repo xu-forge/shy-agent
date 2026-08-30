@@ -20,6 +20,7 @@ import {
   docSequenceOf,
   extOf,
   filterMaterialsByKind,
+  fitViewportToBounds,
   isInlineDoc,
   isValidMaterialName,
   layoutGroupedMaterials,
@@ -27,6 +28,7 @@ import {
   materialSourceUrl,
   mentionQueryBefore,
   panViewport,
+  placedIntersectsRect,
   remapCollapsedAfterRename,
   screenToWorld,
   scrollViewport,
@@ -207,6 +209,20 @@ describe('layoutGroupedMaterials', () => {
     expect(leaf && parent ? leaf.x + leaf.w : 0).toBeLessThanOrEqual(
       (parent?.x ?? 0) + (parent?.w ?? 0) - GROUP_PAD
     )
+  })
+})
+
+describe('canvas controls', () => {
+  it('fits bounds into the viewport with a safe margin', () => {
+    const result = fitViewportToBounds({ width: 1000, height: 500 }, { width: 500, height: 300 })
+    expect(result.scale).toBe(0.404)
+    expect(result.x).toBe(0)
+    expect(result.y).toBe(0)
+  })
+
+  it('detects cards intersecting a selection rectangle', () => {
+    expect(placedIntersectsRect({ x: 10, y: 10, w: 20, h: 20 }, { x: 25, y: 25, width: 10, height: 10 })).toBe(true)
+    expect(placedIntersectsRect({ x: 10, y: 10, w: 20, h: 20 }, { x: 30, y: 30, width: 10, height: 10 })).toBe(false)
   })
 })
 

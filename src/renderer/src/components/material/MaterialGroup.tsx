@@ -12,6 +12,8 @@ type Props = {
   parentX?: number
   parentY?: number
   onOpen: (item: MaterialItem) => void
+  onSelect?: (item: MaterialItem) => void
+  selectedIds?: ReadonlySet<string>
   onToggle: (path: string) => void
   onFileContext: (e: React.MouseEvent, item: MaterialItem) => void
   onGroupContext: (e: React.MouseEvent, group: PlacedGroup) => void
@@ -24,6 +26,8 @@ export function MaterialGroup({
   parentX = 0,
   parentY = 0,
   onOpen,
+  onSelect,
+  selectedIds,
   onToggle,
   onFileContext,
   onGroupContext
@@ -68,6 +72,8 @@ export function MaterialGroup({
                 parentX={group.x}
                 parentY={group.y}
                 onOpen={onOpen}
+                onSelect={onSelect}
+                selectedIds={selectedIds}
                 onToggle={onToggle}
                 onFileContext={onFileContext}
                 onGroupContext={onGroupContext}
@@ -80,6 +86,8 @@ export function MaterialGroup({
           projectId={projectId}
           placed={{ ...p, x: p.x - group.x, y: p.y - group.y }}
           onOpen={onOpen}
+          onSelect={onSelect}
+          selected={selectedIds?.has(p.item.id)}
           onContextMenu={onFileContext}
         />
       ))}

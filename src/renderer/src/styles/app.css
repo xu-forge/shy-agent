@@ -7879,6 +7879,98 @@
   cursor: grabbing;
 }
 
+.canvas-controls {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(10px);
+}
+
+.canvas-controls button {
+  width: 30px;
+  min-width: 30px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tooltip-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip-content {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg-panel);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tooltip-anchor:hover .tooltip-content,
+.tooltip-anchor:focus-within .tooltip-content {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.canvas-controls button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.canvas-controls button:hover,
+.canvas-controls button.is-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.canvas-zoom-label {
+  min-width: 42px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.canvas-selection-rect {
+  position: absolute;
+  z-index: 5;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  pointer-events: none;
+}
+
 .canvas-plane {
   position: absolute;
   top: 0;
@@ -7914,6 +8006,11 @@
 .canvas-card:hover {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   box-shadow: var(--shadow-md);
+}
+
+.canvas-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-md);
 }
 
 .canvas-card-media {
