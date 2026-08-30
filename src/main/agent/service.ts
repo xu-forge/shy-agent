@@ -142,7 +142,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
       return
     }
 
-    runLog.start({ mode, resume: Boolean(resume) })
+    runLog.start({ mode, resume: Boolean(resume), activeView: args.activeView ?? null })
     const shortMemory = session?.shortMemory ?? ''
     emit({
       type: 'status',

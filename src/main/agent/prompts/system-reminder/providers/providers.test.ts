@@ -166,18 +166,21 @@ describe('memoryReminderProvider', () => {
 })
 
 describe('activeFileReminderProvider', () => {
-  it('有 env.activeView 时输出含 <active-file>、kind、relativePath、fs_read、无关则忽略且不要主动提及', () => {
+  it('有 env.activeView 时输出路径，并提示用户正在查看该文件、须自行 fs_read', () => {
     const out = activeFileReminderProvider(
       baseInput({
         env: { ...baseInput().env, activeView: { kind: 'code', relativePath: 'src/a.ts' } }
       })
     )
     expect(out).toContain('<active-file>')
-    expect(out).toContain('code')
+    expect(out).toContain('kind: code')
     expect(out).toContain('src/a.ts')
+    expect(out).toMatch(/用户正在查看/)
     expect(out).toContain('fs_read')
-    expect(out).toMatch(/忽略/)
-    expect(out).toMatch(/不要主动提及/)
+    expect(out).toMatch(/对话历史/)
+    expect(out).toMatch(/禁止因为/)
+    expect(out).toContain('ignore-only-if')
+    expect(out).not.toContain('<excerpt')
     expect(out).toContain('</active-file>')
   })
 
