@@ -74,6 +74,42 @@ export function WidgetRenderer(props: ToolRendererProps): React.JSX.Element {
     )
   }
 
+  if (widgetType === 'cards') {
+    const items = Array.isArray(data)
+      ? data
+      : typeof data === 'string'
+        ? (() => {
+            try {
+              const p = JSON.parse(data) as unknown
+              return Array.isArray(p) ? p : []
+            } catch {
+              return []
+            }
+          })()
+        : []
+    if (items.length > 0) {
+      return (
+        <ToolRowShell {...props}>
+          <ul className="widget-cards">
+            {items.slice(0, 24).map((item, i) => {
+              const rec =
+                item && typeof item === 'object' && !Array.isArray(item)
+                  ? (item as Record<string, unknown>)
+                  : { title: String(item) }
+              return (
+                <li key={i} className="widget-card">
+                  {rec.title ? <strong>{String(rec.title)}</strong> : null}
+                  {rec.subtitle ? <div className="widget-card-sub">{String(rec.subtitle)}</div> : null}
+                  {rec.content ? <div className="widget-card-body">{String(rec.content)}</div> : null}
+                </li>
+              )
+            })}
+          </ul>
+        </ToolRowShell>
+      )
+    }
+  }
+
   if (widgetType === 'html' && html) {
     return (
       <ToolRowShell {...props}>

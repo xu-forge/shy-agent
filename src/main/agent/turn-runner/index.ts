@@ -25,6 +25,7 @@ import { streamChatCompletion, type LLMMessage } from '../llm-client'
 import { ThinkingStreamParser } from '../../../shared/thinking-stream'
 import { compactHistory, type CompactionSettings } from '../compaction'
 import { runToolCalls, type ShyTool } from '../tools/dispatcher'
+import { extractXmlToolCalls } from '../../../shared/xml-tool-calls'
 import type { ActiveView } from '../../../shared/ipc'
 import type {
   TurnInput,
@@ -437,6 +438,12 @@ export async function runTurn(input: TurnInput, deps: RunTurnDeps): Promise<Turn
         if (input.signal?.aborted) break
       }
       emitStreamPieces(thinking.flush())
+      const xml = extractXmlToolCalls(
+        accContent,
+        new Set(input.tools.map((t) => t.name))
+      )
+      accContent = xml.content
+      accToolCalls.push(...xml.toolCalls)
       tokenUsed.prompt += promptTok
       tokenUsed.completion += completionTok
       deps.emit({

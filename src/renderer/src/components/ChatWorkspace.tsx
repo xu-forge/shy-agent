@@ -35,6 +35,8 @@ import { isNearBottom } from '../lib/scrollStick'
 import { useDynamicVirtualList } from '../lib/dynamicVirtualList'
 import { toggleDockMode, type DockMode } from '../lib/dockMode'
 import { chatPayload } from '../lib/activeView'
+import { enqueueStreamDelta, mergeAssistantSnapshot } from '../lib/streamingDelta'
+import { splitAssistantContent } from '../lib/splitAssistantContent'
 import { RightDockIcon } from './RightDockIcon'
 import { OpenWithMenu } from './dock/OpenWithMenu'
 import { FolderIcon, GlobeIcon } from './dock/DockIcons'
@@ -708,11 +710,17 @@ export function ChatWorkspace({
     deltaTimerRef.current = null
   }, [])
 
-  const queueStreamingDelta = useCallback((role: 'assistant' | 'reasoning', content: string): void => {
-    const pending = pendingDeltaRef.current
-    pendingDeltaRef.current = { role, content: pending?.role === role ? pending.content + content : content }
-    if (!deltaTimerRef.current) deltaTimerRef.current = setTimeout(flushStreaming, 50)
+  const applyPending = useCallback((pending: { role: 'assistant' | 'reasoning'; content: string }): void => {
+    pendingDeltaRef.current = pending
+    flushStreaming()
   }, [flushStreaming])
+
+  const queueStreamingDelta = useCallback((role: 'assistant' | 'reasoning', content: string): void => {
+    const { flush, pending } = enqueueStreamDelta(pendingDeltaRef.current, role, content)
+    if (flush) applyPending(flush)
+    pendingDeltaRef.current = pending
+    if (!deltaTimerRef.current) deltaTimerRef.current = setTimeout(flushStreaming, 50)
+  }, [applyPending, flushStreaming])
 
   const commitStreaming = useCallback((): void => {
     flushStreaming()
@@ -780,43 +788,73 @@ export function ChatWorkspace({
       } else if (ev.type === 'reasoning_delta' && ev.content) {
         queueStreamingDelta('reasoning', ev.content)
       } else if (ev.type === 'reasoning_done') {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'reasoning') {
-            const started = last.reasoningStartedAt ?? Date.now()
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                streaming: false,
-                durationMs: Math.max(0, Date.now() - started)
-              }
-            ]
+        flushStreaming()
+        const current = streamingTurnRef.current
+        let idx = -1
+        for (let i = current.length - 1; i >= 0; i--) {
+          if (current[i]?.role === 'reasoning') {
+            idx = i
+            break
           }
-          return prev
-        })
+        }
+        if (idx >= 0) {
+          const last = current[idx]!
+          const started = last.reasoningStartedAt ?? Date.now()
+          const next = [...current]
+          next[idx] = {
+            ...last,
+            streaming: false,
+            durationMs: Math.max(0, Date.now() - started)
+          }
+          streamingTurnRef.current = next
+          setStreamingTurn(next)
+        }
       } else if (ev.type === 'assistant_delta' && ev.content) {
         queueStreamingDelta('assistant', ev.content)
       } else if (ev.type === 'assistant' && ev.content) {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'assistant' && !last.kind) {
-            return [...prev.slice(0, -1), { ...last, content: ev.content!, streaming: false }]
-          }
-          return [
-            ...prev,
-            {
+        flushStreaming()
+        const split = splitAssistantContent(ev.content)
+        const streamed = streamingTurnRef.current
+        if (streamed.length > 0) {
+          const next = mergeAssistantSnapshot(streamed, split, ev.content, (role, content) => ({
+            role,
+            content,
+            createdAt: new Date().toISOString(),
+            streaming: false,
+            ...(role === 'reasoning' ? { reasoningStartedAt: Date.now() } : {})
+          }))
+          streamingTurnRef.current = next
+          setStreamingTurn(next)
+        } else {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1]
+            const body = split.body || ev.content!
+            if (last && last.role === 'assistant' && !last.kind) {
+              return [...prev.slice(0, -1), { ...last, content: body, streaming: false }]
+            }
+            const extra: Msg[] = []
+            if (split.thinking) {
+              extra.push({
+                role: 'reasoning',
+                content: split.thinking,
+                createdAt: new Date().toISOString(),
+                streaming: false
+              })
+            }
+            extra.push({
               role: 'assistant',
-              content: ev.content!,
+              content: body,
               createdAt: new Date().toISOString(),
               streaming: false
-            }
-          ]
-        })
+            })
+            return [...prev, ...extra]
+          })
+        }
       } else if (ev.type === 'assistant_done') {
         // 流式渲染完毕：停掉打字光标
         commitStreaming()
       } else if (ev.type === 'tool_call' && ev.id) {
+        commitStreaming()
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.role === 'tool' && m.toolId === ev.id)
           if (idx >= 0) {
@@ -964,7 +1002,7 @@ export function ChatWorkspace({
         ])
       }
     })
-  }, [sessionId, onSessionsChanged, refreshSessionFiles])
+  }, [sessionId, onSessionsChanged, refreshSessionFiles, flushStreaming, queueStreamingDelta, commitStreaming])
 
   // 全局快捷键：/ 或 Cmd/Ctrl+K 聚焦输入区
   useEffect(() => {

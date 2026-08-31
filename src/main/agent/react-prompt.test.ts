@@ -16,6 +16,8 @@ describe('REACT_GUIDE_BLOCK', () => {
   it('含事实门禁与 visualizer / present 规则', () => {
     expect(REACT_GUIDE_BLOCK).toMatch(/事实类门禁/)
     expect(REACT_GUIDE_BLOCK).toMatch(/Visualizer/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/function call/)
+    expect(REACT_GUIDE_BLOCK).toMatch(/<show_widget>/)
     expect(REACT_GUIDE_BLOCK).toMatch(/present_artifact/)
     expect(REACT_GUIDE_BLOCK).toMatch(/final_answer/)
   })

@@ -37,6 +37,7 @@ export const REACT_GUIDE_BLOCK = `【可用工具 — 名称必须与 function c
 
 【Visualizer】
 教学/讲解/对比/架构类请求：先 read_me 再 show_widget。复杂主题多次 show_widget，中间必须穿插 prose，禁止连续堆叠 widget。不要只输出长文。
+禁止在正文写 <show_widget> / <parameter> 这类 XML——必须用 function call，否则界面无法渲染卡片。
 
 【产物呈现】
 fs_write 写入 .html/.htm 后系统会自动 present，不必再调 present_artifact。

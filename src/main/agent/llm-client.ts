@@ -35,6 +35,8 @@ export type LLMClientConfig = {
   model: string
 }
 
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8192
+
 export type LLMStreamEvent =
   | { type: 'content'; delta: string }
   | { type: 'tool_calls'; toolCalls: ChatCompletionMessageToolCall[] }
@@ -48,7 +50,7 @@ export async function* streamChatCompletion(
   config: LLMClientConfig,
   messages: LLMMessage[],
   tools: ChatCompletionTool[],
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; maxTokens?: number }
 ): AsyncGenerator<LLMStreamEvent> {
   const openai = new OpenAI({
     baseURL: config.baseURL,
@@ -63,7 +65,9 @@ export async function* streamChatCompletion(
       tool_choice: tools.length > 0 ? 'auto' : undefined,
       temperature: 0.2,
       stream: true,
-      stream_options: { include_usage: true }
+      stream_options: { include_usage: true },
+      // 不传时 MiniMax 等网关常默认 1024，思考把额度用光后正文会截在半截 XML
+      max_tokens: options?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS
     },
     { signal: options?.signal }
   )
@@ -164,7 +168,7 @@ export function zodShapeToJsonSchema(shape: Record<string, unknown>): Record<str
 export async function invokeChatCompletion(
   config: LLMClientConfig,
   messages: LLMMessage[],
-  options?: { signal?: AbortSignal; temperature?: number; tools?: ChatCompletionTool[] }
+  options?: { signal?: AbortSignal; temperature?: number; tools?: ChatCompletionTool[]; maxTokens?: number }
 ): Promise<{
   content: string
   toolCalls: ChatCompletionMessageToolCall[]
@@ -176,6 +180,7 @@ export async function invokeChatCompletion(
       model: config.model,
       messages,
       temperature: options?.temperature ?? 0.2,
+      max_tokens: options?.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
       ...(options?.tools?.length ? { tools: options.tools, tool_choice: 'auto' as const } : {})
     },
     { signal: options?.signal }

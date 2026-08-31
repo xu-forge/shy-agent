@@ -1,5 +1,3 @@
-import { MarkdownBody } from '../MarkdownBody'
-
 type Props = {
   content: string
   durationMs?: number
@@ -25,9 +23,7 @@ export function ReasoningBlock({ content, durationMs, streaming }: Props): React
         </span>
         思考{time ? ` · ${time}` : streaming ? '中…' : ''}
       </summary>
-      <div className="react-thinking-body">
-        <MarkdownBody content={content || '…'} />
-      </div>
+      <div className="react-thinking-body react-thinking-pre">{content || '…'}</div>
     </details>
   )
 }

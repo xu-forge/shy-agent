@@ -16,6 +16,13 @@ describe('splitAssistantContent', () => {
     expect(r.thinkingOpen).toBe(true)
   })
 
+  it('截断的 think（无闭合标签）仍进入 thinking，不留在正文', () => {
+    const r = splitAssistantContent('<think>不过，等等，看错误结构\n\n让我做一个简洁的 final answer。')
+    expect(r.thinking).toContain('错误结构')
+    expect(r.body).toBe('')
+    expect(r.thinkingOpen).toBe(true)
+  })
+
   it('supports fenced thinking blocks', () => {
     const r = splitAssistantContent('```thinking\n内部推理\n```\n正文')
     expect(r.thinking).toBe('内部推理')

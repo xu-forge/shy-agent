@@ -7,29 +7,28 @@
  */
 import { useMemo } from 'react'
 import { MarkdownBody } from '../MarkdownBody'
+import { splitAssistantContent } from '../../lib/splitAssistantContent'
+import { stripXmlToolMarkup } from '../../../../shared/xml-tool-calls'
 
 type Props = { content: string; skipThinking?: boolean; streaming?: boolean }
 
-/** 提取推理块并去掉 think 标签，剩余作为正文 */
+/** 提取推理块并去掉 think 标签，剩余作为正文（含未闭合 think，避免截断看起来像丢了后半段） */
 function splitReasoning(content: string): { reasoning: string; reply: string } {
-  const blocks: string[] = []
-  const stripped = content
-    .replace(/<think\b[^>]*>([\s\S]*?)<\/think>/gi, (_m, inner: string) => {
-      const t = inner.trim()
-      if (t) blocks.push(t)
-      return ''
-    })
-    .replace(/<thinking\b[^>]*>([\s\S]*?)<\/thinking>/gi, (_m, inner: string) => {
-      const t = inner.trim()
-      if (t) blocks.push(t)
-      return ''
-    })
-  return { reasoning: blocks.join('\n\n'), reply: stripped.trim() }
+  const { thinking, body } = splitAssistantContent(content)
+  return { reasoning: thinking, reply: stripXmlToolMarkup(body) }
 }
 
 function countThinkBlocks(content: string): number {
-  const m = content.match(/<think\b[^>]*>[\s\S]*?<\/think>|<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi)
-  return m ? m.length : 0
+  const closed = content.match(
+    /<think\b[^>]*>[\s\S]*?<\/think>|<thinking\b[^>]*>[\s\S]*?<\/thinking>/gi
+  )
+  const n = closed?.length ?? 0
+  const rest = content.replace(
+    /<(?:think|thinking)\b[^>]*>[\s\S]*?<\/(?:think|thinking)>/gi,
+    ''
+  )
+  if (/<(?:think|thinking)\b/i.test(rest)) return n + 1
+  return n
 }
 
 export function ReActContent({ content, skipThinking = false, streaming = false }: Props): React.JSX.Element {
@@ -49,9 +48,7 @@ export function ReActContent({ content, skipThinking = false, streaming = false 
             </span>
             思考 {thinkCount || 1} 次
           </summary>
-          <div className="react-thinking-body">
-            <MarkdownBody content={reasoning} />
-          </div>
+          <div className="react-thinking-body react-thinking-pre">{reasoning}</div>
         </details>
       ) : null}
       {streaming ? <div className="react-streaming-text">{reply}</div> : <MarkdownBody content={reply} />}
