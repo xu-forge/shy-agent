@@ -13,6 +13,7 @@ import {
   toggleCollapsedPath
 } from '../../lib/materialLibrary'
 import { MarkdownBody } from '../MarkdownBody'
+import { PdfViewer } from './PdfViewer'
 
 type Props = {
   projectId: string
@@ -132,7 +133,7 @@ export function Lightbox({ projectId, item, docs, onClose, onSelect }: Props): R
       )
     }
     if (item.kind === 'doc' && ext === 'pdf' && !failed) {
-      return <iframe className="lightbox-frame" src={src} title={fileNameOf(item)} />
+      return <PdfViewer projectId={projectId} relativePath={item.relativePath} title={fileNameOf(item)} />
     }
     if (item.kind === 'doc' && isInlineDoc(item)) {
       return text == null ? (

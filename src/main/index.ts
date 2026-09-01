@@ -7,15 +7,13 @@ import { startSkillWatch } from './skills/store'
 import { registerBrowserIpc, setBrowserWindowProvider, getEmbeddedBrowserManager } from './browser'
 import { shouldBlockRendererNavigation } from './browser/renderer-navigation'
 import { setBrowserManagerGetter } from './agent/tools/browser'
-import { protocol, net } from 'electron'
-import { pathToFileURL } from 'url'
+import { protocol } from 'electron'
+import { respondFileWithRange } from './net/file-response'
+import { PRIVILEGED_SCHEMES } from './net/privileged-schemes'
 
 // minimax-feature-port：shy-asset:// 协议 — 渲染层展示 ~/.shy 下的产物（浏览器截图等）
 // material-canvas：shy-material:// 协议 — 按项目根校验后读取素材原文件（缩略图/播放/截帧源）
-protocol.registerSchemesAsPrivileged([
-  { scheme: 'shy-asset', privileges: { standard: true, secure: true, supportFetchAPI: false } },
-  { scheme: 'shy-material', privileges: { standard: true, secure: true, supportFetchAPI: true } }
-])
+protocol.registerSchemesAsPrivileged(PRIVILEGED_SCHEMES)
 import { ensureShyHomeDirs, resolveShyHome } from './paths'
 import { dropLegacyWorkflowTables, migrateLegacyUserData } from './migration'
 import { bridgeEventBusToIpc, getDefaultBus } from './event-bridge'
@@ -124,20 +122,20 @@ app.whenReady().then(() => {
 
   // shy-asset://<首段>/<相对路径> → ~/.shy/<首段>/<相对路径>
   // 注意：standard scheme 中首段是 URL host（会被小写化），须并入相对路径
-  protocol.handle('shy-asset', (request) => {
+  protocol.handle('shy-asset', async (request) => {
     try {
       const u = new URL(request.url)
       const rel = decodeURIComponent(`${u.host}${u.pathname}`).replace(/^\/+/, '')
       const home = resolveShyHome()
       const file = join(home, rel)
       if (!file.startsWith(home)) return new Response('forbidden', { status: 403 })
-      return net.fetch(pathToFileURL(file).toString())
+      return await respondFileWithRange(file, request)
     } catch {
       return new Response('bad request', { status: 400 })
     }
   })
   // shy-material://m/<projectId>/<encodeURIComponent(absPath)> → 项目 rootPath 内的素材原文件
-  protocol.handle('shy-material', (request) => {
+  protocol.handle('shy-material', async (request) => {
     try {
       const u = new URL(request.url)
       const segments = decodeURIComponent(u.pathname).replace(/^\/+/, '').split('/')
@@ -146,7 +144,7 @@ app.whenReady().then(() => {
       const project = getProject(projectId)
       if (!project) return new Response('not found', { status: 404 })
       const abs = assertInsideRoot(project.rootPath, absPath)
-      return net.fetch(pathToFileURL(abs).toString())
+      return await respondFileWithRange(abs, request)
     } catch {
       return new Response('bad request', { status: 400 })
     }

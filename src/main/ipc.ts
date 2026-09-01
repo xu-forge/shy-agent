@@ -71,7 +71,7 @@ import {
   collectProjectMaterialWrites,
   resolveProjectFilePath
 } from './projects/ipc-helpers'
-import { ensureImageThumb, putVideoThumb } from './materials/thumbs'
+import { ensureImageThumb, findThumb, putVideoThumb } from './materials/thumbs'
 import { readCanvasState, writeCanvasState } from './materials/canvas-state'
 import {
   ensureDockRoot,
@@ -368,6 +368,10 @@ export function registerCoreIpc(): void {
     } catch {
       return { ok: false as const, reason: 'path_escape' as const }
     }
+    // 先查磁盘缓存：图片与视频截帧产物共用同一缓存，视频靠 putVideoThumb 落盘
+    const hit = findThumb(input)
+    if (hit) return { ok: true as const, url: hit }
+    // 缓存 miss：图片走 nativeImage；视频/其它返回非 ok，由 renderer 决定是否截帧
     return ensureImageThumb(input)
   })
 

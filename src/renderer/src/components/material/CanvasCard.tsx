@@ -6,6 +6,10 @@ import {
   fileNameOf,
   materialSourceUrl
 } from '../../lib/materialLibrary'
+import { renderPdfFirstPage } from '../../lib/pdfThumb'
+import { dataUrlToArrayBuffer } from '../../lib/dataUrlBytes'
+import { createLimiter } from '../../lib/taskLimiter'
+import { shouldDecodeThumb, THUMB_DECODE_MIN_WIDTH } from '../../lib/thumbDecode'
 
 type Props = {
   projectId: string
@@ -18,23 +22,32 @@ type Props = {
 
 type ThumbState = { url: string | null; failed: boolean }
 
-const THUMB_CONCURRENCY = 3
-let activeFrames = 0
-const frameQueue: Array<() => void> = []
+const acquireFrameSlot = createLimiter(3)
+const acquirePdfSlot = createLimiter(1)
 
-function acquireFrameSlot(): Promise<() => void> {
-  return new Promise((resolve) => {
-    const run = (): void => {
-      activeFrames++
-      resolve(() => {
-        activeFrames--
-        const next = frameQueue.shift()
-        if (next) next()
-      })
-    }
-    if (activeFrames < THUMB_CONCURRENCY) run()
-    else frameQueue.push(run)
-  })
+function useThumbDecodeGate(): { ref: (el: HTMLElement | null) => void; active: boolean } {
+  const [el, setEl] = useState<HTMLElement | null>(null)
+  const [active, setActive] = useState(false)
+  useEffect(() => {
+    if (!el) return
+    const root = el.closest('.canvas-viewport')
+    const io = new IntersectionObserver(
+      (entries) => {
+        const e = entries[0]
+        if (!e) return
+        setActive(
+          shouldDecodeThumb(
+            { isIntersecting: e.isIntersecting, width: e.intersectionRect.width },
+            THUMB_DECODE_MIN_WIDTH
+          )
+        )
+      },
+      { root: root instanceof Element ? root : null, rootMargin: '120px', threshold: [0, 0.01, 1] }
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [el])
+  return { ref: setEl, active }
 }
 
 function formatDuration(seconds: number): string {
@@ -127,7 +140,21 @@ function ImageThumb({
   )
 }
 
-/** 视频首帧：缓存 miss 时用 Chromium 截帧（并发 ≤3），失败/超时降级图标卡 */
+function ThumbHost({
+  decodeRef,
+  children
+}: {
+  decodeRef: (el: HTMLElement | null) => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div ref={decodeRef} className="canvas-card-thumb-host">
+      {children}
+    </div>
+  )
+}
+
+/** 视频首帧：仅在卡片够大时解码；缓存 miss 时截帧（并发 ≤3） */
 function VideoThumb({
   projectId,
   item
@@ -135,14 +162,19 @@ function VideoThumb({
   projectId: string
   item: MaterialItem
 }): React.JSX.Element {
+  const { ref, active } = useThumbDecodeGate()
   const [state, setState] = useState<ThumbState & { needFrame: boolean }>({
     url: null,
     failed: false,
     needFrame: false
   })
   useEffect(() => {
-    let alive = true
     setState({ url: null, failed: false, needFrame: false })
+  }, [projectId, item.absPath, item.mtimeMs, item.size])
+
+  useEffect(() => {
+    if (!active || state.url || state.failed || state.needFrame) return
+    let alive = true
     void window.shy
       .materialThumbGet({
         projectId,
@@ -153,8 +185,8 @@ function VideoThumb({
       .then((r) => {
         if (!alive) return
         if (r.ok) setState({ url: r.url, failed: false, needFrame: false })
-        else if (r.reason === 'not_found') setState({ url: null, failed: false, needFrame: true })
-        else setState({ url: null, failed: true, needFrame: false })
+        else if (r.reason === 'path_escape') setState({ url: null, failed: true, needFrame: false })
+        else setState({ url: null, failed: false, needFrame: true })
       })
       .catch(() => {
         if (alive) setState({ url: null, failed: true, needFrame: false })
@@ -162,9 +194,13 @@ function VideoThumb({
     return () => {
       alive = false
     }
-  }, [projectId, item.absPath, item.mtimeMs, item.size])
+  }, [active, state.url, state.failed, state.needFrame, projectId, item.absPath, item.mtimeMs, item.size])
 
   const frameAttempted = useRef(false)
+  useEffect(() => {
+    frameAttempted.current = false
+  }, [projectId, item.absPath, item.mtimeMs, item.size])
+
   useEffect(() => {
     if (!state.needFrame || frameAttempted.current) return
     frameAttempted.current = true
@@ -225,6 +261,7 @@ function VideoThumb({
       timeout = window.setTimeout(() => finish(false), 5000)
       video.muted = true
       video.preload = 'auto'
+      video.crossOrigin = 'anonymous'
       video.addEventListener('loadedmetadata', onLoadedMetadata)
       video.addEventListener('seeked', onSeeked)
       video.addEventListener('error', onError)
@@ -235,10 +272,18 @@ function VideoThumb({
     }
   }, [state.needFrame, projectId, item.absPath, item.mtimeMs, item.size])
 
-  if (state.failed) return <KindIcon kind="video" ext="" />
-  if (!state.url) return <div className="canvas-card-loading" />
   return (
-    <img className="canvas-card-thumb" src={state.url} alt={fileNameOf(item)} draggable={false} />
+    <ThumbHost decodeRef={ref}>
+      {state.failed ? (
+        <KindIcon kind="video" ext="" />
+      ) : state.url ? (
+        <img className="canvas-card-thumb" src={state.url} alt={fileNameOf(item)} draggable={false} />
+      ) : active ? (
+        <div className="canvas-card-loading" />
+      ) : (
+        <KindIcon kind="video" ext="" />
+      )}
+    </ThumbHost>
   )
 }
 
@@ -262,9 +307,103 @@ function useAudioDuration(projectId: string, item: MaterialItem): number | null 
   return duration
 }
 
+/** PDF 首页：仅在卡片够大时解码；pdf.js 主线程并发 1 */
+function PdfThumb({ projectId, item }: { projectId: string; item: MaterialItem }): React.JSX.Element {
+  const { ref, active } = useThumbDecodeGate()
+  const [state, setState] = useState<ThumbState>({ url: null, failed: false })
+  useEffect(() => {
+    setState({ url: null, failed: false })
+  }, [projectId, item.absPath, item.mtimeMs, item.size])
+
+  useEffect(() => {
+    if (!active || state.url || state.failed) return
+    let alive = true
+    void window.shy
+      .materialThumbGet({
+        projectId,
+        absPath: item.absPath,
+        mtimeMs: item.mtimeMs,
+        size: item.size
+      })
+      .then(async (r) => {
+        if (!alive) return
+        if (r.ok) {
+          setState({ url: r.url, failed: false })
+          return
+        }
+        if (r.reason === 'path_escape') {
+          setState({ url: null, failed: true })
+          return
+        }
+        const release = await acquirePdfSlot()
+        if (!alive) {
+          release()
+          return
+        }
+        try {
+          const file = await window.shy.projectFileReadDataUrl({
+            projectId,
+            relativePath: item.relativePath
+          })
+          if (!file.ok) throw new Error(file.error)
+          const bytes = dataUrlToArrayBuffer(file.dataUrl)
+          const dataUrl = await renderPdfFirstPage(bytes)
+          if (!alive) return
+          if (!dataUrl) {
+            setState({ url: null, failed: true })
+            return
+          }
+          const put = await window.shy.materialThumbPut({
+            projectId,
+            absPath: item.absPath,
+            mtimeMs: item.mtimeMs,
+            size: item.size,
+            dataUrl
+          })
+          if (!alive) return
+          setState({ url: put.ok ? put.url : dataUrl, failed: false })
+        } catch {
+          if (alive) setState({ url: null, failed: true })
+        } finally {
+          release()
+        }
+      })
+      .catch(() => {
+        if (alive) setState({ url: null, failed: true })
+      })
+    return () => {
+      alive = false
+    }
+  }, [
+    active,
+    state.url,
+    state.failed,
+    projectId,
+    item.absPath,
+    item.mtimeMs,
+    item.size,
+    item.relativePath
+  ])
+
+  return (
+    <ThumbHost decodeRef={ref}>
+      {state.failed ? (
+        <KindIcon kind="doc" ext="pdf" />
+      ) : state.url ? (
+        <img className="canvas-card-thumb" src={state.url} alt={fileNameOf(item)} draggable={false} />
+      ) : active ? (
+        <div className="canvas-card-loading" />
+      ) : (
+        <KindIcon kind="doc" ext="pdf" />
+      )}
+    </ThumbHost>
+  )
+}
+
 export function CanvasCard({ projectId, placed, onOpen, onSelect, selected, onContextMenu }: Props): React.JSX.Element {
   const { item, x, y, w, h } = placed
   const ext = extOf(item)
+  const isPdf = item.kind === 'doc' && ext === 'pdf'
   const duration = useAudioDuration(projectId, item)
   return (
     <button
@@ -284,6 +423,8 @@ export function CanvasCard({ projectId, placed, onOpen, onSelect, selected, onCo
           <ImageThumb projectId={projectId} item={item} />
         ) : item.kind === 'video' ? (
           <VideoThumb projectId={projectId} item={item} />
+        ) : isPdf ? (
+          <PdfThumb projectId={projectId} item={item} />
         ) : (
           <div className="canvas-card-fallback">
             <KindIcon kind={item.kind} ext={ext} />

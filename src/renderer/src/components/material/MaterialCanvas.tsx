@@ -177,6 +177,8 @@ export function MaterialCanvas({
   const fitCanvas = (): void => {
     onViewportChange(fitViewportToBounds(plane, size))
   }
+  const selectCard = (item: MaterialItem): void => setSelectedIds(new Set([item.id]))
+  const selectHandler = interactionMode === 'select' ? selectCard : undefined
 
   return (
     <div
@@ -202,7 +204,7 @@ export function MaterialCanvas({
             projectId={projectId}
             placed={p}
             onOpen={onOpen}
-            onSelect={(item) => setSelectedIds(new Set([item.id]))}
+            onSelect={selectHandler}
             selected={selectedIds.has(p.item.id)}
             onContextMenu={onFileContext}
           />
@@ -214,7 +216,7 @@ export function MaterialCanvas({
             group={g}
             view={view}
             onOpen={onOpen}
-            onSelect={(item) => setSelectedIds(new Set([item.id]))}
+            onSelect={selectHandler}
             selectedIds={selectedIds}
             onToggle={onToggleGroup}
             onFileContext={onFileContext}
