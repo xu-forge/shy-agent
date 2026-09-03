@@ -9,21 +9,17 @@ import type {
   UpdateScheduleTaskInput,
   WorkflowSchedule
 } from '../../../shared/ipc'
-import { dayKey, groupOccurrencesByDay } from '../lib/calendarOccurrences'
+import { groupOccurrencesByDay } from '../lib/calendarOccurrences'
+import {
+  type ScheduleViewMode,
+  formatRangeTitle,
+  rangeBounds
+} from '../lib/calendarScheduleUi'
 import { ScheduleEditor } from './ScheduleEditor'
+import { ScheduleMonthView } from './schedule/ScheduleMonthView'
+import { ScheduleOccurrenceDetail } from './schedule/ScheduleOccurrenceDetail'
+import { ScheduleWeekView } from './schedule/ScheduleWeekView'
 import { Field, Input, Modal, Select, TextArea } from './ui'
-
-const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六']
-
-/** 6 周 × 7 天的月历网格，含首尾月溢出的日期 */
-function buildGrid(year: number, month: number): Date[] {
-  const first = new Date(year, month, 1)
-  const gridStart = new Date(year, month, 1 - first.getDay())
-  return Array.from(
-    { length: 42 },
-    (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i)
-  )
-}
 
 function defaultSchedule(date: Date): WorkflowSchedule {
   return {
@@ -83,22 +79,18 @@ function canSaveForm(form: FormState): boolean {
   return form.message.trim().length > 0
 }
 
-type MonthData = {
+type RangeData = {
   tasks: ScheduleTask[]
   warnings: ScheduleConflictWarning[]
   occurrences: ScheduleOccurrence[]
 }
 
-async function fetchMonthData(year: number, month: number): Promise<MonthData> {
-  const g = buildGrid(year, month)
-  const rangeStart = g[0]!
-  const last = g[g.length - 1]!
-  const rangeEnd = new Date(last.getFullYear(), last.getMonth(), last.getDate(), 23, 59, 59, 999)
+async function fetchRangeData(start: Date, end: Date): Promise<RangeData> {
   const [listResult, occs] = await Promise.all([
     window.shy.scheduleTasksList(),
     window.shy.scheduleTasksExpand({
-      rangeStart: rangeStart.toISOString(),
-      rangeEnd: rangeEnd.toISOString()
+      rangeStart: start.toISOString(),
+      rangeEnd: end.toISOString()
     })
   ])
   return { tasks: listResult.tasks, warnings: listResult.warnings, occurrences: occs }
@@ -106,41 +98,50 @@ async function fetchMonthData(year: number, month: number): Promise<MonthData> {
 
 export function CalendarView(): React.JSX.Element {
   const now = new Date()
+  const [viewMode, setViewMode] = useState<ScheduleViewMode>('month')
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
+  const [weekAnchor, setWeekAnchor] = useState(() => new Date())
   const [tasks, setTasks] = useState<ScheduleTask[]>([])
   const [occurrences, setOccurrences] = useState<ScheduleOccurrence[]>([])
   const [warnings, setWarnings] = useState<ScheduleConflictWarning[]>([])
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [form, setForm] = useState<FormState | null>(null)
+  const [detailOcc, setDetailOcc] = useState<ScheduleOccurrence | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
 
-  const grid = useMemo(() => buildGrid(year, month), [year, month])
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
-
+  const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
   const occurrencesByDay = useMemo(() => groupOccurrencesByDay(occurrences), [occurrences])
 
-  const applyMonthData = (data: MonthData): void => {
+  const rangeTitle = useMemo(() => {
+    if (viewMode === 'week') return formatRangeTitle('week', weekAnchor)
+    return formatRangeTitle('month', new Date(year, month, 1))
+  }, [viewMode, weekAnchor, year, month])
+
+  const applyData = (data: RangeData): void => {
     setTasks(data.tasks)
     setWarnings(data.warnings)
     setOccurrences(data.occurrences)
   }
 
   const load = useCallback(async () => {
-    applyMonthData(await fetchMonthData(year, month))
-  }, [year, month])
+    const { start, end } = rangeBounds(viewMode, year, month, weekAnchor)
+    applyData(await fetchRangeData(start, end))
+  }, [viewMode, year, month, weekAnchor])
 
   useEffect(() => {
     let alive = true
-    void fetchMonthData(year, month).then((data) => {
-      if (alive) applyMonthData(data)
+    const { start, end } = rangeBounds(viewMode, year, month, weekAnchor)
+    void fetchRangeData(start, end).then((data) => {
+      if (alive) applyData(data)
     })
     return () => {
       alive = false
     }
-  }, [year, month])
+  }, [viewMode, year, month, weekAnchor])
 
   useEffect(() => {
     void window.shy.listSkills().then(setSkills)
@@ -151,7 +152,11 @@ export function CalendarView(): React.JSX.Element {
     setTimeout(() => setNote((cur) => (cur === text ? '' : cur)), 6000)
   }
 
-  const goPrevMonth = (): void => {
+  const goPrev = (): void => {
+    if (viewMode === 'week') {
+      setWeekAnchor((d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - 7))
+      return
+    }
     if (month === 0) {
       setYear((y) => y - 1)
       setMonth(11)
@@ -160,7 +165,11 @@ export function CalendarView(): React.JSX.Element {
     }
   }
 
-  const goNextMonth = (): void => {
+  const goNext = (): void => {
+    if (viewMode === 'week') {
+      setWeekAnchor((d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7))
+      return
+    }
     if (month === 11) {
       setYear((y) => y + 1)
       setMonth(0)
@@ -171,17 +180,22 @@ export function CalendarView(): React.JSX.Element {
 
   const goToday = (): void => {
     const t = new Date()
+    setWeekAnchor(t)
     setYear(t.getFullYear())
     setMonth(t.getMonth())
   }
 
   const openCreate = (date: Date): void => {
+    setDetailOcc(null)
     setForm(emptyForm(date, skills))
   }
 
   const openEdit = (taskId: string): void => {
     const task = tasksById.get(taskId)
-    if (task) setForm(formFromTask(task))
+    if (task) {
+      setDetailOcc(null)
+      setForm(formFromTask(task))
+    }
   }
 
   const saveForm = async (): Promise<void> => {
@@ -237,57 +251,88 @@ export function CalendarView(): React.JSX.Element {
     await load()
   }
 
-  const todayKey = dayKey(new Date())
+  const detailTask = detailOcc ? tasksById.get(detailOcc.taskId) : undefined
+  const detailSkillName =
+    detailTask && detailTask.action === 'run_skill'
+      ? skillsById.get(detailTask.payload.skillId)?.name
+      : undefined
 
   return (
     <div className="main pane calendar-view">
       <div className="pane-frame calendar-frame">
-        <div className="pane-header">
-          <h1>定时任务</h1>
-          <p className="muted">
-            按月查看定时任务的展开实例；点击空白日期新建，点击任务卡片编辑，拖拽卡片可调整整个系列的落点。
-          </p>
-        </div>
-
-        <div className="calendar-toolbar">
-          <div className="calendar-nav">
-            <button
-              type="button"
-              className="cal-nav-btn"
-              aria-label="上一月"
-              onClick={goPrevMonth}
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <span className="calendar-title">
-              {year} 年 {month + 1} 月
-            </span>
-            <button
-              type="button"
-              className="cal-nav-btn"
-              aria-label="下一月"
-              onClick={goNextMonth}
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={goToday}>
-              回到今天
-            </button>
+        <div className="pane-header sch-page-header">
+          <div className="sch-page-header-text">
+            <h1>定时任务</h1>
+            <p className="muted">无需人工介入，到点自动执行本机任务</p>
           </div>
           <button type="button" className="btn btn-primary" onClick={() => openCreate(new Date())}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
             </svg>
-            新建任务
+            新建
           </button>
         </div>
 
+        <div className="calendar-toolbar sch-toolbar">
+          <div className="calendar-nav">
+            <span className="calendar-title">{rangeTitle}</span>
+            <button type="button" className="cal-nav-btn" aria-label="上一段" onClick={goPrev}>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M10 3.5 5.5 8l4.5 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button type="button" className="cal-nav-btn" aria-label="下一段" onClick={goNext}>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M6 3.5 10.5 8 6 12.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={goToday}>
+              今天
+            </button>
+          </div>
+          <div className="sch-view-toggle" role="group" aria-label="视图">
+            <button
+              type="button"
+              className={viewMode === 'week' ? 'active' : ''}
+              aria-pressed={viewMode === 'week'}
+              onClick={() => {
+                setWeekAnchor(new Date(year, month, Math.min(28, new Date().getDate())))
+                setViewMode('week')
+              }}
+            >
+              周
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'month' ? 'active' : ''}
+              aria-pressed={viewMode === 'month'}
+              onClick={() => {
+                setYear(weekAnchor.getFullYear())
+                setMonth(weekAnchor.getMonth())
+                setViewMode('month')
+              }}
+            >
+              月
+            </button>
+          </div>
+        </div>
+
         <p className="calendar-hint">
-          提示：拖拽任务卡片到其他日期会更新整个重复系列的调度时间，而非仅当天这一次。
+          提示：月视图中拖拽任务到其他日期会更新整个重复系列的调度，而非仅当天这一次。点击实例可查看详情。
         </p>
 
         {warnings.length > 0 ? (
@@ -309,62 +354,39 @@ export function CalendarView(): React.JSX.Element {
           </p>
         ) : null}
 
-        <div className="calendar-grid" aria-label="月历网格">
-          {WEEKDAY_LABELS.map((label) => (
-            <div key={label} className="calendar-weekday">
-              {label}
-            </div>
-          ))}
-          {grid.map((date) => {
-            const key = dayKey(date)
-            const inMonth = date.getMonth() === month
-            const isToday = key === todayKey
-            const dayOccs = occurrencesByDay.get(key) ?? []
-            return (
-              <div
-                key={key}
-                className={`calendar-cell${inMonth ? '' : ' calendar-cell-outside'}${isToday ? ' calendar-cell-today' : ''}${dragOverKey === key ? ' calendar-cell-dragover' : ''}`}
-                onClick={() => openCreate(date)}
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragOverKey(key)
-                }}
-                onDragLeave={() => setDragOverKey((k) => (k === key ? null : k))}
-                onDrop={(e) => void handleDrop(e, date)}
-              >
-                <div className="calendar-cell-date">{date.getDate()}</div>
-                <div className="calendar-cell-chips">
-                  {dayOccs.map((occ) => {
-                    const task = tasksById.get(occ.taskId)
-                    return (
-                      <button
-                        key={`${occ.taskId}-${occ.at}`}
-                        type="button"
-                        draggable
-                        className={`calendar-chip calendar-chip-${occ.action}${task && !task.enabled ? ' calendar-chip-disabled' : ''}`}
-                        onDragStart={(e) => handleDragStart(e, occ.taskId)}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openEdit(occ.taskId)
-                        }}
-                        title={occ.title}
-                      >
-                        <span className="calendar-chip-time">
-                          {new Date(occ.at).toLocaleTimeString('zh-CN', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
-                        <span className="calendar-chip-title">{occ.title}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+        {viewMode === 'week' ? (
+          <ScheduleWeekView
+            weekAnchor={weekAnchor}
+            occurrencesByDay={occurrencesByDay}
+            tasksById={tasksById}
+            onSelectOccurrence={setDetailOcc}
+            onEmptyDay={openCreate}
+          />
+        ) : (
+          <ScheduleMonthView
+            year={year}
+            month={month}
+            occurrencesByDay={occurrencesByDay}
+            tasksById={tasksById}
+            dragOverKey={dragOverKey}
+            onSelectOccurrence={setDetailOcc}
+            onEmptyDay={openCreate}
+            onDragStart={handleDragStart}
+            onDragOverKey={setDragOverKey}
+            onDrop={(e, date) => void handleDrop(e, date)}
+          />
+        )}
       </div>
+
+      {detailOcc ? (
+        <ScheduleOccurrenceDetail
+          occurrence={detailOcc}
+          task={detailTask}
+          skillName={detailSkillName}
+          onClose={() => setDetailOcc(null)}
+          onOpenTask={() => openEdit(detailOcc.taskId)}
+        />
+      ) : null}
 
       {form ? (
         <Modal
