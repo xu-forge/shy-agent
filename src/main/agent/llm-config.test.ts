@@ -71,6 +71,12 @@ describe('resolveLlmConfig', () => {
     expect(resolved.model).toBe('global-model')
   })
 
+  it('session.model 为空字符串时回退 settings.model', () => {
+    const resolved = resolveLlmConfig(customSettings, { model: '' })
+    expect(resolved.model).toBe('global-model')
+    expect(resolveLlmConfig(customSettings, { model: '   ' }).model).toBe('global-model')
+  })
+
   it('无 session 时用 settings.model', () => {
     const resolved = resolveLlmConfig({
       ...customSettings,

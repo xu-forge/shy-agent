@@ -3,6 +3,7 @@ import { join } from 'path'
 import type { ActiveView, GoalChecklistItem, RunStatus } from '../../shared/ipc'
 import { getSession, updateSessionRuntime, appendMessage, getCheckpoint } from '../sessions/store'
 import { getSettings } from '../settings/store'
+import { resolveLlmConfig } from './llm-config'
 import { getShyPaths } from '../paths'
 import { resolveAgentWorkspace } from '../projects/workspace'
 import type { AgentEvent } from './service'
@@ -72,7 +73,7 @@ export async function runGoalDriver(args: {
   const runCheck = args.runCheck ?? runCheckCommand
   const deliverFn =
     args.deliver ??
-    ((input: { goal: string; checklist: GoalChecklistItem[] }) => defaultDeliver(input))
+    ((input: { goal: string; checklist: GoalChecklistItem[] }) => defaultDeliver(input, sessionId))
   const persist =
     args.persist ??
     ((patch: GoalDriverPersistPatch) => {
@@ -114,7 +115,7 @@ export async function runGoalDriver(args: {
   let feedback: string | undefined
   let totalRound = 0
 
-  const planChecklist = args.planChecklist ?? ((g: string) => defaultPlanChecklist(g, emit))
+  const planChecklist = args.planChecklist ?? ((g: string) => defaultPlanChecklist(g, emit, sessionId))
   const runBurst =
     args.runBurst ??
     ((input) =>
@@ -316,7 +317,8 @@ export async function runGoalDriver(args: {
         auditOkRef,
         blockedRoundsRef,
         emit,
-        settings
+        settings,
+        sessionId
       )
       if (blockedAudit.shouldPause) {
         finishStop('paused')
@@ -371,7 +373,8 @@ export async function runGoalDriver(args: {
         auditOkRef,
         blockedRoundsRef,
         emit,
-        settings
+        settings,
+        sessionId
       )
       if (blockedAudit.shouldPause) {
         finishStop('paused')
@@ -469,10 +472,11 @@ async function runVerifyPhase(
   auditOkRef: { current: boolean },
   blockedRoundsRef: { current: number },
   emit: (event: AgentEvent) => void,
-  settings: { blockedAuditRounds?: number; enableGoalCompleteReport?: boolean }
+  settings: { blockedAuditRounds?: number; enableGoalCompleteReport?: boolean },
+  sessionId: string
 ): Promise<{ shouldPause: boolean; result?: VerifyLLMResult }> {
   const auditRounds = settings.blockedAuditRounds ?? 3
-  const result = await runVerifyLLM({ goal, checklist })
+  const result = await runVerifyLLM({ goal, checklist, sessionId })
   if (!result.ok || !result.output) {
     return { shouldPause: false }
   }
@@ -496,19 +500,24 @@ async function runVerifyPhase(
   return { shouldPause: false, result }
 }
 
-async function defaultDeliver(input: {
-  goal: string
-  checklist: GoalChecklistItem[]
-}): Promise<{ content: string; isReport: boolean }> {
+async function defaultDeliver(
+  input: {
+    goal: string
+    checklist: GoalChecklistItem[]
+  },
+  sessionId: string
+): Promise<{ content: string; isReport: boolean }> {
   const fallback = { content: assembleFallback(input.goal, input.checklist), isReport: false }
   try {
     const settings = await getSettings()
     if (!settings.apiKey) return fallback
+    const session = getSession(sessionId)
+    const llm = resolveLlmConfig(settings, session ?? undefined)
     const evidence = input.checklist
       .map((c) => `## ${c.title}\n${c.evidence ?? '（无证据）'}`)
       .join('\n\n')
     const { content: resContent } = await invokeChatCompletion(
-      { baseURL: settings.baseURL, apiKey: settings.apiKey, model: settings.model },
+      llm,
       [
         {
           role: 'system',
@@ -530,14 +539,17 @@ isReport 在新闻总结、周报、调研等文档型交付时为 true。只输
 
 async function defaultPlanChecklist(
   goal: string,
-  emit: (event: AgentEvent) => void
+  emit: (event: AgentEvent) => void,
+  sessionId: string
 ): Promise<{ goal: string; checklist: GoalChecklistItem[] }> {
   const settings = await getSettings()
   if (!settings.apiKey) {
     throw new Error('尚未配置 apiKey，请先在设置中填写 OpenAI-compatible 凭证')
   }
+  const session = getSession(sessionId)
+  const llm = resolveLlmConfig(settings, session ?? undefined)
   const { content: resContent } = await invokeChatCompletion(
-    { baseURL: settings.baseURL, apiKey: settings.apiKey, model: settings.model },
+    llm,
     [
       { role: 'system', content: GOAL_PLAN_SYSTEM_PROMPT },
       { role: 'user', content: goal }
@@ -632,11 +644,7 @@ async function defaultRunBurst(opts: {
     .join('\n')
 
   const graph = buildAgentGraph({
-    llm: {
-      baseURL: settings.baseURL,
-      apiKey: settings.apiKey,
-      model: settings.model
-    },
+    llm: resolveLlmConfig(settings, getSession(sessionId) ?? undefined),
     tools: [...buildTools(ctx), ...goalTools],
     emit: (event) => {
       if (event.type === 'status' && event.message) emit({ type: 'status', message: event.message })

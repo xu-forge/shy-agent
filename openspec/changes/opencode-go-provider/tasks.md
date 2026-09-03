@@ -12,9 +12,9 @@
 
 ## 3. LLM 调用点接入
 
-- [ ] 3.1 interactive `service.ts` / turn-runner 入口改用 `resolveLlmConfig`
-- [ ] 3.2 goal-driver / verify / 标题生成等有 session 的路径改用同一 helper
-- [ ] 3.3 抽测或更新现有测试：两会话不同 model 时请求参数正确（可 mock）
+- [x] 3.1 interactive `service.ts` / turn-runner 入口改用 `resolveLlmConfig`
+- [x] 3.2 goal-driver / verify / 标题生成等有 session 的路径改用同一 helper
+- [x] 3.3 抽测或更新现有测试：两会话不同 model 时请求参数正确（可 mock）
 
 ## 4. OpenCode Go 模型列表
 

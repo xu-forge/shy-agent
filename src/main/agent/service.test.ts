@@ -139,6 +139,36 @@ describe('runAgent mode routing', () => {
     expect(buildAgentGraph).not.toHaveBeenCalled()
   })
 
+  it('interactive 使用会话 model 覆盖 settings.model', async () => {
+    getSession.mockReturnValue({
+      id: 'sess-interactive',
+      title: 't',
+      mode: 'interactive',
+      messages: [],
+      checklist: [],
+      goal: '',
+      shortMemory: '',
+      paused: false,
+      runStatus: 'idle',
+      model: 'session-model-override'
+    })
+    const { runAgent } = await import('./service')
+
+    await runAgent({
+      sessionId: 'sess-interactive',
+      message: 'hi',
+      mode: 'interactive',
+      emit: () => undefined,
+      waitConfirm: async () => true
+    })
+
+    expect(buildAgentGraph).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llm: expect.objectContaining({ model: 'session-model-override' })
+      })
+    )
+  })
+
   it('interactive 带 activeView 时 appendMessage 只存用户原文，graph 收到快照', async () => {
     const { runAgent } = await import('./service')
 

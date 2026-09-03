@@ -18,6 +18,8 @@ import {
 import { runSubagent, type SubagentRunDeps } from '../../subagent/runner'
 import { SUBAGENT_MAX_CONCURRENT, DEFAULT_SUBAGENT_BUDGET, type SubagentType } from '../../subagent/types'
 import { getSettings } from '../../../settings/store'
+import { getSession } from '../../../sessions/store'
+import { resolveLlmConfig } from '../../llm-config'
 
 const TASK_TOOL_DESCRIPTION = `启动一个 sub-agent 自主处理复杂、多步骤任务。
 
@@ -81,6 +83,8 @@ export function registerTaskTools(): void {
       if (!settings.apiKey) {
         return JSON.stringify({ ok: false, error: '尚未配置 apiKey' })
       }
+      const parentSession = ctx.sessionId ? getSession(ctx.sessionId) : undefined
+      const llmConfig = resolveLlmConfig(settings, parentSession ?? undefined)
       const task = createSubagentTask({
         parentSessionId: ctx.sessionId,
         description: input.description,
@@ -89,11 +93,7 @@ export function registerTaskTools(): void {
       })
 
       const deps: SubagentRunDeps = {
-        llmConfig: {
-          baseURL: settings.baseURL,
-          apiKey: settings.apiKey,
-          model: settings.model
-        },
+        llmConfig,
         toolCtx: ctx,
         emit: (event) => {
           ctx.emit('subagent', event)
@@ -159,6 +159,8 @@ export function registerTaskTools(): void {
       if (!settings.apiKey) {
         return JSON.stringify({ ok: false, error: '尚未配置 apiKey' })
       }
+      const parentSession = ctx.sessionId ? getSession(ctx.sessionId) : undefined
+      const llmConfig = resolveLlmConfig(settings, parentSession ?? undefined)
       const sub = createSubagentTask({
         parentSessionId: ctx.sessionId,
         description: input.task.slice(0, 60),
@@ -167,11 +169,7 @@ export function registerTaskTools(): void {
       })
       ctx.emit('tool', { name: 'dispatch_subagent', subagentType: input.type, taskId: sub.id })
       const result = await runSubagent(sub.id, {
-        llmConfig: {
-          baseURL: settings.baseURL,
-          apiKey: settings.apiKey,
-          model: settings.model
-        },
+        llmConfig,
         toolCtx: ctx,
         budget: { ...DEFAULT_SUBAGENT_BUDGET, tokenBudget: input.maxTokens ?? 0 },
         emit: (event) => ctx.emit('subagent', event)
