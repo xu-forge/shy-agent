@@ -60,6 +60,9 @@ export function ensureSessionTables(): void {
   if (!columnNames.has('project_id')) {
     db.exec(`ALTER TABLE sessions ADD COLUMN project_id TEXT`)
   }
+  if (!columnNames.has('model')) {
+    db.exec(`ALTER TABLE sessions ADD COLUMN model TEXT`)
+  }
   const msgCols = db.prepare(`PRAGMA table_info(session_messages)`).all() as { name: string }[]
   if (!msgCols.some((c) => c.name === 'kind')) {
     db.exec(`ALTER TABLE session_messages ADD COLUMN kind TEXT`)
@@ -246,6 +249,13 @@ export function setSessionTitle(sessionId: string, title: string): void {
     .run(t, now(), sessionId)
 }
 
+export function setSessionModel(sessionId: string, model: string | null): void {
+  ensureSessionTables()
+  getDb()
+    .prepare(`UPDATE sessions SET model = ?, updated_at = ? WHERE id = ?`)
+    .run(model, now(), sessionId)
+}
+
 export function updateSessionRuntime(
   sessionId: string,
   patch: {
@@ -325,6 +335,7 @@ function rowToSummary(row: Record<string, unknown>): SessionSummary {
     goal: row.goal ? String(row.goal) : undefined,
     runStatus,
     verifyCommand: row.verify_command ? String(row.verify_command) : undefined,
-    projectId: row.project_id != null ? String(row.project_id) : null
+    projectId: row.project_id != null ? String(row.project_id) : null,
+    model: row.model != null ? String(row.model) : null
   }
 }

@@ -48,6 +48,7 @@ export const IPC = {
   projectsCreate: 'shy:projects-create',
   projectsDelete: 'shy:projects-delete',
   sessionsBindProject: 'shy:sessions-bind-project',
+  sessionsSetModel: 'shy:sessions-set-model',
   projectPickFolder: 'shy:project-pick-folder',
   projectPickFile: 'shy:project-pick-file',
   projectTreeList: 'shy:project-tree-list',
@@ -235,6 +236,8 @@ export type SessionSummary = {
   runStatus?: RunStatus
   verifyCommand?: string
   projectId?: string | null
+  /** 会话级 model 覆盖；null/缺失表示使用 settings.model */
+  model?: string | null
 }
 
 export type SessionDetail = SessionSummary & {

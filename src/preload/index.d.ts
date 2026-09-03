@@ -77,6 +77,7 @@ export interface ShyApi {
   getSessionMessagesPage: (input: SessionMessagesPageInput) => Promise<SessionMessagesPage>
   createSession: (input?: { mode?: AgentMode; title?: string }) => Promise<SessionSummary>
   deleteSession: (id: string) => Promise<{ ok: boolean }>
+  setSessionModel: (sessionId: string, model: string | null) => Promise<{ ok: boolean }>
   listMemory: () => Promise<LongMemoryEntry[]>
   upsertMemory: (input: {
     id?: string

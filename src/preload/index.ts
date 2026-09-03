@@ -89,6 +89,8 @@ const shy = {
     ipcRenderer.invoke(IPC.sessionsCreate, input),
   deleteSession: (id: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.sessionsDelete, id),
+  setSessionModel: (sessionId: string, model: string | null): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.sessionsSetModel, sessionId, model),
   listMemory: (): Promise<LongMemoryEntry[]> => ipcRenderer.invoke(IPC.memoryList),
   upsertMemory: (input: {
     id?: string

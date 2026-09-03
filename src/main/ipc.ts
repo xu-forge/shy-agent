@@ -43,6 +43,7 @@ import {
   getSessionMessagesPage,
   listGoalSessionsByRunStatus,
   listSessions,
+  setSessionModel,
   updateSessionRuntime
 } from './sessions/store'
 import { getShyPaths, resolveShyHome } from './paths'
@@ -213,6 +214,10 @@ export function registerCoreIpc(): void {
   ipcMain.handle(IPC.sessionsDelete, async (_e, id: string) => {
     cancelAgent(id)
     deleteSession(id)
+    return { ok: true }
+  })
+  ipcMain.handle(IPC.sessionsSetModel, async (_e, sessionId: string, model: string | null) => {
+    setSessionModel(sessionId, model)
     return { ok: true }
   })
 

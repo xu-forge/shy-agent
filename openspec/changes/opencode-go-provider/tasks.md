@@ -6,9 +6,9 @@
 
 ## 2. 会话 model 持久化
 
-- [ ] 2.1 `sessions` 表 `ALTER` 增加可空 `model`；`rowToSummary` / create / get 读写
-- [ ] 2.2 IPC + preload：`setSessionModel(sessionId, model | null)`（或等价 update）
-- [ ] 2.3 sessions store 单测：新会话 null；更新后落盘
+- [x] 2.1 `sessions` 表 `ALTER` 增加可空 `model`；`rowToSummary` / create / get 读写
+- [x] 2.2 IPC + preload：`setSessionModel(sessionId, model | null)`（或等价 update）
+- [x] 2.3 sessions store 单测：新会话 null；更新后落盘
 
 ## 3. LLM 调用点接入
 
