@@ -358,7 +358,7 @@ export type ProjectFileRenameInput = {
 }
 
 export type ProjectFileRenameResult =
-  { ok: true; item: MaterialItem }
+  | { ok: true; item: MaterialItem }
   | { ok: false; error: 'path_escape' | 'not_found' | 'name_taken' | 'invalid_name' }
 
 export type ProjectFileDeleteResult =
@@ -480,6 +480,8 @@ type ScheduleTaskBase = {
   allowAutoConfirm: boolean
   /** 空 = 未选择项目 */
   projectId?: string | null
+  /** 到点执行时写入该次会话的模型；空 = 用全局默认模型 */
+  model?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -533,11 +535,12 @@ export type ScheduleConflictWarning = {
 
 export type CreateScheduleTaskInput = Omit<
   ScheduleTask,
-  'id' | 'createdAt' | 'updatedAt' | 'agentMode' | 'allowAutoConfirm' | 'projectId'
+  'id' | 'createdAt' | 'updatedAt' | 'agentMode' | 'allowAutoConfirm' | 'projectId' | 'model'
 > & {
   agentMode?: ScheduleAgentMode
   allowAutoConfirm?: boolean
   projectId?: string | null
+  model?: string | null
 }
 
 export type UpdateScheduleTaskInput = Partial<
@@ -551,6 +554,7 @@ export type UpdateScheduleTaskInput = Partial<
     | 'agentMode'
     | 'allowAutoConfirm'
     | 'projectId'
+    | 'model'
   >
 >
 

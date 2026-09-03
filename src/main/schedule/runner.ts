@@ -6,7 +6,7 @@ import type {
 } from '../../shared/ipc'
 import { getSettings } from '../settings/store'
 import { bindSessionProject } from '../projects/store'
-import { createSession, getSession } from '../sessions/store'
+import { createSession, getSession, setSessionModel } from '../sessions/store'
 import { runAgent } from '../agent/service'
 import { listSkills } from '../skills/store'
 import { compileCron, cronMatches } from './scheduler'
@@ -40,6 +40,7 @@ export type CalendarTaskRunnerDependencies = {
   getRun: typeof getScheduleRun
   createSession: typeof createSession
   bindSessionProject: typeof bindSessionProject
+  setSessionModel: typeof setSessionModel
   runAgent: typeof runAgent
   getSession: typeof getSession
   getSettings: typeof getSettings
@@ -81,6 +82,7 @@ const defaultDependencies = (): CalendarTaskRunnerDependencies => ({
   getRun: getScheduleRun,
   createSession,
   bindSessionProject,
+  setSessionModel,
   runAgent,
   getSession,
   getSettings,
@@ -180,6 +182,10 @@ async function dispatchTask(
         const mode = toAgentMode(task)
         const session = dependencies.createSession(mode, task.title)
         dependencies.updateRun(run.id, { sessionId: session.id })
+
+        if (task.model) {
+          dependencies.setSessionModel(session.id, task.model)
+        }
 
         if (task.projectId) {
           const bound = dependencies.bindSessionProject(session.id, task.projectId)

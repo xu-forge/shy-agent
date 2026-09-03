@@ -8,10 +8,17 @@ type Props = {
   agentMode: ScheduleAgentMode
   allowAutoConfirm: boolean
   projectId: string | null
+  /** 到点执行使用的模型；空 = 全局默认 */
+  model?: string | null
+  /** 仅 OpenCode Go provider 时展示模型选择 */
+  showModelPicker?: boolean
+  /** 可选模型 id 列表（OpenCode Go） */
+  modelOptions?: string[]
   onPolicyChange: (patch: {
     agentMode?: ScheduleAgentMode
     allowAutoConfirm?: boolean
     projectId?: string | null
+    model?: string | null
   }) => void
   /** 可选；不传则编辑器内自行 listProjects */
   projects?: Project[]
@@ -46,6 +53,9 @@ export function ScheduleEditor({
   agentMode,
   allowAutoConfirm,
   projectId,
+  model,
+  showModelPicker,
+  modelOptions,
   onPolicyChange,
   projects: projectsProp
 }: Props): React.JSX.Element {
@@ -82,6 +92,16 @@ export function ScheduleEditor({
   const projectOptions = [
     { value: '', label: '未选择项目' },
     ...projects.map((p) => ({ value: p.id, label: p.name }))
+  ]
+
+  const modelIds = modelOptions ?? []
+  const currentModel = model ?? ''
+  const modelSelectOptions = [
+    { value: '', label: '跟随全局默认' },
+    ...(currentModel && !modelIds.includes(currentModel)
+      ? [{ value: currentModel, label: currentModel }]
+      : []),
+    ...modelIds.map((id) => ({ value: id, label: id }))
   ]
 
   return (
@@ -169,17 +189,13 @@ export function ScheduleEditor({
         ) : null}
       </div>
 
-      <div className="ui-form-section-title schedule-editor-policy-title">
-        执行策略
-      </div>
+      <div className="ui-form-section-title schedule-editor-policy-title">执行策略</div>
       <div className="ui-form-grid">
         <Field label="模式">
           <Select
             value={agentMode}
             options={AGENT_MODE_OPTIONS}
-            onChange={(value) =>
-              onPolicyChange({ agentMode: value as ScheduleAgentMode })
-            }
+            onChange={(value) => onPolicyChange({ agentMode: value as ScheduleAgentMode })}
             ariaLabel="Agent 模式"
           />
         </Field>
@@ -191,6 +207,16 @@ export function ScheduleEditor({
             ariaLabel="所属项目"
           />
         </Field>
+        {showModelPicker ? (
+          <Field label="模型" hint="到点执行时写入该次会话；留空则用全局默认模型。">
+            <Select
+              value={currentModel}
+              options={modelSelectOptions}
+              onChange={(value) => onPolicyChange({ model: value || null })}
+              ariaLabel="执行模型"
+            />
+          </Field>
+        ) : null}
         <div className="ui-field-full">
           <Field
             label="高危确认"

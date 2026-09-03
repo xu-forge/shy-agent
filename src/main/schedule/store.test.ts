@@ -107,11 +107,33 @@ describe('schedule task store', () => {
     expect(created.agentMode).toBe('goal')
     expect(created.allowAutoConfirm).toBe(false)
     expect(created.projectId).toBeNull()
+    expect(created.model).toBeNull()
     expect(store.getScheduleTask(created.id)).toMatchObject({
       agentMode: 'goal',
       allowAutoConfirm: false,
-      projectId: null
+      projectId: null,
+      model: null
     })
+  })
+
+  it('可创建/更新/清空 model', async () => {
+    const store = await import('./store')
+    const created = store.createScheduleTask({
+      title: '带模型',
+      enabled: true,
+      action: 'run_skill',
+      payload: { skillId: 's1' },
+      schedule: dailySchedule,
+      model: 'claude-sonnet-4'
+    })
+    expect(created.model).toBe('claude-sonnet-4')
+    expect(store.getScheduleTask(created.id)?.model).toBe('claude-sonnet-4')
+
+    expect(store.updateScheduleTask(created.id, { model: 'gpt-4o-mini' })?.model).toBe('gpt-4o-mini')
+    // 未传 model 时保持不变
+    expect(store.updateScheduleTask(created.id, { title: '改名' })?.model).toBe('gpt-4o-mini')
+    // 空字符串归一化为 null
+    expect(store.updateScheduleTask(created.id, { model: '' })?.model).toBeNull()
   })
 
   it('可更新 agentMode / allowAutoConfirm / projectId', async () => {
