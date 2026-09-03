@@ -15,6 +15,7 @@ export const IPC = {
   skillsSetEnabled: 'shy:skills-set-enabled',
   settingsGet: 'shy:settings-get',
   settingsSet: 'shy:settings-set',
+  opencodeGoModelsList: 'shy:opencode-go-models-list',
   mcpGet: 'shy:mcp-get',
   mcpSet: 'shy:mcp-set',
   mcpStatus: 'shy:mcp-status',
@@ -48,6 +49,7 @@ export const IPC = {
   projectsCreate: 'shy:projects-create',
   projectsDelete: 'shy:projects-delete',
   sessionsBindProject: 'shy:sessions-bind-project',
+  sessionsSetModel: 'shy:sessions-set-model',
   projectPickFolder: 'shy:project-pick-folder',
   projectPickFile: 'shy:project-pick-file',
   projectTreeList: 'shy:project-tree-list',
@@ -150,7 +152,14 @@ export type SkillSummary = {
   enabled: boolean
 }
 
+export type OpenCodeGoModelsResult = {
+  models: string[]
+  source: 'remote' | 'fallback'
+}
+
 export type ModelSettings = {
+  /** LLM 接入预设：custom 手填三字段；opencode-go 固定 Go 网关 */
+  provider?: 'custom' | 'opencode-go'
   baseURL: string
   apiKey: string
   model: string
@@ -233,6 +242,8 @@ export type SessionSummary = {
   runStatus?: RunStatus
   verifyCommand?: string
   projectId?: string | null
+  /** 会话级 model 覆盖；null/缺失表示使用 settings.model */
+  model?: string | null
 }
 
 export type SessionDetail = SessionSummary & {
@@ -347,7 +358,7 @@ export type ProjectFileRenameInput = {
 }
 
 export type ProjectFileRenameResult =
-  { ok: true; item: MaterialItem }
+  | { ok: true; item: MaterialItem }
   | { ok: false; error: 'path_escape' | 'not_found' | 'name_taken' | 'invalid_name' }
 
 export type ProjectFileDeleteResult =
@@ -469,6 +480,8 @@ type ScheduleTaskBase = {
   allowAutoConfirm: boolean
   /** 空 = 未选择项目 */
   projectId?: string | null
+  /** 到点执行时写入该次会话的模型；空 = 用全局默认模型 */
+  model?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -522,11 +535,12 @@ export type ScheduleConflictWarning = {
 
 export type CreateScheduleTaskInput = Omit<
   ScheduleTask,
-  'id' | 'createdAt' | 'updatedAt' | 'agentMode' | 'allowAutoConfirm' | 'projectId'
+  'id' | 'createdAt' | 'updatedAt' | 'agentMode' | 'allowAutoConfirm' | 'projectId' | 'model'
 > & {
   agentMode?: ScheduleAgentMode
   allowAutoConfirm?: boolean
   projectId?: string | null
+  model?: string | null
 }
 
 export type UpdateScheduleTaskInput = Partial<
@@ -540,6 +554,7 @@ export type UpdateScheduleTaskInput = Partial<
     | 'agentMode'
     | 'allowAutoConfirm'
     | 'projectId'
+    | 'model'
   >
 >
 

@@ -6,6 +6,7 @@ import {
   type ChatRequest,
   type LongMemoryEntry,
   type ModelSettings,
+  type OpenCodeGoModelsResult,
   type McpConfigFile,
   type McpServerStatus,
   type McpSetResult,
@@ -66,6 +67,8 @@ const shy = {
   getSettings: (): Promise<ModelSettings> => ipcRenderer.invoke(IPC.settingsGet),
   setSettings: (next: ModelSettings): Promise<ModelSettings> =>
     ipcRenderer.invoke(IPC.settingsSet, next),
+  listOpenCodeGoModels: (): Promise<OpenCodeGoModelsResult> =>
+    ipcRenderer.invoke(IPC.opencodeGoModelsList),
   getMcpConfig: (): Promise<McpConfigFile> => ipcRenderer.invoke(IPC.mcpGet),
   setMcpConfig: (next: McpConfigFile): Promise<McpSetResult> =>
     ipcRenderer.invoke(IPC.mcpSet, next),
@@ -89,6 +92,8 @@ const shy = {
     ipcRenderer.invoke(IPC.sessionsCreate, input),
   deleteSession: (id: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.sessionsDelete, id),
+  setSessionModel: (sessionId: string, model: string | null): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.sessionsSetModel, sessionId, model),
   listMemory: (): Promise<LongMemoryEntry[]> => ipcRenderer.invoke(IPC.memoryList),
   upsertMemory: (input: {
     id?: string

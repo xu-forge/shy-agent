@@ -174,6 +174,53 @@ describe('sessions runStatus', () => {
     expect(store.listSessions().find((x) => x.id === s.id)?.projectId).toBe('proj-1')
   })
 
+  it('新会话 model 为空', async () => {
+    const store = await import('./store')
+    const s = store.createSession()
+    expect(store.getSession(s.id)?.model).toBeNull()
+    expect(store.getSessionSummary(s.id)?.model).toBeNull()
+    expect(store.listSessions().find((x) => x.id === s.id)?.model).toBeNull()
+  })
+
+  it('setSessionModel 后 get/list 可见，null 可清空', async () => {
+    const store = await import('./store')
+    const s = store.createSession('interactive', 'model-test')
+    store.setSessionModel(s.id, 'claude-sonnet-4')
+    expect(store.getSession(s.id)?.model).toBe('claude-sonnet-4')
+    expect(store.getSessionSummary(s.id)?.model).toBe('claude-sonnet-4')
+    expect(store.listSessions().find((x) => x.id === s.id)?.model).toBe('claude-sonnet-4')
+
+    store.setSessionModel(s.id, null)
+    expect(store.getSession(s.id)?.model).toBeNull()
+    expect(store.listSessions().find((x) => x.id === s.id)?.model).toBeNull()
+  })
+
+  it('ensureSessionTables 为旧表 ALTER model 列', async () => {
+    const { getDb } = await import('../memory/db')
+    const store = await import('./store')
+    const db = getDb()
+    db.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        goal TEXT,
+        checklist TEXT NOT NULL DEFAULT '[]',
+        short_memory TEXT NOT NULL DEFAULT '',
+        paused INTEGER NOT NULL DEFAULT 0,
+        checkpoint TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO sessions (id, title, mode, goal, checklist, short_memory, paused, created_at, updated_at)
+      VALUES ('legacy-m', 'legacy', 'interactive', NULL, '[]', '', 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+    `)
+    store.ensureSessionTables()
+    expect(store.getSession('legacy-m')?.model).toBeNull()
+    store.setSessionModel('legacy-m', 'gpt-4o-mini')
+    expect(store.getSession('legacy-m')?.model).toBe('gpt-4o-mini')
+  })
+
   it('按 runStatus 仅列出 goal 会话', async () => {
     const store = await import('./store')
     const running = store.createSession('goal', 'running')

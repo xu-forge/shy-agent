@@ -13,6 +13,7 @@ import {
   type ProjectType
 } from '../shared/ipc'
 import { getSettings, setSettings } from './settings/store'
+import { listOpenCodeGoModelsFromSettings } from './llm/opencode-go-models'
 import { parseMcpConfig, readMcpConfig, writeMcpConfig } from './mcp/config'
 import { getMcpManager } from './mcp/manager'
 import { runAgent, cancelAgent, pauseAgent, resumeAgent } from './agent/service'
@@ -43,6 +44,7 @@ import {
   getSessionMessagesPage,
   listGoalSessionsByRunStatus,
   listSessions,
+  setSessionModel,
   updateSessionRuntime
 } from './sessions/store'
 import { getShyPaths, resolveShyHome } from './paths'
@@ -172,6 +174,10 @@ export function registerCoreIpc(): void {
 
   ipcMain.handle(IPC.settingsGet, async () => getSettings())
   ipcMain.handle(IPC.settingsSet, async (_e, next: ModelSettings) => setSettings(next))
+  ipcMain.handle(IPC.opencodeGoModelsList, async () => {
+    const settings = await getSettings()
+    return listOpenCodeGoModelsFromSettings(settings)
+  })
 
   ipcMain.handle(IPC.mcpGet, async () => readMcpConfig(resolveShyHome()))
   ipcMain.handle(IPC.mcpSet, async (_e, next: McpConfigFile) => {
@@ -213,6 +219,10 @@ export function registerCoreIpc(): void {
   ipcMain.handle(IPC.sessionsDelete, async (_e, id: string) => {
     cancelAgent(id)
     deleteSession(id)
+    return { ok: true }
+  })
+  ipcMain.handle(IPC.sessionsSetModel, async (_e, sessionId: string, model: string | null) => {
+    setSessionModel(sessionId, model)
     return { ok: true }
   })
 

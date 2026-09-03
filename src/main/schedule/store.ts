@@ -31,13 +31,20 @@ export function ensureScheduleTables(): void {
     db.exec(`ALTER TABLE schedule_tasks ADD COLUMN agent_mode TEXT NOT NULL DEFAULT 'goal'`)
   }
   if (!names.has('allow_auto_confirm')) {
-    db.exec(
-      `ALTER TABLE schedule_tasks ADD COLUMN allow_auto_confirm INTEGER NOT NULL DEFAULT 0`
-    )
+    db.exec(`ALTER TABLE schedule_tasks ADD COLUMN allow_auto_confirm INTEGER NOT NULL DEFAULT 0`)
   }
   if (!names.has('project_id')) {
     db.exec(`ALTER TABLE schedule_tasks ADD COLUMN project_id TEXT`)
   }
+  if (!names.has('model')) {
+    db.exec(`ALTER TABLE schedule_tasks ADD COLUMN model TEXT`)
+  }
+}
+
+function normalizeModel(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  const trimmed = String(value).trim()
+  return trimmed === '' ? null : trimmed
 }
 
 function normalizeAgentMode(value: unknown): ScheduleAgentMode {
@@ -55,8 +62,7 @@ export function listScheduleTasks(): ScheduleTask[] {
 export function getScheduleTask(id: string): ScheduleTask | null {
   ensureScheduleTables()
   const row = getDb().prepare(`SELECT * FROM schedule_tasks WHERE id = ?`).get(id) as
-    | Record<string, unknown>
-    | undefined
+    Record<string, unknown> | undefined
   return row ? rowToScheduleTask(row) : null
 }
 
@@ -69,12 +75,14 @@ export function createScheduleTask(input: CreateScheduleTaskInput): ScheduleTask
     input.projectId === undefined || input.projectId === null || input.projectId === ''
       ? null
       : String(input.projectId)
+  const model = normalizeModel(input.model)
   const task = {
     ...input,
     id: randomUUID(),
     agentMode,
     allowAutoConfirm,
     projectId,
+    model,
     schedule: syncScheduleEnabled(input.schedule, input.enabled),
     createdAt: timestamp,
     updatedAt: timestamp
@@ -83,8 +91,8 @@ export function createScheduleTask(input: CreateScheduleTaskInput): ScheduleTask
   getDb()
     .prepare(
       `INSERT INTO schedule_tasks
-       (id, title, enabled, action, payload, schedule, agent_mode, allow_auto_confirm, project_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, title, enabled, action, payload, schedule, agent_mode, allow_auto_confirm, project_id, model, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       task.id,
@@ -96,6 +104,7 @@ export function createScheduleTask(input: CreateScheduleTaskInput): ScheduleTask
       task.agentMode,
       task.allowAutoConfirm ? 1 : 0,
       task.projectId,
+      task.model,
       task.createdAt,
       task.updatedAt
     )
@@ -123,6 +132,7 @@ export function updateScheduleTask(
         ? null
         : String(patch.projectId)
       : (current.projectId ?? null)
+  const model = patch.model !== undefined ? normalizeModel(patch.model) : (current.model ?? null)
 
   const updated = {
     ...current,
@@ -132,6 +142,7 @@ export function updateScheduleTask(
     agentMode,
     allowAutoConfirm,
     projectId,
+    model,
     updatedAt: new Date().toISOString()
   } as ScheduleTask
 
@@ -139,7 +150,7 @@ export function updateScheduleTask(
     .prepare(
       `UPDATE schedule_tasks
        SET title = ?, enabled = ?, action = ?, payload = ?, schedule = ?,
-           agent_mode = ?, allow_auto_confirm = ?, project_id = ?, updated_at = ?
+           agent_mode = ?, allow_auto_confirm = ?, project_id = ?, model = ?, updated_at = ?
        WHERE id = ?`
     )
     .run(
@@ -151,6 +162,7 @@ export function updateScheduleTask(
       updated.agentMode,
       updated.allowAutoConfirm ? 1 : 0,
       updated.projectId ?? null,
+      updated.model ?? null,
       updated.updatedAt,
       id
     )
@@ -187,6 +199,7 @@ function rowToScheduleTask(row: Record<string, unknown>): ScheduleTask {
       projectRaw === undefined || projectRaw === null || projectRaw === ''
         ? null
         : String(projectRaw),
+    model: normalizeModel(row.model),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   } as ScheduleTask

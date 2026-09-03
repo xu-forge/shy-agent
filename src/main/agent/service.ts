@@ -1,5 +1,5 @@
-import type { LLMClientConfig } from './llm-client'
 import { getSettings } from '../settings/store'
+import { resolveLlmConfig } from './llm-config'
 import { buildTools, type ToolContext } from './tools/registry'
 import { buildAgentGraph } from './graph'
 import { AgentRunLogWriter, mapAgentEventToLog } from './run-log'
@@ -166,11 +166,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
       return
     }
 
-    const llmConfig: LLMClientConfig = {
-      baseURL: settings.baseURL,
-      apiKey: settings.apiKey,
-      model: settings.model
-    }
+    const resolveSessionLlm = () => resolveLlmConfig(settings, getSession(sessionId) ?? undefined)
 
     // 技能目录注入（minimax-feature-port）：token 预算内渲染 catalog，替代旧 token 匹配注入
     const enabledSkills = await getEnabledSkillEntries()
@@ -327,11 +323,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
       }
 
       const graph = buildAgentGraph({
-        llm: {
-          baseURL: settings.baseURL,
-          apiKey: settings.apiKey,
-          model: settings.model
-        },
+        llm: resolveSessionLlm(),
         tools,
         emit: graphEmit,
         skillBlock,
@@ -460,7 +452,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
 
         if (shouldCompress) {
           runningShortMemory = await compressWithLlm(
-            llmConfig,
+            resolveSessionLlm(),
             [
               runningShortMemory,
               message,
@@ -488,8 +480,9 @@ export async function runAgent(args: RunArgs): Promise<void> {
     }
 
     if (exitReason === 'completed') {
+      const finalLlmConfig = resolveSessionLlm()
       const compressed = await compressWithLlm(
-        llmConfig,
+        finalLlmConfig,
         [
           runningShortMemory,
           message,
@@ -505,7 +498,7 @@ export async function runAgent(args: RunArgs): Promise<void> {
         checkpoint: null
       })
 
-      const title = await summarizeSessionTitle(sessionId, llmConfig)
+      const title = await summarizeSessionTitle(sessionId, finalLlmConfig)
       if (title) emit({ type: 'session', title })
       emit({ type: 'done', reason: 'completed' })
     } else {

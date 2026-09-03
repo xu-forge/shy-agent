@@ -98,6 +98,7 @@ function App(): React.JSX.Element {
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
+  const [settingsEpoch, setSettingsEpoch] = useState(0)
   const [codeActivePath, setCodeActivePath] = useState<string | null>(null)
   const [materialLightboxPath, setMaterialLightboxPath] = useState<string | null>(null)
   const [browserLaunchUrl, setBrowserLaunchUrl] = useState<string | null>(null)
@@ -371,6 +372,7 @@ function App(): React.JSX.Element {
             dockMode={dockMode}
             onDockModeChange={setDockMode}
             activeView={activeView}
+            settingsEpoch={settingsEpoch}
           />
         </ChatWorkspaceHost>
       ) : null}
@@ -386,7 +388,10 @@ function App(): React.JSX.Element {
       <SettingsDialog
         open={settingsOpen}
         initialTab={settingsTab}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => {
+          setSettingsOpen(false)
+          setSettingsEpoch((e) => e + 1)
+        }}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
       />

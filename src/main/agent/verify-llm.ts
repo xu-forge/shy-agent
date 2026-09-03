@@ -6,6 +6,8 @@
  */
 import { invokeChatCompletion, type LLMMessage } from './llm-client'
 import { getSettings } from '../settings/store'
+import { getSession } from '../sessions/store'
+import { resolveLlmConfig } from './llm-config'
 import type { GoalChecklistItem } from '../../shared/ipc'
 import { extractVerifyBlocked, nextBlockedRounds, type VerifyBlockedOutput } from './blocked-audit'
 import { getReactGuide } from './react-prompt'
@@ -95,17 +97,15 @@ export function extractVerifyLLMOutput(value: unknown): VerifyLLMOutput {
 export async function runVerifyLLM(input: {
   goal: string
   checklist: GoalChecklistItem[]
+  sessionId?: string
 }): Promise<VerifyLLMResult> {
   const settings = await getSettings()
   if (!settings.apiKey) {
     return { ok: false, error: 'apiKey 未配置' }
   }
 
-  const llmConfig = {
-    baseURL: settings.baseURL,
-    apiKey: settings.apiKey,
-    model: settings.model
-  }
+  const session = input.sessionId ? getSession(input.sessionId) : undefined
+  const llmConfig = resolveLlmConfig(settings, session ?? undefined)
 
   const pending = input.checklist.filter((c) => !c.done)
   const done = input.checklist.filter((c) => c.done)

@@ -76,6 +76,40 @@ describe('mcp preload API', () => {
   })
 })
 
+describe('opencode go preload API', () => {
+  beforeEach(async () => {
+    vi.resetModules()
+    invoke.mockReset()
+    on.mockReset()
+    removeListener.mockReset()
+    await import('./index')
+  })
+
+  it('exposes listOpenCodeGoModels', () => {
+    exposed.listOpenCodeGoModels()
+    expect(invoke.mock.calls).toEqual([[IPC.opencodeGoModelsList]])
+  })
+})
+
+describe('session preload API', () => {
+  beforeEach(async () => {
+    vi.resetModules()
+    invoke.mockReset()
+    on.mockReset()
+    removeListener.mockReset()
+    await import('./index')
+  })
+
+  it('exposes setSessionModel', () => {
+    exposed.setSessionModel('s1' as never, 'gpt-4o' as never)
+    exposed.setSessionModel('s1' as never, null as never)
+    expect(invoke.mock.calls).toEqual([
+      [IPC.sessionsSetModel, 's1', 'gpt-4o'],
+      [IPC.sessionsSetModel, 's1', null]
+    ])
+  })
+})
+
 describe('project preload API', () => {
   beforeEach(async () => {
     vi.resetModules()

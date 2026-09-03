@@ -47,6 +47,7 @@ type FormState = {
   agentMode: ScheduleAgentMode
   allowAutoConfirm: boolean
   projectId: string | null
+  model: string | null
 }
 
 function emptyForm(date: Date, skills: SkillSummary[]): FormState {
@@ -58,7 +59,8 @@ function emptyForm(date: Date, skills: SkillSummary[]): FormState {
     schedule: defaultSchedule(date),
     agentMode: 'goal',
     allowAutoConfirm: false,
-    projectId: null
+    projectId: null,
+    model: null
   }
 }
 
@@ -72,7 +74,8 @@ function formFromTask(task: ScheduleTask): FormState {
     schedule: task.schedule,
     agentMode: task.agentMode ?? 'goal',
     allowAutoConfirm: Boolean(task.allowAutoConfirm),
-    projectId: task.projectId ?? null
+    projectId: task.projectId ?? null,
+    model: task.model ?? null
   }
 }
 
@@ -140,6 +143,8 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
+  const [isOpenCodeGo, setIsOpenCodeGo] = useState(false)
+  const [goModels, setGoModels] = useState<string[]>([])
 
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
@@ -188,6 +193,23 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
 
   useEffect(() => {
     void window.shy.listSkills().then(setSkills)
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    void window.shy.getSettings().then((s) => {
+      if (!alive) return
+      const go = s.provider === 'opencode-go'
+      setIsOpenCodeGo(go)
+      if (go) {
+        void window.shy.listOpenCodeGoModels().then((r) => {
+          if (alive) setGoModels(r.models)
+        })
+      }
+    })
+    return () => {
+      alive = false
+    }
   }, [])
 
   const flashNote = (text: string): void => {
@@ -263,7 +285,8 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
     const policy = {
       agentMode: form.agentMode,
       allowAutoConfirm: form.allowAutoConfirm,
-      projectId: form.projectId
+      projectId: form.projectId,
+      model: form.model
     }
 
     if (form.id) {
@@ -562,6 +585,9 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
               agentMode={form.agentMode}
               allowAutoConfirm={form.allowAutoConfirm}
               projectId={form.projectId}
+              model={form.model}
+              showModelPicker={isOpenCodeGo}
+              modelOptions={goModels}
               onPolicyChange={(patch) => setForm({ ...form, ...patch })}
             />
           </div>

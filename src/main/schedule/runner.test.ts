@@ -76,6 +76,7 @@ function baseDeps(overrides: Record<string, unknown> = {}) {
       runStatus: 'idle' as const
     })),
     bindSessionProject: vi.fn(() => ({ ok: true as const })),
+    setSessionModel: vi.fn(() => undefined),
     runAgent: vi.fn(async () => undefined),
     getSession: vi.fn(() => null),
     getSettings: vi.fn(async () => ({ apiKey: 'k', baseURL: '', model: '' })),
@@ -164,6 +165,24 @@ describe('checkCalendarTasks', () => {
       expect.objectContaining({ status: 'succeeded', sessionId: 'sess-1' })
     )
     expect(deps.getSession).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('跑技能：任务带 model 时写入会话；无 model 不写', async () => {
+    const withModel = baseDeps({
+      listTasks: () => [
+        task('skill', 'run_skill', { skillId: 'daily-summary' }, { model: 'claude-sonnet-4' })
+      ]
+    })
+    await checkCalendarTasks(new Date(2026, 7, 11, 9, 30), withModel as never)
+    expect(withModel.setSessionModel).toHaveBeenCalledWith('sess-1', 'claude-sonnet-4')
+
+    resetScheduleFireDedup()
+
+    const noModel = baseDeps({
+      listTasks: () => [task('skill2', 'run_skill', { skillId: 'daily-summary' })]
+    })
+    await checkCalendarTasks(new Date(2026, 7, 11, 9, 30), noModel as never)
+    expect(noModel.setSessionModel).not.toHaveBeenCalled()
   })
 
   it('缺 apiKey 时 run 标记 failed', async () => {
