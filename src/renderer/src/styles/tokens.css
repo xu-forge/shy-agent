@@ -4,15 +4,15 @@
    ———————————————————————————————————————————————— */
 
 :root {
-  /* surface：主区 slate-50，侧栏/浮层轻微分层 */
-  --bg: #f8fafc;
-  --bg-deep: #f1f5f9;
-  --bg-rail: #f8fafc;
+  /* surface：Codex 式纯白主区/侧栏；软底仅用于选中与 hover */
+  --bg: #ffffff;
+  --bg-deep: #f5f5f5;
+  --bg-rail: #faf8f9;
   --bg-panel: #ffffff;
-  --bg-soft: #f1f5f9;
-  --bg-hover: rgba(30, 41, 59, 0.05);
-  --bg-active: rgba(30, 41, 59, 0.08);
-  --bg-inset: rgba(30, 41, 59, 0.04);
+  --bg-soft: #f0f0f0;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.06);
+  --bg-inset: rgba(0, 0, 0, 0.03);
 
   /* lines */
   --border: #cbd5e1;
@@ -79,7 +79,7 @@
   --ink: #1f2328;
   --ink-hover: #343b47;
   --ink-contrast: #ffffff;
-  --canvas: #f8fafc;
+  --canvas: #ffffff;
   --line: #e4e7ec;
   --line-strong: #d5d9e0;
   --amber: #f59e0b;
