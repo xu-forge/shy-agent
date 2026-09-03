@@ -24,9 +24,9 @@
 
 ## 5. 设置 UI
 
-- [ ] 5.1 SettingsPanel：Provider 切换（Custom / OpenCode Go）
-- [ ] 5.2 Go：API Key + 默认 model（可选手填或下拉）；baseURL 只读/隐藏并自动 Go
-- [ ] 5.3 Custom：保留现有三字段
+- [x] 5.1 SettingsPanel：Provider 切换（Custom / OpenCode Go）
+- [x] 5.2 Go：API Key + 默认 model（可选手填或下拉）；baseURL 只读/隐藏并自动 Go
+- [x] 5.3 Custom：保留现有三字段
 
 ## 6. Composer 模型选择器
 

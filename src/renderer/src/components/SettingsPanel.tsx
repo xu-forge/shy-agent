@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ModelSettings } from '../../../shared/ipc'
 import type { Theme } from '../lib/theme'
-import { NumberInput, Switch } from './ui'
+import { NumberInput, Select, Switch } from './ui'
+
+const OPENCODE_GO_BASE_URL = 'https://opencode.ai/zen/go/v1'
+
+type LlmProvider = NonNullable<ModelSettings['provider']>
 
 type Props = {
   theme: Theme
@@ -11,6 +15,7 @@ type Props = {
 /** 常规设置（设置弹窗内容区）：模型接入 / 运行参数 / 外观。日志在独立 tab。 */
 export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Element {
   const [form, setForm] = useState<ModelSettings>({
+    provider: 'custom',
     baseURL: '',
     apiKey: '',
     model: '',
@@ -25,6 +30,9 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
   const [saved, setSaved] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [shyHome, setShyHome] = useState('')
+  const [goModels, setGoModels] = useState<string[]>([])
+
+  const provider: LlmProvider = form.provider ?? 'custom'
 
   useEffect(() => {
     let alive = true
@@ -42,8 +50,36 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
     }
   }, [])
 
+  useEffect(() => {
+    if (provider !== 'opencode-go') {
+      setGoModels([])
+      return
+    }
+    let alive = true
+    void window.shy.listOpenCodeGoModels().then((r) => {
+      if (!alive) return
+      setGoModels(r.models)
+    })
+    return () => {
+      alive = false
+    }
+  }, [provider, saved])
+
+  const setProvider = (next: LlmProvider): void => {
+    if (next === 'opencode-go') {
+      setForm({ ...form, provider: next, baseURL: OPENCODE_GO_BASE_URL })
+      return
+    }
+    setForm({ ...form, provider: next })
+  }
+
   const onSave = async (): Promise<void> => {
-    await window.shy.setSettings(form)
+    const payload: ModelSettings =
+      provider === 'opencode-go'
+        ? { ...form, provider: 'opencode-go', baseURL: OPENCODE_GO_BASE_URL }
+        : { ...form, provider: 'custom' }
+    await window.shy.setSettings(payload)
+    setForm(payload)
     setSaved(true)
     setTimeout(() => setSaved(false), 1600)
   }
@@ -56,48 +92,128 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
     <div className="settings-body">
       <section className="settings-section">
         <h3>模型接入</h3>
-        <p className="settings-section-hint">接错就不工作：三个字段与服务商控制台一致。</p>
-        <label className="field">
-          <span className="field-label">Base URL</span>
-          <input
-            className="field-input"
-            value={form.baseURL}
-            onChange={(e) => setForm({ ...form, baseURL: e.target.value })}
-            placeholder="https://api.minimaxi.com/v1"
-            spellCheck={false}
-          />
-        </label>
-        <label className="field">
-          <span className="field-label">API Key</span>
-          <span className="input-wrap field-input">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={form.apiKey}
-              onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-              placeholder="sk-…"
-              spellCheck={false}
-              autoComplete="off"
-            />
+        <p className="settings-section-hint">
+          {provider === 'opencode-go'
+            ? 'OpenCode Go 预设：填写 API Key 与默认模型；网关地址固定。'
+            : '接错就不工作：三个字段与服务商控制台一致。'}
+        </p>
+        <div className="field">
+          <span className="field-label">Provider</span>
+          <div className="seg" role="group" aria-label="Provider">
             <button
               type="button"
-              className="input-append"
-              onClick={() => setShowKey((v) => !v)}
-              aria-label={showKey ? '隐藏 API Key' : '显示 API Key'}
+              role="radio"
+              aria-checked={provider === 'custom'}
+              className={`seg-btn${provider === 'custom' ? ' active' : ''}`}
+              onClick={() => setProvider('custom')}
             >
-              {showKey ? '隐藏' : '显示'}
+              Custom
             </button>
-          </span>
-        </label>
-        <label className="field">
-          <span className="field-label">Model</span>
-          <input
-            className="field-input"
-            value={form.model}
-            onChange={(e) => setForm({ ...form, model: e.target.value })}
-            placeholder="模型名"
-            spellCheck={false}
-          />
-        </label>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={provider === 'opencode-go'}
+              className={`seg-btn${provider === 'opencode-go' ? ' active' : ''}`}
+              onClick={() => setProvider('opencode-go')}
+            >
+              OpenCode Go
+            </button>
+          </div>
+        </div>
+        {provider === 'custom' ? (
+          <>
+            <label className="field">
+              <span className="field-label">Base URL</span>
+              <input
+                className="field-input"
+                value={form.baseURL}
+                onChange={(e) => setForm({ ...form, baseURL: e.target.value })}
+                placeholder="https://api.minimaxi.com/v1"
+                spellCheck={false}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">API Key</span>
+              <span className="input-wrap field-input">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={form.apiKey}
+                  onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                  placeholder="sk-…"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="input-append"
+                  onClick={() => setShowKey((v) => !v)}
+                  aria-label={showKey ? '隐藏 API Key' : '显示 API Key'}
+                >
+                  {showKey ? '隐藏' : '显示'}
+                </button>
+              </span>
+            </label>
+            <label className="field">
+              <span className="field-label">Model</span>
+              <input
+                className="field-input"
+                value={form.model}
+                onChange={(e) => setForm({ ...form, model: e.target.value })}
+                placeholder="模型名"
+                spellCheck={false}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="field">
+              <span className="field-label">Base URL</span>
+              <input className="field-input" value={OPENCODE_GO_BASE_URL} readOnly spellCheck={false} />
+            </label>
+            <p className="field-hint">OpenCode Go 固定网关，保存时自动写入。</p>
+            <label className="field">
+              <span className="field-label">API Key</span>
+              <span className="input-wrap field-input">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={form.apiKey}
+                  onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                  placeholder="sk-…"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="input-append"
+                  onClick={() => setShowKey((v) => !v)}
+                  aria-label={showKey ? '隐藏 API Key' : '显示 API Key'}
+                >
+                  {showKey ? '隐藏' : '显示'}
+                </button>
+              </span>
+            </label>
+            <div className="field">
+              <span className="field-label">默认 Model</span>
+              {goModels.length > 0 ? (
+                <Select
+                  value={form.model}
+                  options={goModels.map((id) => ({ value: id, label: id }))}
+                  onChange={(model) => setForm({ ...form, model })}
+                  placeholder="选择模型…"
+                  ariaLabel="默认 Model"
+                />
+              ) : (
+                <input
+                  className="field-input"
+                  value={form.model}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                  placeholder="模型名（保存 Key 后可下拉选择）"
+                  spellCheck={false}
+                />
+              )}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="settings-section">
