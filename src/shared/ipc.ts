@@ -19,6 +19,7 @@ export const IPC = {
   mcpGet: 'shy:mcp-get',
   mcpSet: 'shy:mcp-set',
   mcpStatus: 'shy:mcp-status',
+  mcpAuthorize: 'shy:mcp-authorize',
   toolConfirm: 'shy:tool-confirm',
   askUserReply: 'shy:ask-user-reply',
   sessionsList: 'shy:sessions-list',
@@ -183,10 +184,12 @@ export type ModelSettings = {
 }
 
 export type McpServerEntry = {
-  command: string
-  args: string[]
-  env: Record<string, string>
   enabled: boolean
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
 }
 
 export type McpConfigFile = {

@@ -74,6 +74,7 @@ const shy = {
   setMcpConfig: (next: McpConfigFile): Promise<McpSetResult> =>
     ipcRenderer.invoke(IPC.mcpSet, next),
   getMcpStatus: (): Promise<McpServerStatus[]> => ipcRenderer.invoke(IPC.mcpStatus),
+  authorizeMcp: (id: string): Promise<McpSetResult> => ipcRenderer.invoke(IPC.mcpAuthorize, id),
   chat: (req: ChatRequest): Promise<{ ok: boolean; started: boolean }> =>
     ipcRenderer.invoke(IPC.agentChat, req),
   cancel: (sessionId: string): Promise<{ ok: boolean }> =>

@@ -29,6 +29,32 @@ describe('parseMcpConfig', () => {
     })
   })
 
+  it('解析 HTTP url/headers', () => {
+    const cfg = parseMcpConfig({
+      mcpServers: {
+        remote: {
+          url: 'https://mcp.example/mcp',
+          headers: { Authorization: 'Bearer t' }
+        }
+      }
+    })
+    expect(cfg.mcpServers.remote).toEqual({
+      url: 'https://mcp.example/mcp',
+      headers: { Authorization: 'Bearer t' },
+      enabled: true
+    })
+  })
+
+  it('command 与 url 同时存在标为可解析但仍可检出互斥', async () => {
+    const { entryTransportKind } = await import('./config')
+    const cfg = parseMcpConfig({
+      mcpServers: {
+        bad: { command: 'uvx', url: 'https://x' }
+      }
+    })
+    expect(entryTransportKind(cfg.mcpServers.bad!)).toBe('invalid')
+  })
+
   it('enabled false 保留；无 command 仍收录以便 UI 标无效', () => {
     const cfg = parseMcpConfig({
       mcpServers: {
@@ -62,7 +88,7 @@ describe('readMcpConfig / writeMcpConfig', () => {
       )
       const again = await readMcpConfig(home)
       expect(again.mcpServers.MiniMax?.command).toBe('uvx')
-      expect(again.mcpServers.MiniMax?.env.K).toBe('v')
+      expect(again.mcpServers.MiniMax?.env?.K).toBe('v')
     } finally {
       await rm(home, { recursive: true, force: true })
     }

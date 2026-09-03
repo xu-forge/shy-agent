@@ -29,6 +29,12 @@ describe('tool description 8 段式质量', () => {
     expect(names).toContain('skill_write')
     expect(names).toContain('skill_list')
     expect(names).toContain('skill_delete')
+    expect(names).toContain('skill_set_enabled')
+    expect(names).toContain('mcp_list')
+    expect(names).toContain('mcp_upsert')
+    expect(names).toContain('mcp_remove')
+    expect(names).toContain('mcp_set_enabled')
+    expect(names).toContain('mcp_authorize')
     expect(names).toContain('runtime_ping')
     expect(names).toContain('task')
   })
@@ -66,7 +72,7 @@ describe('tool description 8 段式质量', () => {
   })
 
   it('高危工具含「确认」语义', () => {
-    for (const name of ['fs_delete', 'memory_delete', 'skill_delete', 'shell_exec']) {
+    for (const name of ['fs_delete', 'memory_delete', 'skill_delete', 'shell_exec', 'mcp_remove']) {
       const t = tools!.find((x) => x.name === name)
       expect(t, `${name} 未注册`).toBeDefined()
       const desc = t!.description

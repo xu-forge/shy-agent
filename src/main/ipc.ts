@@ -187,6 +187,14 @@ export function registerCoreIpc(): void {
     return { config: cfg, status: getMcpManager().getStatus() }
   })
   ipcMain.handle(IPC.mcpStatus, async () => getMcpManager().getStatus())
+  ipcMain.handle(IPC.mcpAuthorize, async (_e, id: string) => {
+    const home = resolveShyHome()
+    const cfg = await readMcpConfig(home)
+    if (!cfg.mcpServers[id]) throw new Error(`MCP 不存在：${id}`)
+    await getMcpManager().applyConfig(cfg)
+    const status = await getMcpManager().authorize(id)
+    return { config: cfg, status }
+  })
 
   ipcMain.handle(IPC.memoryList, async () => listLongMemory())
   ipcMain.handle(IPC.memoryUpsert, async (_e, input) =>

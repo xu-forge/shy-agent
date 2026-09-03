@@ -70,6 +70,7 @@ export interface ShyApi {
   getMcpConfig: () => Promise<McpConfigFile>
   setMcpConfig: (next: McpConfigFile) => Promise<McpSetResult>
   getMcpStatus: () => Promise<McpServerStatus[]>
+  authorizeMcp: (id: string) => Promise<McpSetResult>
   chat: (req: ChatRequest) => Promise<{ ok: boolean; started: boolean }>
   cancel: (sessionId: string) => Promise<{ ok: boolean }>
   pause: (sessionId: string) => Promise<{ ok: boolean }>

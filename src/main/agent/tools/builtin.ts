@@ -5,10 +5,23 @@ import { readFile, writeFile, rm, mkdir } from 'fs/promises'
 import { dirname, isAbsolute, join } from 'path'
 import { registerTool } from './registry'
 import { upsertLongMemory, deleteLongMemory, listLongMemory, recordFileOp } from '../../memory/db'
-import { writeSkill, listSkills, deleteSkill, getEnabledSkillEntries } from '../../skills/store'
+import {
+  writeSkill,
+  listSkills,
+  deleteSkill,
+  getEnabledSkillEntries,
+  setSkillEnabled
+} from '../../skills/store'
 import { registerTaskTools } from './builtin/task'
 import { registerBrowserTool } from './browser'
 import { captureWriteDiff, captureDeleteDiff } from '../../diff/capture'
+import {
+  listMcpForAgent,
+  upsertMcpServer,
+  removeMcpServer,
+  setMcpServerEnabled,
+  authorizeMcpServer
+} from './mcp-config-ops'
 
 /**
  * shell-session-side-panel：本文件内置工具中需要打点文件操作到 session_files 表的工具：
@@ -258,7 +271,7 @@ export function registerBuiltinTools(): void {
     description:
       '删除本地技能包（从 ~/.shy/skills/ 移除整个目录）。\n\n' +
       '何时用：技能过期 / 内容错误 / 用户不想再要。\n' +
-      '何时不用：临时禁用（目前没有 disable 机制；要么删要么改内容用 skill_write）。\n' +
+      '何时不用：临时禁用请用 skill_set_enabled；改内容用 skill_write。\n' +
       '**必须弹确认框**（不可跳过）— 删错技能下次就没法自动命中。\n' +
       '参数：`id` 必填（技能 id，可从 skill_list 拿）。',
     schema: z.object({ id: z.string() }),
@@ -270,6 +283,126 @@ export function registerBuiltinTools(): void {
       return JSON.stringify({ ok: true })
     }
   }))
+
+  registerTool('skill_set_enabled', (ctx) => ({
+    name: 'skill_set_enabled',
+    description:
+      '启用或禁用本地技能（按技能 name，写入 ~/.shy/skills-enabled.json）。\n\n' +
+      '何时用：用户说「暂时关掉某 skill」「重新启用某 skill」。\n' +
+      '何时不用：要删掉技能用 skill_delete；要改内容用 skill_write。\n' +
+      '禁用会弹确认框；启用免确认。\n' +
+      '参数：`name` 必填（技能名）；`enabled` 必填（true/false）。',
+    schema: z.object({
+      name: z.string(),
+      enabled: z.boolean()
+    }),
+    run: async ({ name, enabled }) => {
+      if (!enabled) {
+        const ok = await ctx.confirmHighRisk('禁用技能', name)
+        if (!ok) return JSON.stringify({ ok: false, error: '用户拒绝' })
+      }
+      await setSkillEnabled(name, enabled)
+      ctx.emit('tool', { name: 'skill_set_enabled', skill: name, enabled })
+      return JSON.stringify({ ok: true, name, enabled })
+    }
+  }))
+
+  registerTool('mcp_list', (ctx) => ({
+    name: 'mcp_list',
+    description:
+      '列出本机 MCP 配置（~/.shy/config/mcp.json）及连接状态。\n\n' +
+      '何时用：加/删 MCP 前先看已有 id；排查某服务器是否 connected/error。\n' +
+      '何时不用：要改配置请用 mcp_upsert / mcp_remove / mcp_set_enabled。\n' +
+      '无参数。返回 mcpServers 与 status 列表。',
+    schema: z.object({}),
+    run: async () => {
+      ctx.emit('tool', { name: 'mcp_list' })
+      const result = await listMcpForAgent()
+      return JSON.stringify({ ok: true, ...result })
+    }
+  }))
+
+  registerTool('mcp_upsert', (ctx) => ({
+    name: 'mcp_upsert',
+    description:
+      '新增或覆盖一条 MCP 服务器配置，写盘后立即重连（applyConfig）。\n\n' +
+      '传输二选一：\n' +
+      '- stdio：`command` 必填，可选 `args`/`env`\n' +
+      '- Streamable HTTP：`url` 必填，可选 `headers`\n' +
+      '`command` 与 `url` 互斥。\n\n' +
+      '何时用：用户提供 JSON / 教学 URL 解析出的字段；要更新已有 id。\n' +
+      '何时不用：只想禁用用 mcp_set_enabled；删除用 mcp_remove；缺字段先 ask_user，不要臆造包名。\n' +
+      'HTTP 若提示需要 OAuth，再用 mcp_authorize。免确认。',
+    schema: z.object({
+      id: z.string(),
+      command: z.string().optional(),
+      args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()).optional(),
+      url: z.string().optional(),
+      headers: z.record(z.string(), z.string()).optional(),
+      enabled: z.boolean().optional()
+    }),
+    run: async (input) => {
+      const result = await upsertMcpServer(input)
+      ctx.emit('tool', { name: 'mcp_upsert', id: input.id })
+      return JSON.stringify({ ok: true, ...result })
+    }
+  }))
+
+  registerTool('mcp_remove', (ctx) => ({
+    name: 'mcp_remove',
+    description:
+      '删除一条 MCP 服务器配置并重连。\n\n' +
+      '何时用：用户明确要求移除某 MCP id。\n' +
+      '何时不用：临时关掉用 mcp_set_enabled(false)。\n' +
+      '**必须弹确认框**。参数：`id` 必填。',
+    schema: z.object({ id: z.string() }),
+    run: async ({ id }) => {
+      const ok = await ctx.confirmHighRisk('删除 MCP', id)
+      if (!ok) return JSON.stringify({ ok: false, error: '用户拒绝' })
+      const result = await removeMcpServer(id)
+      ctx.emit('tool', { name: 'mcp_remove', id })
+      return JSON.stringify({ ok: true, ...result })
+    }
+  }))
+
+  registerTool('mcp_set_enabled', (ctx) => ({
+    name: 'mcp_set_enabled',
+    description:
+      '启用或禁用一条 MCP 服务器（改 enabled 后 apply）。\n\n' +
+      '何时用：暂时不用某 MCP 但不想删配置。\n' +
+      '何时不用：永久删除用 mcp_remove；改 command/args/url 用 mcp_upsert。\n' +
+      '禁用会弹确认；启用免确认。参数：`id`、`enabled` 必填。',
+    schema: z.object({
+      id: z.string(),
+      enabled: z.boolean()
+    }),
+    run: async ({ id, enabled }) => {
+      if (!enabled) {
+        const ok = await ctx.confirmHighRisk('禁用 MCP', id)
+        if (!ok) return JSON.stringify({ ok: false, error: '用户拒绝' })
+      }
+      const result = await setMcpServerEnabled(id, enabled)
+      ctx.emit('tool', { name: 'mcp_set_enabled', id, enabled })
+      return JSON.stringify({ ok: true, ...result })
+    }
+  }))
+
+  registerTool('mcp_authorize', (ctx) => ({
+    name: 'mcp_authorize',
+    description:
+      '对 Streamable HTTP MCP 发起 OAuth 授权（本机 loopback 回调 + 系统浏览器），成功后重连。\n\n' +
+      '何时用：mcp_list/upsert 后 status 提示需要 OAuth 授权。\n' +
+      '何时不用：stdio 服务器；仅用 headers/Bearer 且已连通。\n' +
+      '免确认。参数：`id` 必填。用户需在浏览器完成登录。',
+    schema: z.object({ id: z.string() }),
+    run: async ({ id }) => {
+      const result = await authorizeMcpServer(id)
+      ctx.emit('tool', { name: 'mcp_authorize', id })
+      return JSON.stringify({ ok: true, ...result })
+    }
+  }))
+
   // 读取技能全文（catalog 注入后 LLM 按需展开）
   registerTool('skill', (ctx) => ({
     name: 'skill',

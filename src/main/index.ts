@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { registerCoreIpc, resumeInterruptedGoalSessions, setMainWindow } from './ipc'
 import { startSkillWatch } from './skills/store'
+import { ensureBuiltinSkills } from './skills/builtin-seed'
 import { registerBrowserIpc, setBrowserWindowProvider, getEmbeddedBrowserManager } from './browser'
 import { shouldBlockRendererNavigation } from './browser/renderer-navigation'
 import { setBrowserManagerGetter } from './agent/tools/browser'
@@ -111,6 +112,9 @@ app.whenReady().then(() => {
 
   registerCoreIpc()
   // minimax-feature-port：技能注册表热重载 + 内嵌浏览器 IPC
+  void ensureBuiltinSkills(shyHome).catch((err) =>
+    console.error('[shy] ensureBuiltinSkills', err)
+  )
   startSkillWatch()
   registerBrowserIpc()
   setBrowserWindowProvider(() => BrowserWindow.getAllWindows()[0] ?? null)

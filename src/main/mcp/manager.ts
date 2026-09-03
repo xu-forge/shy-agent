@@ -1,20 +1,18 @@
 import { homedir } from 'os'
 import { delimiter, join } from 'path'
 import type { McpConfigFile, McpServerEntry } from './config'
+import { entryTransportKind } from './config'
+import {
+  stringifyMcpResult,
+  type McpSession,
+  type McpToolInfo
+} from './session-types'
+import { MCP_OAUTH_TIMEOUT_MS } from './oauth-loopback'
+
+export type { McpSession, McpToolInfo }
+export { stringifyMcpResult }
 
 export const MCP_CONNECT_TIMEOUT_MS = 15_000
-
-export type McpToolInfo = {
-  name: string
-  description: string
-  inputSchema?: Record<string, unknown>
-}
-
-export type McpSession = {
-  listTools: () => Promise<McpToolInfo[]>
-  callTool: (name: string, args: Record<string, unknown>) => Promise<string>
-  close: () => Promise<void>
-}
 
 export type McpConnector = (id: string, entry: McpServerEntry) => Promise<McpSession>
 
@@ -37,7 +35,10 @@ export type ExposedMcpTool = {
 
 export type McpManagerOptions = {
   connector?: McpConnector
+  /** 交互式 OAuth 连接器；默认 createHttpSession({ interactive: true }) */
+  authorizeConnector?: McpConnector
   timeoutMs?: number
+  oauthTimeoutMs?: number
   getOccupiedNames?: () => string[]
 }
 
@@ -85,13 +86,20 @@ export function formatConnectError(err: unknown): string {
 }
 
 export function entryFingerprint(entry: McpServerEntry): string {
-  const envKeys = Object.keys(entry.env).sort()
-  const env: Record<string, string> = {}
-  for (const k of envKeys) env[k] = entry.env[k] ?? ''
+  const env = entry.env ?? {}
+  const headers = entry.headers ?? {}
+  const envKeys = Object.keys(env).sort()
+  const headerKeys = Object.keys(headers).sort()
+  const envSorted: Record<string, string> = {}
+  const headerSorted: Record<string, string> = {}
+  for (const k of envKeys) envSorted[k] = env[k] ?? ''
+  for (const k of headerKeys) headerSorted[k] = headers[k] ?? ''
   return JSON.stringify({
-    command: entry.command,
-    args: entry.args,
-    env,
+    command: entry.command ?? '',
+    args: entry.args ?? [],
+    env: envSorted,
+    url: entry.url ?? '',
+    headers: headerSorted,
     enabled: entry.enabled
   })
 }
@@ -117,33 +125,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   })
 }
 
-export function stringifyMcpResult(result: unknown): string {
-  if (result && typeof result === 'object' && 'content' in result) {
-    const content = (result as { content: unknown }).content
-    if (Array.isArray(content)) {
-      const texts = content
-        .map((c) => {
-          if (c && typeof c === 'object' && (c as { type?: unknown }).type === 'text') {
-            const text = (c as { text?: unknown }).text
-            return typeof text === 'string' ? text : ''
-          }
-          return ''
-        })
-        .filter(Boolean)
-      if (texts.length > 0) return texts.join('\n')
-    }
-    return JSON.stringify(content)
-  }
-  return typeof result === 'string' ? result : JSON.stringify(result)
-}
-
 export async function createStdioSession(id: string, entry: McpServerEntry): Promise<McpSession> {
+  const command = entry.command?.trim()
+  if (!command) throw new Error('stdio MCP 缺少 command')
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
   const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js')
   const transport = new StdioClientTransport({
-    command: entry.command,
-    args: entry.args,
-    env: mergeSpawnEnv(entry.env),
+    command,
+    args: entry.args ?? [],
+    env: mergeSpawnEnv(entry.env ?? {}),
     stderr: 'pipe'
   })
   const client = new Client({ name: 'shy', version: '1.0.0' })
@@ -171,9 +161,25 @@ export async function createStdioSession(id: string, entry: McpServerEntry): Pro
   }
 }
 
+export async function createMcpSession(
+  id: string,
+  entry: McpServerEntry,
+  opts?: { interactive?: boolean }
+): Promise<McpSession> {
+  const kind = entryTransportKind(entry)
+  if (kind === 'stdio') return createStdioSession(id, entry)
+  if (kind === 'http') {
+    const { createHttpSession } = await import('./http-session')
+    return createHttpSession(id, entry, { interactive: opts?.interactive === true })
+  }
+  throw new Error('配置无效：请提供 command（stdio）或 url（HTTP），且二者互斥')
+}
+
 export class McpManager {
   private readonly connector: McpConnector
+  private readonly authorizeConnector: McpConnector
   private timeoutMs: number
+  private oauthTimeoutMs: number
   private getOccupiedNames: () => string[]
   private config: McpConfigFile = { mcpServers: {} }
   private readonly live = new Map<string, LiveServer>()
@@ -192,14 +198,22 @@ export class McpManager {
   }
 
   constructor(opts: McpManagerOptions = {}) {
-    this.connector = opts.connector ?? createStdioSession
+    this.connector = opts.connector ?? ((id, entry) => createMcpSession(id, entry, { interactive: false }))
+    this.authorizeConnector =
+      opts.authorizeConnector ??
+      ((id, entry) => createMcpSession(id, entry, { interactive: true }))
     this.timeoutMs = opts.timeoutMs ?? MCP_CONNECT_TIMEOUT_MS
+    this.oauthTimeoutMs = opts.oauthTimeoutMs ?? MCP_OAUTH_TIMEOUT_MS
     this.getOccupiedNames = opts.getOccupiedNames ?? (() => [])
   }
 
   setOccupiedNames(fn: () => string[]): void {
     this.getOccupiedNames = fn
     this.rebuildExposed(fn())
+  }
+
+  getConfig(): McpConfigFile {
+    return this.config
   }
 
   getStatus(): McpServerStatus[] {
@@ -246,6 +260,47 @@ export class McpManager {
     return this.serialized(() => this.applyConfigUnlocked(next))
   }
 
+  async authorize(id: string): Promise<McpServerStatus[]> {
+    return this.serialized(async () => {
+      const entry = this.config.mcpServers[id]
+      if (!entry) throw new Error(`MCP 不存在：${id}`)
+      if (entryTransportKind(entry) !== 'http') {
+        throw new Error('仅 Streamable HTTP（url）服务器支持 OAuth 登录')
+      }
+      if (entry.enabled === false) {
+        throw new Error('服务器已禁用，请先启用')
+      }
+      await this.closeServer(id)
+      this.statuses.set(id, { id, state: 'connecting' })
+      try {
+        const session = await withTimeout(
+          this.authorizeConnector(id, entry),
+          this.oauthTimeoutMs,
+          `MCP ${id} OAuth`
+        )
+        let tools: McpToolInfo[]
+        try {
+          tools = await withTimeout(session.listTools(), this.timeoutMs, `MCP ${id} listTools`)
+        } catch (err) {
+          await session.close().catch(() => undefined)
+          throw err
+        }
+        this.live.set(id, {
+          id,
+          entry,
+          fingerprint: entryFingerprint(entry),
+          session,
+          tools
+        })
+        this.statuses.set(id, { id, state: 'connected' })
+      } catch (err) {
+        this.statuses.set(id, { id, state: 'error', error: formatConnectError(err) })
+      }
+      this.rebuildExposed(this.getOccupiedNames())
+      return this.getStatus()
+    })
+  }
+
   async shutdown(): Promise<void> {
     return this.serialized(() => this.shutdownUnlocked())
   }
@@ -271,20 +326,19 @@ export class McpManager {
         this.statuses.delete(id)
         continue
       }
+      const kind = entryTransportKind(nextEntry)
       if (
         live &&
         (entryFingerprint(nextEntry) !== live.fingerprint ||
           !nextEntry.enabled ||
-          !nextEntry.command.trim())
+          kind === 'invalid')
       ) {
         await this.closeServer(id)
       }
     }
 
     this.config = next
-    await Promise.all(
-      [...nextIds].map((id) => this.ensureServer(id, next.mcpServers[id]!))
-    )
+    await Promise.all([...nextIds].map((id) => this.ensureServer(id, next.mcpServers[id]!)))
     this.rebuildExposed(this.getOccupiedNames())
   }
 
@@ -307,8 +361,13 @@ export class McpManager {
       this.statuses.set(id, { id, state: 'disabled' })
       return
     }
-    if (!entry.command.trim()) {
-      this.statuses.set(id, { id, state: 'invalid', error: '配置无效：缺少 command' })
+    const kind = entryTransportKind(entry)
+    if (kind === 'invalid') {
+      this.statuses.set(id, {
+        id,
+        state: 'invalid',
+        error: '配置无效：请提供 command（stdio）或 url（HTTP），且二者互斥'
+      })
       return
     }
     this.statuses.set(id, { id, state: 'connecting' })
