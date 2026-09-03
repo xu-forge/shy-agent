@@ -6,6 +6,7 @@ import {
   mondayIndex,
   occurrenceStatus,
   occurrenceStatusLabel,
+  scheduleRunKey,
   startOfWeekMonday,
   weekDays
 } from './calendarScheduleUi'
@@ -113,6 +114,15 @@ describe('occurrenceStatus', () => {
       occurrenceStatus(base, task, now, { ...runBase, status: 'waiting_confirm' })
     ).toBe('waiting_confirm')
     expect(occurrenceStatusLabel('waiting_confirm')).toBe('等待确认')
+  })
+})
+
+describe('scheduleRunKey', () => {
+  it('同一分钟的不同 ISO 映射到同一 key', () => {
+    const a = scheduleRunKey('t1', '2026-09-03T16:18:00.000Z')
+    const b = scheduleRunKey('t1', '2026-09-03T16:18:30.000Z')
+    expect(a).toBe(b)
+    expect(scheduleRunKey('t2', '2026-09-03T16:18:00.000Z')).not.toBe(a)
   })
 })
 

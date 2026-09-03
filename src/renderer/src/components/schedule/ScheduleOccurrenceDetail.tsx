@@ -34,14 +34,18 @@ export function ScheduleOccurrenceDetail({
   const status = occurrenceStatus(occurrence, task)
   const statusLabel = occurrenceStatusLabel(status)
   const freq = task ? formatScheduleLabel(task.schedule) : '—'
-  const actionKind = occurrence.action === 'run_skill' ? '运行技能' : '提醒'
+  const actionKind = occurrence.action === 'run_skill' && skillName ? '技能' : 'Agent'
   const actionSummary =
-    occurrence.action === 'run_skill'
-      ? skillName ||
-        (task && task.action === 'run_skill' ? task.payload.skillId : '—')
-      : task && task.action === 'remind'
-        ? task.payload.message || '应用内通知'
-        : '应用内通知'
+    task?.action === 'run_skill'
+      ? [
+          skillName || task.payload.skillId,
+          task.payload.instruction?.trim()
+        ]
+          .filter(Boolean)
+          .join(' · ') || '—'
+      : task?.action === 'remind'
+        ? task.payload.message || '—'
+        : '—'
 
   return (
     <Modal

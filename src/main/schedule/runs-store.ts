@@ -123,10 +123,10 @@ export function getScheduleRun(id: string): ScheduleRun | null {
   return row ? rowToRun(row) : null
 }
 
-/** 同一 taskId + scheduledAt 取最新一条（按 started_at DESC） */
+/** 同一 taskId + scheduledAt 取最新一条（按 started_at DESC）；允许同一分钟内 ISO 字符串不完全一致 */
 export function getScheduleRunByTaskAt(taskId: string, scheduledAt: string): ScheduleRun | null {
   ensureScheduleRunTables()
-  const row = getDb()
+  const exact = getDb()
     .prepare(
       `SELECT * FROM schedule_runs
        WHERE task_id = ? AND scheduled_at = ?
@@ -134,7 +134,20 @@ export function getScheduleRunByTaskAt(taskId: string, scheduledAt: string): Sch
        LIMIT 1`
     )
     .get(taskId, scheduledAt) as Record<string, unknown> | undefined
-  return row ? rowToRun(row) : null
+  if (exact) return rowToRun(exact)
+
+  const target = Math.floor(Date.parse(scheduledAt) / 60_000)
+  if (!Number.isFinite(target)) return null
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM schedule_runs WHERE task_id = ? ORDER BY started_at DESC`
+    )
+    .all(taskId) as Record<string, unknown>[]
+  const hit = rows.find((row) => {
+    const ms = Date.parse(String(row.scheduled_at))
+    return Number.isFinite(ms) && Math.floor(ms / 60_000) === target
+  })
+  return hit ? rowToRun(hit) : null
 }
 
 export function listScheduleRunsInRange(rangeStart: Date, rangeEnd: Date): ScheduleRun[] {

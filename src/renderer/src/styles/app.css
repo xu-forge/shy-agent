@@ -9546,6 +9546,16 @@
   margin-bottom: 0;
 }
 
+.sch-run-result-hint {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.04));
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 [data-theme='dark'] .sch-week,
 [data-theme='dark'] .sch-month,
 [data-theme='dark'] .sch-week-card,

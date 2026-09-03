@@ -6,7 +6,6 @@ import type {
   ScheduleOccurrence,
   ScheduleRun,
   ScheduleTask,
-  ScheduleTaskAction,
   SkillSummary,
   UpdateScheduleTaskInput,
   WorkflowSchedule
@@ -40,8 +39,9 @@ function defaultSchedule(date: Date): WorkflowSchedule {
 type FormState = {
   id?: string
   title: string
-  action: ScheduleTaskAction
-  message: string
+  /** 到点交给 Agent 的执行内容 */
+  prompt: string
+  /** 空 = 不指定技能，仅按 prompt 执行 */
   skillId: string
   schedule: WorkflowSchedule
   agentMode: ScheduleAgentMode
@@ -50,12 +50,11 @@ type FormState = {
   model: string | null
 }
 
-function emptyForm(date: Date, skills: SkillSummary[]): FormState {
+function emptyForm(date: Date, _skills: SkillSummary[]): FormState {
   return {
     title: '',
-    action: 'remind',
-    message: '',
-    skillId: skills[0]?.id ?? '',
+    prompt: '',
+    skillId: '',
     schedule: defaultSchedule(date),
     agentMode: 'goal',
     allowAutoConfirm: false,
@@ -65,12 +64,24 @@ function emptyForm(date: Date, skills: SkillSummary[]): FormState {
 }
 
 function formFromTask(task: ScheduleTask): FormState {
+  if (task.action === 'run_skill') {
+    return {
+      id: task.id,
+      title: task.title,
+      prompt: task.payload.instruction ?? '',
+      skillId: task.payload.skillId,
+      schedule: task.schedule,
+      agentMode: task.agentMode ?? 'goal',
+      allowAutoConfirm: Boolean(task.allowAutoConfirm),
+      projectId: task.projectId ?? null,
+      model: task.model ?? null
+    }
+  }
   return {
     id: task.id,
     title: task.title,
-    action: task.action,
-    message: task.action === 'remind' ? task.payload.message : '',
-    skillId: task.action === 'run_skill' ? task.payload.skillId : '',
+    prompt: task.payload.message,
+    skillId: '',
     schedule: task.schedule,
     agentMode: task.agentMode ?? 'goal',
     allowAutoConfirm: Boolean(task.allowAutoConfirm),
@@ -80,19 +91,23 @@ function formFromTask(task: ScheduleTask): FormState {
 }
 
 function buildTaskFields(form: FormState): Pick<ScheduleTask, 'action' | 'payload'> {
-  switch (form.action) {
-    case 'run_skill':
-      return { action: 'run_skill', payload: { skillId: form.skillId } }
-    case 'remind':
-    default:
-      return { action: 'remind', payload: { message: form.message.trim() } }
+  const prompt = form.prompt.trim()
+  if (form.skillId) {
+    return {
+      action: 'run_skill',
+      payload: {
+        skillId: form.skillId,
+        ...(prompt ? { instruction: prompt } : {})
+      }
+    }
   }
+  return { action: 'remind', payload: { message: prompt } }
 }
 
 function canSaveForm(form: FormState): boolean {
   if (!form.title.trim()) return false
-  if (form.action === 'run_skill') return !!form.skillId
-  return form.message.trim().length > 0
+  if (form.skillId) return true
+  return form.prompt.trim().length > 0
 }
 
 type RangeData = {
@@ -212,6 +227,26 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
     }
   }, [])
 
+  useEffect(() => {
+    return window.shy.onScheduleRunFinished((ev) => {
+      void (async () => {
+        const { start, end } = rangeBounds(viewMode, year, month, weekAnchor)
+        const data = await fetchRangeData(start, end)
+        applyData(data)
+        const task = data.tasks.find((t) => t.id === ev.taskId)
+        if (ev.status === 'succeeded' || ev.status === 'failed') {
+          setDetailOcc(null)
+          setResultOcc({
+            taskId: ev.taskId,
+            at: ev.scheduledAt,
+            title: ev.title || task?.title || '定时任务',
+            action: ev.action
+          })
+        }
+      })()
+    })
+  }, [viewMode, year, month, weekAnchor])
+
   const flashNote = (text: string): void => {
     setNote(text)
     setTimeout(() => setNote((cur) => (cur === text ? '' : cur)), 6000)
@@ -266,14 +301,29 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
   }
 
   const selectOccurrence = (occ: ScheduleOccurrence): void => {
-    const run = getRun(occ)
-    if (run) {
+    const cached = getRun(occ)
+    if (cached) {
       setDetailOcc(null)
       setResultOcc(occ)
-    } else {
+      return
+    }
+    void (async () => {
+      const fetched = await window.shy.scheduleRunsGet({
+        taskId: occ.taskId,
+        scheduledAt: occ.at
+      })
+      if (fetched) {
+        setRuns((prev) => {
+          const rest = prev.filter((r) => r.id !== fetched.id)
+          return [...rest, fetched]
+        })
+        setDetailOcc(null)
+        setResultOcc(occ)
+        return
+      }
       setResultOcc(null)
       setDetailOcc(occ)
-    }
+    })()
   }
 
   const saveForm = async (): Promise<void> => {
@@ -503,7 +553,7 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
       {form ? (
         <Modal
           title={form.id ? '编辑任务' : '新建任务'}
-          subtitle={form.id ? '调整后从下一次触发开始生效。' : '到点后按下面的动作自动执行。'}
+          subtitle={form.id ? '调整后从下一次触发开始生效。' : '到点后 Agent 自动执行。'}
           onClose={() => setForm(null)}
           footer={
             <>
@@ -539,43 +589,29 @@ export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
                 autoFocus
               />
             </Field>
-            <Field label="到点动作">
-              <Select
-                value={form.action}
-                options={[
-                  { value: 'remind', label: '提醒（应用内通知）' },
-                  { value: 'run_skill', label: '运行技能' }
-                ]}
-                onChange={(action) =>
-                  setForm({ ...form, action: action as ScheduleTaskAction })
-                }
-                ariaLabel="到点动作"
+            <Field label="执行内容" hint="到点交给 Agent；可只填问题，也可配合下方技能使用。">
+              <TextArea
+                rows={3}
+                value={form.prompt}
+                onChange={(e) => setForm({ ...form, prompt: e.target.value })}
+                placeholder="例如：RAG 优化怎么优化，根据项目知识"
               />
             </Field>
-            {form.action === 'remind' ? (
-              <Field label="提醒内容">
-                <TextArea
-                  rows={3}
-                  value={form.message}
-                  onChange={(e) => setForm({ ...form, message: e.target.value })}
-                  placeholder="到点后会在应用中看到该文案"
-                />
-              </Field>
-            ) : null}
-            {form.action === 'run_skill' ? (
-              <Field
-                label="选择技能"
-                hint={skills.length === 0 ? '还没有技能，可先去「技能」页创建。' : undefined}
-              >
-                <Select
-                  value={form.skillId}
-                  placeholder="请选择…"
-                  options={skills.map((s) => ({ value: s.id, label: s.name }))}
-                  onChange={(skillId) => setForm({ ...form, skillId })}
-                  ariaLabel="选择技能"
-                />
-              </Field>
-            ) : null}
+            <Field
+              label="技能（可选）"
+              hint={skills.length === 0 ? '还没有技能，可先去「技能」页创建。' : '留空则仅按上方执行内容运行。'}
+            >
+              <Select
+                value={form.skillId}
+                placeholder="不指定技能"
+                options={[
+                  { value: '', label: '不指定技能' },
+                  ...skills.map((s) => ({ value: s.id, label: s.name }))
+                ]}
+                onChange={(skillId) => setForm({ ...form, skillId })}
+                ariaLabel="技能"
+              />
+            </Field>
           </div>
           <div className="ui-form-section">
             <div className="ui-form-section-title">重复规则</div>

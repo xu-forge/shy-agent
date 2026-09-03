@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Project, ScheduleReminderEvent, SessionSummary } from '../../shared/ipc'
+import type { Project, ScheduleRunFinishedEvent, SessionSummary } from '../../shared/ipc'
 import { Sidebar } from './components/Sidebar'
 import { ChatWorkspace } from './components/ChatWorkspace'
 import { ChatWorkspaceHost } from './components/ChatWorkspaceHost'
@@ -88,13 +88,15 @@ function App(): React.JSX.Element {
   const [deleteSession, setDeleteSession] = useState<{ id: string; title: string } | null>(null)
   const [deleteProject, setDeleteProject] = useState<{ id: string; title: string } | null>(null)
   const [notice, setNotice] = useState('')
+  const [scheduleToasts, setScheduleToasts] = useState<
+    { id: string; title: string; message: string }[]
+  >([])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [sessionId, setSessionId] = useState('')
   const [navExpanded, setNavExpanded] = useState(readNavExpanded)
   const [codeLayout, setCodeLayout] = useState<CodeLayout>(readCodeLayout)
   const [dockMode, setDockMode] = useState<DockMode>(readDockMode)
-  const [reminders, setReminders] = useState<{ id: string; title: string; message: string }[]>([])
   const [chatHasConversation, setChatHasConversation] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('general')
@@ -221,12 +223,20 @@ function App(): React.JSX.Element {
   }, [refreshSessions])
 
   useEffect(() => {
-    return window.shy.onScheduleRemind((ev: ScheduleReminderEvent) => {
-      const id = `${ev.taskId}-${ev.at}`
-      setReminders((list) => [...list, { id, title: ev.title, message: ev.message }])
-      setTimeout(() => setReminders((list) => list.filter((r) => r.id !== id)), 8000)
+    const toastText = (ev: ScheduleRunFinishedEvent): string => {
+      if (ev.status === 'running') return '已到点，正在执行…'
+      if (ev.status === 'succeeded') return '执行完成，可在日历中查看结果'
+      return '执行失败'
+    }
+    return window.shy.onScheduleRunFinished((ev) => {
+      const id = `${ev.runId}-${ev.status}`
+      setScheduleToasts((list) => [...list, { id, title: ev.title, message: toastText(ev) }])
+      setTimeout(() => setScheduleToasts((list) => list.filter((t) => t.id !== id)), 8000)
+      if (ev.status === 'succeeded' || ev.status === 'failed' || ev.status === 'running') {
+        void refreshSessions()
+      }
     })
-  }, [])
+  }, [refreshSessions])
 
   const activeSession = sessions.find((s) => s.id === sessionId)
   const boundProject = projects.find((p) => p.id === activeSession?.projectId) ?? null
@@ -429,11 +439,11 @@ function App(): React.JSX.Element {
         />
       ) : null}
       <div className="calendar-toast-stack">
-        {reminders.map((reminder) => (
-          <div key={reminder.id} className="toast calendar-toast" role="status">
+        {scheduleToasts.map((toast) => (
+          <div key={toast.id} className="toast calendar-toast" role="status">
             <div>
-              <strong>{reminder.title}</strong>
-              <div className="calendar-toast-msg">{reminder.message}</div>
+              <strong>{toast.title}</strong>
+              <div className="calendar-toast-msg">{toast.message}</div>
             </div>
           </div>
         ))}

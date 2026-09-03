@@ -42,18 +42,21 @@ describe('extractAssistantResult', () => {
 })
 
 describe('resolveScheduleResultView', () => {
-  it('提醒成功展示提醒内容而非执行结果标题', () => {
+  it('直接执行成功展示 Agent 执行结果', () => {
     const view = resolveScheduleResultView({
       run: {
         status: 'succeeded',
         action: 'remind',
         errorMessage: null,
-        resultSummary: null,
-        sessionId: null
-      },
-      task: { action: 'remind', payload: { message: '你好' } }
+        resultSummary: 'RAG 优化建议…',
+        sessionId: 's1'
+      }
     })
-    expect(view).toEqual({ heading: '提醒内容', body: '你好', renderAs: 'plain' })
+    expect(view).toEqual({
+      heading: '执行结果',
+      body: 'RAG 优化建议…',
+      renderAs: 'markdown'
+    })
   })
 
   it('技能成功优先 resultSummary，且不把 user 提示词当结果', () => {

@@ -37,6 +37,7 @@ import type {
   ProjectType,
   ScheduleOccurrence,
   ScheduleReminderEvent,
+  ScheduleRunFinishedEvent,
   ScheduleRun,
   ScheduleRunsGetInput,
   ScheduleRunsListInput,
@@ -212,6 +213,7 @@ export interface ShyApi {
     handler: (event: T) => void
   ) => () => void
   onScheduleRemind: (handler: (event: ScheduleReminderEvent) => void) => () => void
+  onScheduleRunFinished: (handler: (event: ScheduleRunFinishedEvent) => void) => () => void
 }
 
 declare global {

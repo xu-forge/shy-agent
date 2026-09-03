@@ -564,6 +564,7 @@ export function registerCoreIpc(): void {
   startScheduler(
     (event) => mainWindow?.webContents.send(IPC.scheduleRemind, event),
     waitConfirm,
-    (sessionId, event) => emitToRenderer({ sessionId, ...event })
+    (sessionId, event) => emitToRenderer({ sessionId, ...event }),
+    (event) => mainWindow?.webContents.send(IPC.scheduleRunFinished, event)
   )
 }

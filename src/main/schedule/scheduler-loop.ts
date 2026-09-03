@@ -1,4 +1,4 @@
-import { checkCalendarTasks, setScheduleAgentEmit, setScheduleConfirmWaiter, setScheduleEventSink, type ScheduleEventSink } from './runner'
+import { checkCalendarTasks, setScheduleAgentEmit, setScheduleConfirmWaiter, setScheduleEventSink, setScheduleRunFinishedSink, type ScheduleEventSink, type ScheduleRunFinishedSink } from './runner'
 import { listScheduleTasks } from './store'
 import type { ScheduleAgentEmit, ScheduleWaitConfirm } from './runner'
 
@@ -12,9 +12,11 @@ let timer: NodeJS.Timeout | null = null
 export function startScheduler(
   emitSchedule?: ScheduleEventSink,
   waitConfirm?: ScheduleWaitConfirm,
-  emitAgent?: ScheduleAgentEmit
+  emitAgent?: ScheduleAgentEmit,
+  emitRunFinished?: ScheduleRunFinishedSink
 ): void {
   setScheduleEventSink(emitSchedule ?? null)
+  setScheduleRunFinishedSink(emitRunFinished ?? null)
   setScheduleConfirmWaiter(waitConfirm ?? null)
   setScheduleAgentEmit(emitAgent ?? null)
   if (timer) return
@@ -33,6 +35,7 @@ export function stopScheduler(): void {
     timer = null
   }
   setScheduleEventSink(null)
+  setScheduleRunFinishedSink(null)
   setScheduleConfirmWaiter(null)
   setScheduleAgentEmit(null)
 }

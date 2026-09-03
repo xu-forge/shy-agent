@@ -64,34 +64,18 @@ export function ScheduleRunResultModal({
     let alive = true
 
     const resolve = async (): Promise<void> => {
-      if (run.status === 'succeeded' && run.resultSummary?.trim()) {
-        const next = resolveScheduleResultView({
-          run,
-          task,
-          occurrenceTitle: occurrence.title,
-          session: null
-        })
-        if (alive) setView(next)
-        return
-      }
-
       if (
         run.status === 'running' ||
         run.status === 'waiting_confirm' ||
-        run.status === 'failed' ||
-        run.action === 'remind'
+        run.status === 'failed'
       ) {
-        const next = resolveScheduleResultView({
-          run,
-          task,
-          occurrenceTitle: occurrence.title
-        })
+        const next = resolveScheduleResultView({ run })
         if (alive) setView(next)
         return
       }
 
       if (!sessionId) {
-        const next = resolveScheduleResultView({ run, task, occurrenceTitle: occurrence.title })
+        const next = resolveScheduleResultView({ run })
         if (alive) setView(next)
         return
       }
@@ -99,21 +83,15 @@ export function ScheduleRunResultModal({
       try {
         const session = await window.shy.getSession(sessionId)
         if (!alive) return
-        setView(
-          resolveScheduleResultView({
-            run,
-            task,
-            occurrenceTitle: occurrence.title,
-            session
-          })
-        )
+        setView(resolveScheduleResultView({ run, session }))
       } catch {
         if (alive) {
-          setView({
-            heading: '执行结果',
-            body: '无法加载会话结果',
-            renderAs: 'plain'
-          })
+          const fallback = resolveScheduleResultView({ run })
+          setView(
+            fallback.body === '暂无结果正文'
+              ? { heading: '执行结果', body: '无法加载会话结果', renderAs: 'plain' }
+              : fallback
+          )
         }
       }
     }
@@ -122,7 +100,7 @@ export function ScheduleRunResultModal({
     return () => {
       alive = false
     }
-  }, [run, task, occurrence.title, sessionId])
+  }, [run, sessionId])
 
   return (
     <Modal
@@ -196,6 +174,7 @@ export function ScheduleRunResultModal({
           ) : (
             <pre className="sch-run-result-text">{view.body}</pre>
           )}
+          {view.hint ? <p className="sch-run-result-hint">{view.hint}</p> : null}
         </div>
       </div>
     </Modal>

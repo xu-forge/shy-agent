@@ -43,6 +43,18 @@ describe('schedule runs store', () => {
     expect(store.getScheduleRun(first.id)?.status).toBe('failed')
   })
 
+  it('按同一分钟对齐查找 run（ISO 字符串可以不同）', async () => {
+    const store = await import('./runs-store')
+    const run = store.createScheduleRun({
+      taskId: 't-minute',
+      scheduledAt: '2026-09-03T16:18:00.000Z',
+      action: 'remind',
+      status: 'succeeded'
+    })
+    expect(store.getScheduleRunByTaskAt('t-minute', '2026-09-03T16:18:00.000Z')?.id).toBe(run.id)
+    expect(store.getScheduleRunByTaskAt('t-minute', '2026-09-03T16:18:30.500Z')?.id).toBe(run.id)
+  })
+
   it('更新状态与结束时间', async () => {
     const store = await import('./runs-store')
     const run = store.createScheduleRun({

@@ -1,11 +1,13 @@
-import type { ChatMessage, ScheduleRun, ScheduleTask } from '../../../shared/ipc'
+import type { ChatMessage, ScheduleRun } from '../../../shared/ipc'
 
 export type ScheduleResultView = {
   /** 正文区小标题 */
   heading: string
   body: string
-  /** 技能成功结果用 markdown；提醒/状态用纯文本 */
+  /** Agent 执行结果用 markdown；状态类用纯文本 */
   renderAs: 'markdown' | 'plain'
+  /** 可选补充说明 */
+  hint?: string
 }
 
 type SessionSlice = {
@@ -31,16 +33,22 @@ export function extractAssistantResult(session: SessionSlice | null | undefined)
   return null
 }
 
+/** 技能执行结果：优先更长的有效正文 */
+function pickSkillResultBody(stored: string | null | undefined, fromSession: string | null): string | null {
+  const a = stored?.trim() || null
+  const b = fromSession?.trim() || null
+  if (a && b) return b.length > a.length ? b : a
+  return a || b
+}
+
 /**
- * 结果弹层正文：提醒 ≠ 技能执行结果；技能优先 run.resultSummary，再会话助手 Markdown 输出。
+ * 结果弹层正文：优先 run.resultSummary，再会话助手 Markdown 输出。
  */
 export function resolveScheduleResultView(input: {
   run: Pick<ScheduleRun, 'status' | 'action' | 'errorMessage' | 'resultSummary' | 'sessionId'>
-  task?: Pick<ScheduleTask, 'action' | 'payload'> | undefined
-  occurrenceTitle?: string
   session?: SessionSlice | null
 }): ScheduleResultView {
-  const { run, task, occurrenceTitle, session } = input
+  const { run, session } = input
 
   if (run.status === 'running') {
     return { heading: '执行结果', body: '正在执行…', renderAs: 'plain' }
@@ -56,20 +64,10 @@ export function resolveScheduleResultView(input: {
     }
   }
 
-  // succeeded
-  if (run.action === 'remind') {
-    const msg =
-      task?.action === 'remind' && 'message' in task.payload
-        ? String(task.payload.message).trim()
-        : (occurrenceTitle ?? '')
-    return { heading: '提醒内容', body: msg || '提醒已发出', renderAs: 'plain' }
-  }
-
-  const stored = run.resultSummary?.trim()
-  if (stored) return { heading: '执行结果', body: stored, renderAs: 'markdown' }
-
+  // succeeded — 统一展示 Agent 执行结果
   const fromSession = extractAssistantResult(session)
-  if (fromSession) return { heading: '执行结果', body: fromSession, renderAs: 'markdown' }
+  const body = pickSkillResultBody(run.resultSummary, fromSession)
+  if (body) return { heading: '执行结果', body, renderAs: 'markdown' }
 
   if (run.sessionId) {
     return {

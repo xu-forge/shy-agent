@@ -19,7 +19,14 @@ export type OccurrenceStatus =
 export const WEEKDAY_LABELS_MON = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const
 
 export function scheduleRunKey(taskId: string, scheduledAt: string): string {
-  return `${taskId}::${scheduledAt}`
+  return `${taskId}::${minuteEpoch(scheduledAt)}`
+}
+
+/** 同一分钟对齐，避免 ISO 字符串格式不一致导致日历对不上 run */
+export function minuteEpoch(iso: string): number {
+  const ms = Date.parse(iso)
+  if (Number.isNaN(ms)) return Number.NaN
+  return Math.floor(ms / 60_000)
 }
 
 function startOfDay(d: Date): Date {

@@ -121,7 +121,7 @@ describe('checkCalendarTasks', () => {
 
     await checkCalendarTasks(now, deps as never)
 
-    expect(deps.emit).toHaveBeenCalledTimes(2)
+    expect(deps.emit).not.toHaveBeenCalled()
     expect(deps.createRun).toHaveBeenCalledTimes(2)
     expect(deps.updateRun).toHaveBeenCalledWith(
       expect.any(String),
@@ -138,7 +138,36 @@ describe('checkCalendarTasks', () => {
     await checkCalendarTasks(now, deps as never)
     await checkCalendarTasks(new Date(now.getTime() + 20_000), deps as never)
 
-    expect(deps.emit).toHaveBeenCalledTimes(1)
+    expect(deps.emit).not.toHaveBeenCalled()
+  })
+
+  it('直接执行：建会话、调用 runAgent', async () => {
+    const deps = baseDeps({
+      listTasks: () => [task('remind', 'remind', { message: 'RAG 怎么优化' })],
+      getSession: vi.fn(() => ({
+        id: 'sess-1',
+        resultContent: '优化建议…',
+        messages: []
+      }))
+    })
+    await checkCalendarTasks(new Date(2026, 7, 11, 9, 30), deps as never)
+
+    expect(deps.emit).not.toHaveBeenCalled()
+    expect(deps.createSession).toHaveBeenCalledWith('goal', 'remind')
+    expect(deps.emitAgent).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ type: 'session', sessionId: 'sess-1' })
+    )
+    expect(deps.runAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'sess-1',
+        message: expect.stringContaining('RAG 怎么优化')
+      })
+    )
+    expect(deps.updateRun).toHaveBeenCalledWith(
+      'run-remind',
+      expect.objectContaining({ status: 'succeeded', sessionId: 'sess-1' })
+    )
   })
 
   it('跑技能：建会话、绑定项目、调用 runAgent', async () => {

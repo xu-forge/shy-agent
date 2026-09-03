@@ -42,6 +42,7 @@ export const IPC = {
   scheduleRunsGet: 'shy:schedule-runs-get',
   scheduleRunsList: 'shy:schedule-runs-list',
   scheduleRemind: 'shy:schedule-remind',
+  scheduleRunFinished: 'shy:schedule-run-finished',
   logsAgentList: 'shy:logs-agent-list',
   logsAgentRead: 'shy:logs-agent-read',
   logsAgentReveal: 'shy:logs-agent-reveal',
@@ -462,11 +463,14 @@ export type ScheduleTaskAction = 'remind' | 'run_skill'
 export type ScheduleAgentMode = 'goal' | 'normal'
 
 export type RemindScheduleTaskPayload = {
+  /** 无指定技能时的 Agent 执行内容（内部 action=remind，产品侧称「直接执行」） */
   message: string
 }
 
 export type RunSkillScheduleTaskPayload = {
   skillId: string
+  /** 到点执行时追加给 Agent 的补充问题或要求 */
+  instruction?: string
 }
 
 type ScheduleTaskBase = {
@@ -505,7 +509,7 @@ export type ScheduleRun = {
   startedAt: string
   endedAt?: string | null
   errorMessage?: string | null
-  /** 成功时落库的结果摘要（技能跑完写入；提醒可空） */
+  /** 成功时落库的结果摘要（Agent 执行完成后写入） */
   resultSummary?: string | null
 }
 
@@ -579,6 +583,18 @@ export type ScheduleReminderEvent = {
   title: string
   message: string
   at: string
+}
+
+/** 定时任务单次执行开始/结束，供全局提示与日历刷新 */
+export type ScheduleRunFinishedEvent = {
+  type: 'schedule_run_finished'
+  taskId: string
+  title: string
+  scheduledAt: string
+  runId: string
+  action: ScheduleTaskAction
+  status: Extract<ScheduleRunStatus, 'running' | 'succeeded' | 'failed'>
+  sessionId?: string | null
 }
 
 /* ────────── Agent events (chat → renderer) ────────── */

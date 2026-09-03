@@ -46,6 +46,7 @@ import {
   type ProjectType,
   type ScheduleOccurrence,
   type ScheduleReminderEvent,
+  type ScheduleRunFinishedEvent,
   type ScheduleRun,
   type ScheduleRunsGetInput,
   type ScheduleRunsListInput,
@@ -281,6 +282,16 @@ const shy = {
     }
     ipcRenderer.on(IPC.scheduleRemind, listener)
     return () => ipcRenderer.removeListener(IPC.scheduleRemind, listener)
+  },
+  onScheduleRunFinished: (handler: (event: ScheduleRunFinishedEvent) => void): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ScheduleRunFinishedEvent
+    ): void => {
+      handler(payload)
+    }
+    ipcRenderer.on(IPC.scheduleRunFinished, listener)
+    return () => ipcRenderer.removeListener(IPC.scheduleRunFinished, listener)
   }
 }
 
