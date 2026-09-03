@@ -18,9 +18,9 @@
 
 ## 4. OpenCode Go 模型列表
 
-- [ ] 4.1 内置 chat.completions 白名单常量（对照 Go 文档）
-- [ ] 4.2 主进程 `listOpenCodeGoModels`：`GET …/v1/models` + 短缓存；失败回退白名单；过滤非 completions（能辨则滤）
-- [ ] 4.3 IPC + preload；列表失败回退单测
+- [x] 4.1 内置 chat.completions 白名单常量（对照 Go 文档）
+- [x] 4.2 主进程 `listOpenCodeGoModels`：`GET …/v1/models` + 短缓存；失败回退白名单；过滤非 completions（能辨则滤）
+- [x] 4.3 IPC + preload；列表失败回退单测
 
 ## 5. 设置 UI
 

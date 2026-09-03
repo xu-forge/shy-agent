@@ -76,6 +76,21 @@ describe('mcp preload API', () => {
   })
 })
 
+describe('opencode go preload API', () => {
+  beforeEach(async () => {
+    vi.resetModules()
+    invoke.mockReset()
+    on.mockReset()
+    removeListener.mockReset()
+    await import('./index')
+  })
+
+  it('exposes listOpenCodeGoModels', () => {
+    exposed.listOpenCodeGoModels()
+    expect(invoke.mock.calls).toEqual([[IPC.opencodeGoModelsList]])
+  })
+})
+
 describe('session preload API', () => {
   beforeEach(async () => {
     vi.resetModules()

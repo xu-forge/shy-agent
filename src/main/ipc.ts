@@ -13,6 +13,7 @@ import {
   type ProjectType
 } from '../shared/ipc'
 import { getSettings, setSettings } from './settings/store'
+import { listOpenCodeGoModels } from './llm/opencode-go-models'
 import { parseMcpConfig, readMcpConfig, writeMcpConfig } from './mcp/config'
 import { getMcpManager } from './mcp/manager'
 import { runAgent, cancelAgent, pauseAgent, resumeAgent } from './agent/service'
@@ -173,6 +174,10 @@ export function registerCoreIpc(): void {
 
   ipcMain.handle(IPC.settingsGet, async () => getSettings())
   ipcMain.handle(IPC.settingsSet, async (_e, next: ModelSettings) => setSettings(next))
+  ipcMain.handle(IPC.opencodeGoModelsList, async () => {
+    const settings = await getSettings()
+    return listOpenCodeGoModels(settings.apiKey)
+  })
 
   ipcMain.handle(IPC.mcpGet, async () => readMcpConfig(resolveShyHome()))
   ipcMain.handle(IPC.mcpSet, async (_e, next: McpConfigFile) => {

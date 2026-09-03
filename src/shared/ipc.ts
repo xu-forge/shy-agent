@@ -15,6 +15,7 @@ export const IPC = {
   skillsSetEnabled: 'shy:skills-set-enabled',
   settingsGet: 'shy:settings-get',
   settingsSet: 'shy:settings-set',
+  opencodeGoModelsList: 'shy:opencode-go-models-list',
   mcpGet: 'shy:mcp-get',
   mcpSet: 'shy:mcp-set',
   mcpStatus: 'shy:mcp-status',
@@ -149,6 +150,11 @@ export type SkillSummary = {
   rootKind: SkillRootKind
   /** 启用状态（默认 true） */
   enabled: boolean
+}
+
+export type OpenCodeGoModelsResult = {
+  models: string[]
+  source: 'remote' | 'fallback'
 }
 
 export type ModelSettings = {

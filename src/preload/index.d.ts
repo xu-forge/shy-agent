@@ -18,6 +18,7 @@ import type {
   McpServerStatus,
   McpSetResult,
   ModelSettings,
+  OpenCodeGoModelsResult,
   Project,
   ProjectCreateResult,
   ProjectFileReadResult,
@@ -64,6 +65,7 @@ export interface ShyApi {
   getPaths: () => Promise<AppPaths>
   getSettings: () => Promise<ModelSettings>
   setSettings: (next: ModelSettings) => Promise<ModelSettings>
+  listOpenCodeGoModels: () => Promise<OpenCodeGoModelsResult>
   getMcpConfig: () => Promise<McpConfigFile>
   setMcpConfig: (next: McpConfigFile) => Promise<McpSetResult>
   getMcpStatus: () => Promise<McpServerStatus[]>
