@@ -40,6 +40,10 @@ import { splitAssistantContent } from '../lib/splitAssistantContent'
 import { RightDockIcon } from './RightDockIcon'
 import { OpenWithMenu } from './dock/OpenWithMenu'
 import { FolderIcon, GlobeIcon } from './dock/DockIcons'
+import { Select } from './ui'
+import type { ModelSettings } from '../../../shared/ipc'
+
+type LlmProvider = NonNullable<ModelSettings['provider']>
 
 type Props = {
   notice?: string
@@ -178,7 +182,10 @@ export function ChatWorkspace({
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null)
   const [boundProjectId, setBoundProjectId] = useState<string | null>(null)
   const [skills, setSkills] = useState<SkillSummary[]>([])
-  const [model, setModel] = useState('')
+  const [provider, setProvider] = useState<LlmProvider>('custom')
+  const [defaultModel, setDefaultModel] = useState('')
+  const [sessionModel, setSessionModel] = useState<string | null>(null)
+  const [goModels, setGoModels] = useState<string[]>([])
   const [alwaysAuthorize, setAlwaysAuthorize] = useState(false)
   const [sessionFiles, setSessionFiles] = useState<SessionFileRecord[]>([])
   const [slashIndex, setSlashIndex] = useState(0)
@@ -232,7 +239,8 @@ export function ChatWorkspace({
       .then((s) => {
         if (!alive) return
         setAlwaysAuthorize(Boolean(s.autoApproveTools))
-        setModel(s.model || '')
+        setProvider(s.provider ?? 'custom')
+        setDefaultModel(s.model || '')
       })
       .catch(() => {})
     window.shy
@@ -257,6 +265,36 @@ export function ChatWorkspace({
       offSkillsChanged()
     }
   }, [])
+
+  useEffect(() => {
+    if (provider !== 'opencode-go') {
+      setGoModels([])
+      return
+    }
+    let alive = true
+    void window.shy.listOpenCodeGoModels().then((r) => {
+      if (alive) setGoModels(r.models)
+    })
+    return () => {
+      alive = false
+    }
+  }, [provider])
+
+  const effectiveModel = sessionModel ?? defaultModel
+  const modelOptions = useMemo(() => {
+    const ids = [...goModels]
+    if (effectiveModel && !ids.includes(effectiveModel)) ids.unshift(effectiveModel)
+    return ids.map((id) => ({ value: id, label: id }))
+  }, [goModels, effectiveModel])
+
+  const onSessionModelChange = async (model: string): Promise<void> => {
+    try {
+      await window.shy.setSessionModel(sessionId, model)
+      setSessionModel(model)
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     let alive = true
@@ -592,7 +630,19 @@ export function ChatWorkspace({
             </svg>
             完全访问
           </button>
-          {model ? <span className="model-pill">{model}</span> : null}
+          {effectiveModel ? (
+            provider === 'opencode-go' ? (
+              <Select
+                className="model-pill-select"
+                value={effectiveModel}
+                options={modelOptions}
+                onChange={(model) => void onSessionModelChange(model)}
+                ariaLabel="会话模型"
+              />
+            ) : (
+              <span className="model-pill">{effectiveModel}</span>
+            )
+          ) : null}
         </div>
         <div className="composer-actions">
           {busy && !paused ? (
@@ -642,6 +692,7 @@ export function ChatWorkspace({
       setMode(detail.mode)
       setPaused(detail.paused)
       setBusy(detail.runStatus === 'running')
+      setSessionModel(detail.model ?? null)
       setBoundProjectId(resolveBoundProjectId(detail.projectId))
       setStatus('')
       setLastResult(null)

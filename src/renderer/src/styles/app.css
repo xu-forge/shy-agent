@@ -5921,6 +5921,39 @@
   font-size: 12px;
 }
 
+.composer-options .model-pill-select {
+  display: inline-block;
+  width: auto;
+  max-width: min(240px, 40vw);
+}
+
+.composer-options .model-pill-select .ui-select-trigger {
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border-radius: 8px;
+  background: #f0f2f5;
+  border: 1px solid transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #6b7280;
+  box-shadow: none;
+}
+
+.composer-options .model-pill-select .ui-select-trigger:hover:not(:disabled) {
+  background: #e8eaee;
+  border-color: transparent;
+}
+
+.composer-options .model-pill-select.open .ui-select-trigger {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.composer-options .model-pill-select .ui-select-caret {
+  width: 12px;
+  height: 12px;
+}
+
 .composer-send {
   width: 30px;
   height: 30px;

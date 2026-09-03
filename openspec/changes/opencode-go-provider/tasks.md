@@ -30,9 +30,9 @@
 
 ## 6. Composer 模型选择器
 
-- [ ] 6.1 ChatWorkspace：Go 时 `model-pill` → 可选择控件；选项来自 `listOpenCodeGoModels`
-- [ ] 6.2 选择写入当前会话 `model`，不改 `settings.model`；展示 `session.model ?? settings.model`
-- [ ] 6.3 Custom 时保持只读 pill；会话 model 不在列表时仍显示该 id
+- [x] 6.1 ChatWorkspace：Go 时 `model-pill` → 可选择控件；选项来自 `listOpenCodeGoModels`
+- [x] 6.2 选择写入当前会话 `model`，不改 `settings.model`；展示 `session.model ?? settings.model`
+- [x] 6.3 Custom 时保持只读 pill；会话 model 不在列表时仍显示该 id
 
 ## 7. 验收
 
