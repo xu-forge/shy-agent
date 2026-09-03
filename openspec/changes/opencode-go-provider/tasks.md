@@ -36,5 +36,5 @@
 
 ## 7. 验收
 
-- [ ] 7.1 `npm run typecheck && npm test` 通过
+- [x] 7.1 `npm run typecheck && npm test` 通过
 - [ ] 7.2 手测：Go+Key 请求打到 zen/go；两会话不同模型；新会话用全局默认；Custom 只读；列表失败有回退
