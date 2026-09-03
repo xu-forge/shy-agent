@@ -1,8 +1,8 @@
 ## 1. Settings：provider 与 Go 端点
 
-- [ ] 1.1 `ModelSettings` 增加 `provider?: 'custom' | 'opencode-go'`；store 缺省 `custom`；未知/缺失当 `custom`
-- [ ] 1.2 实现 `resolveLlmConfig(settings, session?)`：Go 固定 `baseURL=https://opencode.ai/zen/go/v1`；model = `session?.model ?? settings.model`
-- [ ] 1.3 settings / resolve 单测（custom 不改 URL；Go 强制 URL；覆盖优先）
+- [x] 1.1 `ModelSettings` 增加 `provider?: 'custom' | 'opencode-go'`；store 缺省 `custom`；未知/缺失当 `custom`
+- [x] 1.2 实现 `resolveLlmConfig(settings, session?)`：Go 固定 `baseURL=https://opencode.ai/zen/go/v1`；model = `session?.model ?? settings.model`
+- [x] 1.3 settings / resolve 单测（custom 不改 URL；Go 强制 URL；覆盖优先）
 
 ## 2. 会话 model 持久化
 

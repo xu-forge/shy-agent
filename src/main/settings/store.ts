@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname } from 'path'
 import type { ModelSettings } from '../../shared/ipc'
 import { getShyPaths } from '../paths'
+import { normalizeProvider } from '../agent/llm-config'
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
@@ -12,6 +13,7 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 }
 
 const DEFAULTS: ModelSettings = {
+  provider: 'custom',
   baseURL: 'https://api.openai.com/v1',
   apiKey: '',
   model: 'gpt-4o-mini',
@@ -33,7 +35,11 @@ export async function getSettings(): Promise<ModelSettings> {
   try {
     const raw = await readFile(settingsPath(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<ModelSettings>
-    return { ...DEFAULTS, ...parsed }
+    return {
+      ...DEFAULTS,
+      ...parsed,
+      provider: normalizeProvider(parsed.provider ?? DEFAULTS.provider)
+    }
   } catch {
     return { ...DEFAULTS }
   }
@@ -41,6 +47,7 @@ export async function getSettings(): Promise<ModelSettings> {
 
 export async function setSettings(next: ModelSettings): Promise<ModelSettings> {
   const merged: ModelSettings = {
+    provider: normalizeProvider(next.provider ?? DEFAULTS.provider),
     baseURL: next.baseURL?.trim() || DEFAULTS.baseURL,
     apiKey: next.apiKey ?? '',
     model: next.model?.trim() || DEFAULTS.model,

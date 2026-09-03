@@ -151,6 +151,8 @@ export type SkillSummary = {
 }
 
 export type ModelSettings = {
+  /** LLM 接入预设：custom 手填三字段；opencode-go 固定 Go 网关 */
+  provider?: 'custom' | 'opencode-go'
   baseURL: string
   apiKey: string
   model: string
