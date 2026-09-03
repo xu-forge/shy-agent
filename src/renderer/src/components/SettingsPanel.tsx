@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ModelSettings } from '../../../shared/ipc'
 import type { Theme } from '../lib/theme'
 import { NumberInput, Select, Switch } from './ui'
@@ -31,6 +31,8 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
   const [showKey, setShowKey] = useState(false)
   const [shyHome, setShyHome] = useState('')
   const [goModels, setGoModels] = useState<string[]>([])
+  const [persistedProvider, setPersistedProvider] = useState<LlmProvider>('custom')
+  const customBaseURLRef = useRef('')
 
   const provider: LlmProvider = form.provider ?? 'custom'
 
@@ -40,6 +42,9 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
       if (!alive) return
       setForm(s)
       setShowKey(false)
+      const p = s.provider ?? 'custom'
+      setPersistedProvider(p)
+      if (p === 'custom') customBaseURLRef.current = s.baseURL
     })
     void window.shy.getPaths().then((p) => {
       if (!alive) return
@@ -51,7 +56,7 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
   }, [])
 
   useEffect(() => {
-    if (provider !== 'opencode-go') {
+    if (persistedProvider !== 'opencode-go') {
       setGoModels([])
       return
     }
@@ -63,14 +68,15 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
     return () => {
       alive = false
     }
-  }, [provider, saved])
+  }, [persistedProvider, saved])
 
   const setProvider = (next: LlmProvider): void => {
     if (next === 'opencode-go') {
+      if (provider === 'custom') customBaseURLRef.current = form.baseURL
       setForm({ ...form, provider: next, baseURL: OPENCODE_GO_BASE_URL })
       return
     }
-    setForm({ ...form, provider: next })
+    setForm({ ...form, provider: next, baseURL: customBaseURLRef.current })
   }
 
   const onSave = async (): Promise<void> => {
@@ -80,6 +86,8 @@ export function SettingsPanel({ theme, onToggleTheme }: Props): React.JSX.Elemen
         : { ...form, provider: 'custom' }
     await window.shy.setSettings(payload)
     setForm(payload)
+    setPersistedProvider(payload.provider ?? 'custom')
+    if ((payload.provider ?? 'custom') === 'custom') customBaseURLRef.current = payload.baseURL
     setSaved(true)
     setTimeout(() => setSaved(false), 1600)
   }

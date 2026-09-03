@@ -1,5 +1,6 @@
-import { OPENCODE_GO_BASE_URL } from '../agent/llm-config'
-import type { OpenCodeGoModelsResult } from '../../shared/ipc'
+import { OPENCODE_GO_BASE_URL, normalizeProvider } from '../agent/llm-config'
+import { httpFetchJson } from '../net/http-get'
+import type { ModelSettings, OpenCodeGoModelsResult } from '../../shared/ipc'
 
 export type { OpenCodeGoModelsResult }
 
@@ -49,10 +50,12 @@ type ModelEntry = {
 type ListDeps = {
   fetchFn?: typeof fetch
   now?: () => number
+  timeoutMs?: number
 }
 
 const MODELS_URL = `${OPENCODE_GO_BASE_URL}/models`
 const CACHE_TTL_MS = 60_000
+const DEFAULT_TIMEOUT_MS = 12_000
 
 let cache: { apiKey: string; expiresAt: number; result: OpenCodeGoModelsResult } | null = null
 
@@ -60,7 +63,7 @@ export function resetOpenCodeGoModelsCacheForTests(): void {
   cache = null
 }
 
-function fallbackResult(): OpenCodeGoModelsResult {
+export function fallbackOpenCodeGoModelsResult(): OpenCodeGoModelsResult {
   return {
     models: [...OPENCODE_GO_CHAT_COMPLETIONS_WHITELIST],
     source: 'fallback'
@@ -109,15 +112,34 @@ function parseRemoteModels(payload: unknown): string[] {
   return sortByWhitelistOrder([...new Set(ids)])
 }
 
-async function fetchRemoteModels(apiKey: string, fetchFn: typeof fetch): Promise<string[]> {
-  const res = await fetchFn(MODELS_URL, {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: 'application/json'
+async function fetchRemoteModels(apiKey: string, deps: ListDeps): Promise<string[]> {
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  let payload: unknown
+
+  if (deps.fetchFn) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    timer.unref?.()
+    try {
+      const res = await deps.fetchFn(MODELS_URL, {
+        signal: ctrl.signal,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/json'
+        }
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      payload = await res.json()
+    } finally {
+      clearTimeout(timer)
     }
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const payload = await res.json()
+  } else {
+    payload = await httpFetchJson(MODELS_URL, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeoutMs
+    })
+  }
+
   const models = parseRemoteModels(payload)
   if (models.length === 0) throw new Error('empty models list')
   return models
@@ -128,23 +150,30 @@ export async function listOpenCodeGoModels(
   deps: ListDeps = {}
 ): Promise<OpenCodeGoModelsResult> {
   const trimmedKey = apiKey.trim()
-  if (!trimmedKey) return fallbackResult()
+  if (!trimmedKey) return fallbackOpenCodeGoModelsResult()
 
   const now = deps.now ?? Date.now
-  const fetchFn = deps.fetchFn ?? fetch
 
   if (cache && cache.apiKey === trimmedKey && cache.expiresAt > now()) {
     return cache.result
   }
 
   try {
-    const models = await fetchRemoteModels(trimmedKey, fetchFn)
+    const models = await fetchRemoteModels(trimmedKey, deps)
     const result: OpenCodeGoModelsResult = { models, source: 'remote' }
     cache = { apiKey: trimmedKey, expiresAt: now() + CACHE_TTL_MS, result }
     return result
   } catch {
-    const result = fallbackResult()
-    cache = { apiKey: trimmedKey, expiresAt: now() + CACHE_TTL_MS, result }
-    return result
+    return fallbackOpenCodeGoModelsResult()
   }
+}
+
+export async function listOpenCodeGoModelsFromSettings(
+  settings: ModelSettings,
+  deps: ListDeps = {}
+): Promise<OpenCodeGoModelsResult> {
+  if (normalizeProvider(settings.provider) !== 'opencode-go') {
+    return fallbackOpenCodeGoModelsResult()
+  }
+  return listOpenCodeGoModels(settings.apiKey, deps)
 }

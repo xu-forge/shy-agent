@@ -58,6 +58,7 @@ type Props = {
   dockMode?: DockMode
   onDockModeChange?: (mode: DockMode) => void
   activeView?: ActiveView
+  settingsEpoch?: number
 }
 
 type Msg = {
@@ -167,7 +168,8 @@ export function ChatWorkspace({
   showDockToggle = false,
   dockMode = null,
   onDockModeChange,
-  activeView
+  activeView,
+  settingsEpoch = 0
 }: Props): React.JSX.Element {
   const [mode, setMode] = useState<ModeKey>('interactive')
   const [busy, setBusy] = useState(false)
@@ -243,6 +245,13 @@ export function ChatWorkspace({
         setDefaultModel(s.model || '')
       })
       .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [settingsEpoch])
+
+  useEffect(() => {
+    let alive = true
     window.shy
       .listSkills()
       .then((list) => {

@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   OPENCODE_GO_CHAT_COMPLETIONS_WHITELIST,
   listOpenCodeGoModels,
+  listOpenCodeGoModelsFromSettings,
   resetOpenCodeGoModelsCacheForTests
 } from './opencode-go-models'
 import { OPENCODE_GO_BASE_URL } from '../agent/llm-config'
+import type { ModelSettings } from '../../shared/ipc'
 
 const MODELS_URL = `${OPENCODE_GO_BASE_URL}/models`
 
@@ -96,7 +98,7 @@ describe('listOpenCodeGoModels', () => {
     expect(result.models.length).toBeGreaterThan(0)
   })
 
-  it('60s 内复用缓存', async () => {
+  it('60s 内复用远程成功缓存', async () => {
     let now = 1_000
     const fetchFn = mockFetchJson({ data: [{ id: 'glm-5.3' }] })
 
@@ -109,5 +111,60 @@ describe('listOpenCodeGoModels', () => {
     now += 31_000
     await listOpenCodeGoModels('sk-test', { fetchFn, now: () => now })
     expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('失败回退不写入缓存', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new Error('network down'))
+
+    await listOpenCodeGoModels('sk-test', { fetchFn })
+    await listOpenCodeGoModels('sk-test', { fetchFn })
+
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('请求超时时回退白名单', async () => {
+    vi.useFakeTimers()
+    const fetchFn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      void input
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }))
+        })
+      })
+    })
+
+    const promise = listOpenCodeGoModels('sk-test', { fetchFn, timeoutMs: 100 })
+    await vi.advanceTimersByTimeAsync(101)
+    const result = await promise
+
+    expect(result.source).toBe('fallback')
+    expect(result.models).toEqual([...OPENCODE_GO_CHAT_COMPLETIONS_WHITELIST])
+    vi.useRealTimers()
+  })
+})
+
+describe('listOpenCodeGoModelsFromSettings', () => {
+  beforeEach(() => {
+    resetOpenCodeGoModelsCacheForTests()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('provider 非 opencode-go 时不发起远程 fetch', async () => {
+    const fetchFn = mockFetchJson({ data: [{ id: 'glm-5.3' }] })
+    const settings: ModelSettings = {
+      provider: 'custom',
+      baseURL: 'https://api.minimaxi.com/v1',
+      apiKey: 'sk-custom',
+      model: 'MiniMax-M3'
+    }
+
+    const result = await listOpenCodeGoModelsFromSettings(settings, { fetchFn })
+
+    expect(fetchFn).not.toHaveBeenCalled()
+    expect(result.source).toBe('fallback')
+    expect(result.models).toEqual([...OPENCODE_GO_CHAT_COMPLETIONS_WHITELIST])
   })
 })
