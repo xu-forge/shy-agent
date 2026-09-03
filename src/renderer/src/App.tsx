@@ -342,7 +342,15 @@ function App(): React.JSX.Element {
           <PlaceholderView title="素材工作区" />
         ) : null}
         {layout.main === 'skills' ? <SkillsView /> : null}
-        {layout.main === 'calendar' ? <CalendarView /> : null}
+        {layout.main === 'calendar' ? (
+          <CalendarView
+            onContinueSession={(id) => {
+              setSessionId(id)
+              setNav('projects')
+              void refreshSessions()
+            }}
+          />
+        ) : null}
       </div>
       {sessionId ? (
         <ChatWorkspaceHost

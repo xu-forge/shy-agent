@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type {
   CreateScheduleTaskInput,
+  ScheduleAgentMode,
   ScheduleConflictWarning,
   ScheduleOccurrence,
+  ScheduleRun,
   ScheduleTask,
   ScheduleTaskAction,
   SkillSummary,
@@ -13,11 +15,13 @@ import { groupOccurrencesByDay } from '../lib/calendarOccurrences'
 import {
   type ScheduleViewMode,
   formatRangeTitle,
-  rangeBounds
+  rangeBounds,
+  scheduleRunKey
 } from '../lib/calendarScheduleUi'
 import { ScheduleEditor } from './ScheduleEditor'
 import { ScheduleMonthView } from './schedule/ScheduleMonthView'
 import { ScheduleOccurrenceDetail } from './schedule/ScheduleOccurrenceDetail'
+import { ScheduleRunResultModal } from './schedule/ScheduleRunResultModal'
 import { ScheduleWeekView } from './schedule/ScheduleWeekView'
 import { Field, Input, Modal, Select, TextArea } from './ui'
 
@@ -40,6 +44,9 @@ type FormState = {
   message: string
   skillId: string
   schedule: WorkflowSchedule
+  agentMode: ScheduleAgentMode
+  allowAutoConfirm: boolean
+  projectId: string | null
 }
 
 function emptyForm(date: Date, skills: SkillSummary[]): FormState {
@@ -48,7 +55,10 @@ function emptyForm(date: Date, skills: SkillSummary[]): FormState {
     action: 'remind',
     message: '',
     skillId: skills[0]?.id ?? '',
-    schedule: defaultSchedule(date)
+    schedule: defaultSchedule(date),
+    agentMode: 'goal',
+    allowAutoConfirm: false,
+    projectId: null
   }
 }
 
@@ -59,7 +69,10 @@ function formFromTask(task: ScheduleTask): FormState {
     action: task.action,
     message: task.action === 'remind' ? task.payload.message : '',
     skillId: task.action === 'run_skill' ? task.payload.skillId : '',
-    schedule: task.schedule
+    schedule: task.schedule,
+    agentMode: task.agentMode ?? 'goal',
+    allowAutoConfirm: Boolean(task.allowAutoConfirm),
+    projectId: task.projectId ?? null
   }
 }
 
@@ -83,20 +96,34 @@ type RangeData = {
   tasks: ScheduleTask[]
   warnings: ScheduleConflictWarning[]
   occurrences: ScheduleOccurrence[]
+  runs: ScheduleRun[]
 }
 
 async function fetchRangeData(start: Date, end: Date): Promise<RangeData> {
-  const [listResult, occs] = await Promise.all([
+  const [listResult, occs, runs] = await Promise.all([
     window.shy.scheduleTasksList(),
     window.shy.scheduleTasksExpand({
       rangeStart: start.toISOString(),
       rangeEnd: end.toISOString()
+    }),
+    window.shy.scheduleRunsList({
+      rangeStart: start.toISOString(),
+      rangeEnd: end.toISOString()
     })
   ])
-  return { tasks: listResult.tasks, warnings: listResult.warnings, occurrences: occs }
+  return {
+    tasks: listResult.tasks,
+    warnings: listResult.warnings,
+    occurrences: occs,
+    runs
+  }
 }
 
-export function CalendarView(): React.JSX.Element {
+type Props = {
+  onContinueSession?: (sessionId: string) => void
+}
+
+export function CalendarView({ onContinueSession }: Props): React.JSX.Element {
   const now = new Date()
   const [viewMode, setViewMode] = useState<ScheduleViewMode>('month')
   const [year, setYear] = useState(now.getFullYear())
@@ -104,10 +131,12 @@ export function CalendarView(): React.JSX.Element {
   const [weekAnchor, setWeekAnchor] = useState(() => new Date())
   const [tasks, setTasks] = useState<ScheduleTask[]>([])
   const [occurrences, setOccurrences] = useState<ScheduleOccurrence[]>([])
+  const [runs, setRuns] = useState<ScheduleRun[]>([])
   const [warnings, setWarnings] = useState<ScheduleConflictWarning[]>([])
   const [skills, setSkills] = useState<SkillSummary[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const [detailOcc, setDetailOcc] = useState<ScheduleOccurrence | null>(null)
+  const [resultOcc, setResultOcc] = useState<ScheduleOccurrence | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [note, setNote] = useState('')
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
@@ -115,6 +144,19 @@ export function CalendarView(): React.JSX.Element {
   const tasksById = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
   const skillsById = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
   const occurrencesByDay = useMemo(() => groupOccurrencesByDay(occurrences), [occurrences])
+  const runsByKey = useMemo(() => {
+    const map = new Map<string, ScheduleRun>()
+    for (const run of runs) {
+      map.set(scheduleRunKey(run.taskId, run.scheduledAt), run)
+    }
+    return map
+  }, [runs])
+
+  const getRun = useCallback(
+    (occ: ScheduleOccurrence): ScheduleRun | undefined =>
+      runsByKey.get(scheduleRunKey(occ.taskId, occ.at)),
+    [runsByKey]
+  )
 
   const rangeTitle = useMemo(() => {
     if (viewMode === 'week') return formatRangeTitle('week', weekAnchor)
@@ -125,6 +167,7 @@ export function CalendarView(): React.JSX.Element {
     setTasks(data.tasks)
     setWarnings(data.warnings)
     setOccurrences(data.occurrences)
+    setRuns(data.runs)
   }
 
   const load = useCallback(async () => {
@@ -187,6 +230,7 @@ export function CalendarView(): React.JSX.Element {
 
   const openCreate = (date: Date): void => {
     setDetailOcc(null)
+    setResultOcc(null)
     setForm(emptyForm(date, skills))
   }
 
@@ -194,7 +238,19 @@ export function CalendarView(): React.JSX.Element {
     const task = tasksById.get(taskId)
     if (task) {
       setDetailOcc(null)
+      setResultOcc(null)
       setForm(formFromTask(task))
+    }
+  }
+
+  const selectOccurrence = (occ: ScheduleOccurrence): void => {
+    const run = getRun(occ)
+    if (run) {
+      setDetailOcc(null)
+      setResultOcc(occ)
+    } else {
+      setResultOcc(null)
+      setDetailOcc(occ)
     }
   }
 
@@ -204,12 +260,29 @@ export function CalendarView(): React.JSX.Element {
     const schedule: WorkflowSchedule = { ...form.schedule, cron: '' }
     const title = form.title.trim()
     const enabled = schedule.enabled
+    const policy = {
+      agentMode: form.agentMode,
+      allowAutoConfirm: form.allowAutoConfirm,
+      projectId: form.projectId
+    }
 
     if (form.id) {
-      const patch: UpdateScheduleTaskInput = { title, enabled, schedule, ...fields }
+      const patch: UpdateScheduleTaskInput = {
+        title,
+        enabled,
+        schedule,
+        ...fields,
+        ...policy
+      }
       await window.shy.scheduleTasksUpdate({ id: form.id, patch })
     } else {
-      const input: CreateScheduleTaskInput = { title, enabled, schedule, ...fields }
+      const input: CreateScheduleTaskInput = {
+        title,
+        enabled,
+        schedule,
+        ...fields,
+        ...policy
+      }
       await window.shy.scheduleTasksCreate(input)
     }
     setForm(null)
@@ -256,6 +329,9 @@ export function CalendarView(): React.JSX.Element {
     detailTask && detailTask.action === 'run_skill'
       ? skillsById.get(detailTask.payload.skillId)?.name
       : undefined
+
+  const resultTask = resultOcc ? tasksById.get(resultOcc.taskId) : undefined
+  const resultRun = resultOcc ? getRun(resultOcc) : undefined
 
   return (
     <div className="main pane calendar-view">
@@ -359,7 +435,8 @@ export function CalendarView(): React.JSX.Element {
             weekAnchor={weekAnchor}
             occurrencesByDay={occurrencesByDay}
             tasksById={tasksById}
-            onSelectOccurrence={setDetailOcc}
+            getRun={getRun}
+            onSelectOccurrence={selectOccurrence}
             onEmptyDay={openCreate}
           />
         ) : (
@@ -368,8 +445,9 @@ export function CalendarView(): React.JSX.Element {
             month={month}
             occurrencesByDay={occurrencesByDay}
             tasksById={tasksById}
+            getRun={getRun}
             dragOverKey={dragOverKey}
-            onSelectOccurrence={setDetailOcc}
+            onSelectOccurrence={selectOccurrence}
             onEmptyDay={openCreate}
             onDragStart={handleDragStart}
             onDragOverKey={setDragOverKey}
@@ -385,6 +463,17 @@ export function CalendarView(): React.JSX.Element {
           skillName={detailSkillName}
           onClose={() => setDetailOcc(null)}
           onOpenTask={() => openEdit(detailOcc.taskId)}
+        />
+      ) : null}
+
+      {resultOcc && resultRun ? (
+        <ScheduleRunResultModal
+          occurrence={resultOcc}
+          run={resultRun}
+          task={resultTask}
+          onClose={() => setResultOcc(null)}
+          onOpenTask={() => openEdit(resultOcc.taskId)}
+          onContinueSession={onContinueSession}
         />
       ) : null}
 
@@ -470,6 +559,10 @@ export function CalendarView(): React.JSX.Element {
             <ScheduleEditor
               schedule={form.schedule}
               onChange={(schedule) => setForm({ ...form, schedule })}
+              agentMode={form.agentMode}
+              allowAutoConfirm={form.allowAutoConfirm}
+              projectId={form.projectId}
+              onPolicyChange={(patch) => setForm({ ...form, ...patch })}
             />
           </div>
         </Modal>

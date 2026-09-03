@@ -38,6 +38,8 @@ export const IPC = {
   scheduleTasksUpdate: 'shy:schedule-tasks-update',
   scheduleTasksDelete: 'shy:schedule-tasks-delete',
   scheduleTasksExpand: 'shy:schedule-tasks-expand',
+  scheduleRunsGet: 'shy:schedule-runs-get',
+  scheduleRunsList: 'shy:schedule-runs-list',
   scheduleRemind: 'shy:schedule-remind',
   logsAgentList: 'shy:logs-agent-list',
   logsAgentRead: 'shy:logs-agent-read',
@@ -445,6 +447,9 @@ export type WorkflowSchedule = {
 
 export type ScheduleTaskAction = 'remind' | 'run_skill'
 
+/** 定时跑技能时的 Agent 模式；normal = 产品「普通模式」= 运行时 interactive */
+export type ScheduleAgentMode = 'goal' | 'normal'
+
 export type RemindScheduleTaskPayload = {
   message: string
 }
@@ -458,6 +463,12 @@ type ScheduleTaskBase = {
   title: string
   enabled: boolean
   schedule: WorkflowSchedule
+  /** 默认 goal */
+  agentMode: ScheduleAgentMode
+  /** 默认 false：高危仍需确认 */
+  allowAutoConfirm: boolean
+  /** 空 = 未选择项目 */
+  projectId?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -467,6 +478,33 @@ export type ScheduleTask = ScheduleTaskBase &
     | { action: 'remind'; payload: RemindScheduleTaskPayload }
     | { action: 'run_skill'; payload: RunSkillScheduleTaskPayload }
   )
+
+export type ScheduleRunStatus = 'running' | 'succeeded' | 'failed' | 'waiting_confirm'
+
+export type ScheduleRun = {
+  id: string
+  taskId: string
+  /** 与 occurrence.at 对齐的 ISO（分钟精度） */
+  scheduledAt: string
+  sessionId?: string | null
+  action: ScheduleTaskAction
+  status: ScheduleRunStatus
+  startedAt: string
+  endedAt?: string | null
+  errorMessage?: string | null
+  /** 成功时落库的结果摘要（技能跑完写入；提醒可空） */
+  resultSummary?: string | null
+}
+
+export type ScheduleRunsGetInput = {
+  taskId: string
+  scheduledAt: string
+}
+
+export type ScheduleRunsListInput = {
+  rangeStart: string | number
+  rangeEnd: string | number
+}
 
 export type ScheduleOccurrence = {
   taskId: string
@@ -482,10 +520,27 @@ export type ScheduleConflictWarning = {
   message: string
 }
 
-export type CreateScheduleTaskInput = Omit<ScheduleTask, 'id' | 'createdAt' | 'updatedAt'>
+export type CreateScheduleTaskInput = Omit<
+  ScheduleTask,
+  'id' | 'createdAt' | 'updatedAt' | 'agentMode' | 'allowAutoConfirm' | 'projectId'
+> & {
+  agentMode?: ScheduleAgentMode
+  allowAutoConfirm?: boolean
+  projectId?: string | null
+}
 
 export type UpdateScheduleTaskInput = Partial<
-  Pick<ScheduleTask, 'title' | 'enabled' | 'schedule' | 'action' | 'payload'>
+  Pick<
+    ScheduleTask,
+    | 'title'
+    | 'enabled'
+    | 'schedule'
+    | 'action'
+    | 'payload'
+    | 'agentMode'
+    | 'allowAutoConfirm'
+    | 'projectId'
+  >
 >
 
 export type ScheduleTasksListResult = {

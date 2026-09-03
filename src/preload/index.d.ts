@@ -36,6 +36,9 @@ import type {
   ProjectType,
   ScheduleOccurrence,
   ScheduleReminderEvent,
+  ScheduleRun,
+  ScheduleRunsGetInput,
+  ScheduleRunsListInput,
   ScheduleTask,
   ScheduleTaskSaveResult,
   ScheduleTasksExpandInput,
@@ -133,6 +136,8 @@ export interface ShyApi {
   }) => Promise<ScheduleTaskSaveResult>
   scheduleTasksDelete: (id: string) => Promise<{ ok: boolean }>
   scheduleTasksExpand: (input: ScheduleTasksExpandInput) => Promise<ScheduleOccurrence[]>
+  scheduleRunsGet: (input: ScheduleRunsGetInput) => Promise<ScheduleRun | null>
+  scheduleRunsList: (input: ScheduleRunsListInput) => Promise<ScheduleRun[]>
   listAgentLogs: () => Promise<AgentLogFileSummary[]>
   readAgentLog: (input: {
     name: string

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type {
   CreateScheduleTaskInput,
+  ScheduleAgentMode,
   ScheduleTask,
   ScheduleTaskAction,
   UpdateScheduleTaskInput,
@@ -9,7 +10,8 @@ import type {
 import { getDb } from '../memory/db'
 
 export function ensureScheduleTables(): void {
-  getDb().exec(`
+  const db = getDb()
+  db.exec(`
     CREATE TABLE IF NOT EXISTS schedule_tasks (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -23,6 +25,23 @@ export function ensureScheduleTables(): void {
     CREATE INDEX IF NOT EXISTS idx_schedule_tasks_updated
       ON schedule_tasks(updated_at DESC);
   `)
+  const columns = db.prepare(`PRAGMA table_info(schedule_tasks)`).all() as { name: string }[]
+  const names = new Set(columns.map((c) => c.name))
+  if (!names.has('agent_mode')) {
+    db.exec(`ALTER TABLE schedule_tasks ADD COLUMN agent_mode TEXT NOT NULL DEFAULT 'goal'`)
+  }
+  if (!names.has('allow_auto_confirm')) {
+    db.exec(
+      `ALTER TABLE schedule_tasks ADD COLUMN allow_auto_confirm INTEGER NOT NULL DEFAULT 0`
+    )
+  }
+  if (!names.has('project_id')) {
+    db.exec(`ALTER TABLE schedule_tasks ADD COLUMN project_id TEXT`)
+  }
+}
+
+function normalizeAgentMode(value: unknown): ScheduleAgentMode {
+  return value === 'normal' ? 'normal' : 'goal'
 }
 
 export function listScheduleTasks(): ScheduleTask[] {
@@ -44,9 +63,18 @@ export function getScheduleTask(id: string): ScheduleTask | null {
 export function createScheduleTask(input: CreateScheduleTaskInput): ScheduleTask {
   ensureScheduleTables()
   const timestamp = new Date().toISOString()
+  const agentMode = normalizeAgentMode(input.agentMode)
+  const allowAutoConfirm = Boolean(input.allowAutoConfirm)
+  const projectId =
+    input.projectId === undefined || input.projectId === null || input.projectId === ''
+      ? null
+      : String(input.projectId)
   const task = {
     ...input,
     id: randomUUID(),
+    agentMode,
+    allowAutoConfirm,
+    projectId,
     schedule: syncScheduleEnabled(input.schedule, input.enabled),
     createdAt: timestamp,
     updatedAt: timestamp
@@ -55,8 +83,8 @@ export function createScheduleTask(input: CreateScheduleTaskInput): ScheduleTask
   getDb()
     .prepare(
       `INSERT INTO schedule_tasks
-       (id, title, enabled, action, payload, schedule, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, title, enabled, action, payload, schedule, agent_mode, allow_auto_confirm, project_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       task.id,
@@ -65,6 +93,9 @@ export function createScheduleTask(input: CreateScheduleTaskInput): ScheduleTask
       task.action,
       JSON.stringify(task.payload),
       JSON.stringify(task.schedule),
+      task.agentMode,
+      task.allowAutoConfirm ? 1 : 0,
+      task.projectId,
       task.createdAt,
       task.updatedAt
     )
@@ -81,18 +112,34 @@ export function updateScheduleTask(
 
   const enabled = patch.enabled ?? current.enabled
   const schedule = syncScheduleEnabled(patch.schedule ?? current.schedule, enabled)
+  const agentMode = normalizeAgentMode(patch.agentMode ?? current.agentMode)
+  const allowAutoConfirm =
+    patch.allowAutoConfirm !== undefined
+      ? Boolean(patch.allowAutoConfirm)
+      : current.allowAutoConfirm
+  const projectId =
+    patch.projectId !== undefined
+      ? patch.projectId === null || patch.projectId === ''
+        ? null
+        : String(patch.projectId)
+      : (current.projectId ?? null)
+
   const updated = {
     ...current,
     ...patch,
     enabled,
     schedule,
+    agentMode,
+    allowAutoConfirm,
+    projectId,
     updatedAt: new Date().toISOString()
   } as ScheduleTask
 
   getDb()
     .prepare(
       `UPDATE schedule_tasks
-       SET title = ?, enabled = ?, action = ?, payload = ?, schedule = ?, updated_at = ?
+       SET title = ?, enabled = ?, action = ?, payload = ?, schedule = ?,
+           agent_mode = ?, allow_auto_confirm = ?, project_id = ?, updated_at = ?
        WHERE id = ?`
     )
     .run(
@@ -101,6 +148,9 @@ export function updateScheduleTask(
       updated.action,
       JSON.stringify(updated.payload),
       JSON.stringify(updated.schedule),
+      updated.agentMode,
+      updated.allowAutoConfirm ? 1 : 0,
+      updated.projectId ?? null,
       updated.updatedAt,
       id
     )
@@ -115,12 +165,12 @@ export function deleteScheduleTask(id: string): boolean {
 }
 
 function syncScheduleEnabled(schedule: WorkflowSchedule, enabled: boolean): WorkflowSchedule {
-  // 任务顶层 enabled 是唯一权威值；兼容 WorkflowSchedule 时同步其同名字段。
   return { ...schedule, enabled }
 }
 
 function rowToScheduleTask(row: Record<string, unknown>): ScheduleTask {
   const enabled = Number(row.enabled) === 1
+  const projectRaw = row.project_id
   return {
     id: String(row.id),
     title: String(row.title),
@@ -131,6 +181,12 @@ function rowToScheduleTask(row: Record<string, unknown>): ScheduleTask {
       JSON.parse(String(row.schedule || '{}')) as WorkflowSchedule,
       enabled
     ),
+    agentMode: normalizeAgentMode(row.agent_mode),
+    allowAutoConfirm: Number(row.allow_auto_confirm) === 1,
+    projectId:
+      projectRaw === undefined || projectRaw === null || projectRaw === ''
+        ? null
+        : String(projectRaw),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at)
   } as ScheduleTask

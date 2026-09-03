@@ -1,10 +1,26 @@
-import type { ScheduleOccurrence, ScheduleTask, WorkflowSchedule } from '../../../shared/ipc'
+import type {
+  ScheduleOccurrence,
+  ScheduleRun,
+  ScheduleTask,
+  WorkflowSchedule
+} from '../../../shared/ipc'
 
 export type ScheduleViewMode = 'week' | 'month'
 
-export type OccurrenceStatus = 'pending' | 'paused' | 'past'
+export type OccurrenceStatus =
+  | 'pending'
+  | 'paused'
+  | 'missed'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'waiting_confirm'
 
 export const WEEKDAY_LABELS_MON = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const
+
+export function scheduleRunKey(taskId: string, scheduledAt: string): string {
+  return `${taskId}::${scheduledAt}`
+}
 
 function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
@@ -49,20 +65,44 @@ export function buildMondayGrid(year: number, month: number): Date[] {
 export function occurrenceStatus(
   occ: Pick<ScheduleOccurrence, 'at'>,
   task: Pick<ScheduleTask, 'enabled'> | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  run?: ScheduleRun | null
 ): OccurrenceStatus {
+  if (run) {
+    switch (run.status) {
+      case 'running':
+        return 'running'
+      case 'succeeded':
+        return 'succeeded'
+      case 'failed':
+        return 'failed'
+      case 'waiting_confirm':
+        return 'waiting_confirm'
+      default:
+        break
+    }
+  }
   if (task && !task.enabled) return 'paused'
   const t = Date.parse(occ.at)
-  if (!Number.isNaN(t) && t < now.getTime()) return 'past'
+  if (!Number.isNaN(t) && t < now.getTime()) return 'missed'
   return 'pending'
 }
 
 export function occurrenceStatusLabel(status: OccurrenceStatus): string {
   switch (status) {
+    case 'running':
+      return '执行中'
+    case 'succeeded':
+      return '执行成功'
+    case 'failed':
+      return '执行失败'
+    case 'waiting_confirm':
+      return '等待确认'
+    case 'missed':
+      return '未执行'
     case 'paused':
       return '已暂停'
-    case 'past':
-      return '已过期'
+    case 'pending':
     default:
       return '待执行'
   }

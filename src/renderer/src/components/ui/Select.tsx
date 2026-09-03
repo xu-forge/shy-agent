@@ -19,7 +19,7 @@ type Props = {
  *
  * - 弹层 position:fixed，按触发器 rect 定位，下方放不下时向上翻
  * - 键盘：↑/↓ 移动高亮，Enter/Space 选中，Esc/Tab 关闭，Home/End 跳首尾
- * - 外点 / 滚动 / 窗口缩放时关闭
+ * - 外点 / 窗口缩放 / 外部滚动时关闭（菜单自身滚动不关）
  */
 export function Select({
   value,
@@ -74,14 +74,20 @@ export function Select({
         setOpen(false)
       }
     }
-    const close = (): void => setOpen(false)
+    // capture 能收到任意元素的 scroll；菜单自身滚动 / 打开时 scrollIntoView 不能关
+    const onScroll = (e: Event): void => {
+      const t = e.target
+      if (t instanceof Node && listRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    const onResize = (): void => setOpen(false)
     document.addEventListener('mousedown', onDocMouseDown)
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
     return () => {
       document.removeEventListener('mousedown', onDocMouseDown)
-      window.removeEventListener('scroll', close, true)
-      window.removeEventListener('resize', close)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, value])

@@ -3190,6 +3190,9 @@
   flex-direction: column;
   gap: 10px;
 }
+.schedule-editor-policy-title {
+  margin-top: 8px;
+}
 .row-check {
   display: flex !important;
   flex-direction: row !important;
@@ -9299,9 +9302,23 @@
 .sch-detail-status-pill.status-paused {
   color: var(--text-muted);
 }
-.sch-week-card-status.status-past,
-.sch-detail-status-pill.status-past {
+.sch-week-card-status.status-missed,
+.sch-detail-status-pill.status-missed {
   color: var(--text-secondary);
+}
+.sch-week-card-status.status-running,
+.sch-detail-status-pill.status-running,
+.sch-week-card-status.status-waiting_confirm,
+.sch-detail-status-pill.status-waiting_confirm {
+  color: #2563eb;
+}
+.sch-week-card-status.status-succeeded,
+.sch-detail-status-pill.status-succeeded {
+  color: #16a34a;
+}
+.sch-week-card-status.status-failed,
+.sch-detail-status-pill.status-failed {
+  color: #dc2626;
 }
 
 /* —— 月 —— */
@@ -9461,6 +9478,39 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.sch-run-result-body {
+  max-height: min(420px, 55vh);
+  overflow: auto;
+}
+
+.sch-run-result-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.sch-run-result-md {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.sch-run-result-md .md {
+  max-width: none;
+}
+
+.sch-run-result-md .md > :first-child {
+  margin-top: 0;
+}
+
+.sch-run-result-md .md > :last-child {
+  margin-bottom: 0;
 }
 
 [data-theme='dark'] .sch-week,

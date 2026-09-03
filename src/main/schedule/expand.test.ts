@@ -79,6 +79,8 @@ describe('expandOccurrences', () => {
         task({
           id: 'monthly',
           title: '月报',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-01T00:00:00.000Z',
           schedule: schedule({ frequency: 'monthly', time: '18:00', dayOfMonth: 15 })
         })
       ],
@@ -117,6 +119,49 @@ describe('expandOccurrences', () => {
         new Date(2026, 7, 11)
       )
     ).toEqual([])
+  })
+
+  it('不展开早于 createdAt 的实例', () => {
+    const created = new Date(2026, 7, 11, 12, 0)
+    const occurrences = expandOccurrences(
+      [
+        task({
+          id: 'daily',
+          title: '新建日报',
+          createdAt: created.toISOString(),
+          updatedAt: created.toISOString(),
+          schedule: schedule({ time: '09:00' })
+        })
+      ],
+      new Date(2026, 7, 10, 0, 0),
+      new Date(2026, 7, 12, 23, 59)
+    )
+
+    // 8/10、8/11 09:00 都早于创建时刻 12:00，只剩 8/12
+    expect(occurrences.map((o) => o.at)).toEqual([
+      new Date(2026, 7, 12, 9, 0).toISOString()
+    ])
+  })
+
+  it('创建当日若触发点尚未早于创建分钟，仍展开该次', () => {
+    const created = new Date(2026, 7, 11, 8, 0)
+    const occurrences = expandOccurrences(
+      [
+        task({
+          id: 'daily',
+          title: '上午建',
+          createdAt: created.toISOString(),
+          updatedAt: created.toISOString(),
+          schedule: schedule({ time: '09:00' })
+        })
+      ],
+      new Date(2026, 7, 11, 0, 0),
+      new Date(2026, 7, 11, 23, 59)
+    )
+
+    expect(occurrences.map((o) => o.at)).toEqual([
+      new Date(2026, 7, 11, 9, 0).toISOString()
+    ])
   })
 })
 

@@ -1,4 +1,4 @@
-import type { ScheduleOccurrence, ScheduleTask } from '../../../../shared/ipc'
+import type { ScheduleOccurrence, ScheduleRun, ScheduleTask } from '../../../../shared/ipc'
 import { dayKey } from '../../lib/calendarOccurrences'
 import {
   WEEKDAY_LABELS_MON,
@@ -12,6 +12,7 @@ type Props = {
   month: number
   occurrencesByDay: Map<string, ScheduleOccurrence[]>
   tasksById: Map<string, ScheduleTask>
+  getRun?: (occ: ScheduleOccurrence) => ScheduleRun | null | undefined
   dragOverKey: string | null
   onSelectOccurrence: (occ: ScheduleOccurrence) => void
   onEmptyDay: (date: Date) => void
@@ -25,6 +26,7 @@ export function ScheduleMonthView({
   month,
   occurrencesByDay,
   tasksById,
+  getRun,
   dragOverKey,
   onSelectOccurrence,
   onEmptyDay,
@@ -69,7 +71,7 @@ export function ScheduleMonthView({
               <div className="sch-month-chips">
                 {dayOccs.map((occ) => {
                   const task = tasksById.get(occ.taskId)
-                  const status = occurrenceStatus(occ, task, now)
+                  const status = occurrenceStatus(occ, task, now, getRun?.(occ))
                   return (
                     <button
                       key={`${occ.taskId}-${occ.at}`}

@@ -77,11 +77,11 @@ describe('occurrenceStatus', () => {
     expect(occurrenceStatusLabel('paused')).toBe('已暂停')
   })
 
-  it('已过 → past', () => {
+  it('已过且无 run → missed（未执行）', () => {
     expect(
       occurrenceStatus({ at: '2026-09-01T01:00:00.000Z' }, { enabled: true }, now)
-    ).toBe('past')
-    expect(occurrenceStatusLabel('past')).toBe('已过期')
+    ).toBe('missed')
+    expect(occurrenceStatusLabel('missed')).toBe('未执行')
   })
 
   it('未来 → pending', () => {
@@ -89,6 +89,30 @@ describe('occurrenceStatus', () => {
       occurrenceStatus({ at: '2026-09-10T01:00:00.000Z' }, { enabled: true }, now)
     ).toBe('pending')
     expect(occurrenceStatusLabel('pending')).toBe('待执行')
+  })
+
+  it('有 run 时优先映射 run.status', () => {
+    const base = { at: '2026-09-01T01:00:00.000Z' }
+    const task = { enabled: true }
+    const runBase = {
+      id: 'r1',
+      taskId: 't1',
+      scheduledAt: base.at,
+      action: 'run_skill' as const,
+      startedAt: '2026-09-01T01:00:00.000Z'
+    }
+    expect(
+      occurrenceStatus(base, task, now, { ...runBase, status: 'succeeded' })
+    ).toBe('succeeded')
+    expect(occurrenceStatusLabel('succeeded')).toBe('执行成功')
+    expect(occurrenceStatus(base, task, now, { ...runBase, status: 'failed' })).toBe('failed')
+    expect(occurrenceStatusLabel('failed')).toBe('执行失败')
+    expect(occurrenceStatus(base, task, now, { ...runBase, status: 'running' })).toBe('running')
+    expect(occurrenceStatusLabel('running')).toBe('执行中')
+    expect(
+      occurrenceStatus(base, task, now, { ...runBase, status: 'waiting_confirm' })
+    ).toBe('waiting_confirm')
+    expect(occurrenceStatusLabel('waiting_confirm')).toBe('等待确认')
   })
 })
 

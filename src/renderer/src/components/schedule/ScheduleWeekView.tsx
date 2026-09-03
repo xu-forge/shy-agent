@@ -1,4 +1,4 @@
-import type { ScheduleOccurrence, ScheduleTask } from '../../../../shared/ipc'
+import type { ScheduleOccurrence, ScheduleRun, ScheduleTask } from '../../../../shared/ipc'
 import { dayKey } from '../../lib/calendarOccurrences'
 import {
   WEEKDAY_LABELS_MON,
@@ -12,6 +12,7 @@ type Props = {
   weekAnchor: Date
   occurrencesByDay: Map<string, ScheduleOccurrence[]>
   tasksById: Map<string, ScheduleTask>
+  getRun?: (occ: ScheduleOccurrence) => ScheduleRun | null | undefined
   onSelectOccurrence: (occ: ScheduleOccurrence) => void
   onEmptyDay: (date: Date) => void
 }
@@ -20,6 +21,7 @@ export function ScheduleWeekView({
   weekAnchor,
   occurrencesByDay,
   tasksById,
+  getRun,
   onSelectOccurrence,
   onEmptyDay
 }: Props): React.JSX.Element {
@@ -54,7 +56,7 @@ export function ScheduleWeekView({
             >
               {occs.map((occ) => {
                 const task = tasksById.get(occ.taskId)
-                const status = occurrenceStatus(occ, task, now)
+                const status = occurrenceStatus(occ, task, now, getRun?.(occ))
                 return (
                   <button
                     key={`${occ.taskId}-${occ.at}`}

@@ -28,6 +28,9 @@ const task: ScheduleTask = {
     minute: 0,
     cron: '0 9 * * *'
   },
+  agentMode: 'goal',
+  allowAutoConfirm: false,
+  projectId: null,
   createdAt: '2026-08-11T00:00:00.000Z',
   updatedAt: '2026-08-11T00:00:00.000Z'
 }
@@ -49,7 +52,9 @@ describe('schedule task IPC', () => {
       createTask,
       updateTask,
       deleteTask: vi.fn(() => true),
-      expand
+      expand,
+      getRunByTaskAt: vi.fn(() => null),
+      listRunsInRange: vi.fn(() => [])
     })
 
     expect([...handlers.keys()]).toEqual(
@@ -59,7 +64,9 @@ describe('schedule task IPC', () => {
         IPC.scheduleTasksCreate,
         IPC.scheduleTasksUpdate,
         IPC.scheduleTasksDelete,
-        IPC.scheduleTasksExpand
+        IPC.scheduleTasksExpand,
+        IPC.scheduleRunsGet,
+        IPC.scheduleRunsList
       ])
     )
 

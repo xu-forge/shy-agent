@@ -1,9 +1,20 @@
-import type { WorkflowSchedule } from '../../../shared/ipc'
+import { useEffect, useState } from 'react'
+import type { Project, ScheduleAgentMode, WorkflowSchedule } from '../../../shared/ipc'
 import { Field, NumberInput, Select, Switch, TimePicker } from './ui'
 
 type Props = {
   schedule: WorkflowSchedule
   onChange: (s: WorkflowSchedule) => void
+  agentMode: ScheduleAgentMode
+  allowAutoConfirm: boolean
+  projectId: string | null
+  onPolicyChange: (patch: {
+    agentMode?: ScheduleAgentMode
+    allowAutoConfirm?: boolean
+    projectId?: string | null
+  }) => void
+  /** 可选；不传则编辑器内自行 listProjects */
+  projects?: Project[]
 }
 
 const WEEKDAYS = [
@@ -24,7 +35,34 @@ const FREQUENCY_OPTIONS = [
   { value: 'monthly', label: '每月（选日）' }
 ]
 
-export function ScheduleEditor({ schedule, onChange }: Props): React.JSX.Element {
+const AGENT_MODE_OPTIONS = [
+  { value: 'goal', label: '目标模式' },
+  { value: 'normal', label: '普通模式' }
+]
+
+export function ScheduleEditor({
+  schedule,
+  onChange,
+  agentMode,
+  allowAutoConfirm,
+  projectId,
+  onPolicyChange,
+  projects: projectsProp
+}: Props): React.JSX.Element {
+  const [projectsLocal, setProjectsLocal] = useState<Project[]>([])
+  const projects = projectsProp ?? projectsLocal
+
+  useEffect(() => {
+    if (projectsProp) return
+    let alive = true
+    void window.shy.listProjects().then((list) => {
+      if (alive) setProjectsLocal(list)
+    })
+    return () => {
+      alive = false
+    }
+  }, [projectsProp])
+
   const set = (patch: Partial<WorkflowSchedule>): void => {
     onChange({ ...schedule, ...patch })
   }
@@ -40,6 +78,11 @@ export function ScheduleEditor({ schedule, onChange }: Props): React.JSX.Element
     schedule.frequency === 'weekdays' ||
     schedule.frequency === 'weekly' ||
     schedule.frequency === 'monthly'
+
+  const projectOptions = [
+    { value: '', label: '未选择项目' },
+    ...projects.map((p) => ({ value: p.id, label: p.name }))
+  ]
 
   return (
     <div className="schedule-editor ui-form-section">
@@ -124,6 +167,42 @@ export function ScheduleEditor({ schedule, onChange }: Props): React.JSX.Element
             </Field>
           </div>
         ) : null}
+      </div>
+
+      <div className="ui-form-section-title schedule-editor-policy-title">
+        执行策略
+      </div>
+      <div className="ui-form-grid">
+        <Field label="模式">
+          <Select
+            value={agentMode}
+            options={AGENT_MODE_OPTIONS}
+            onChange={(value) =>
+              onPolicyChange({ agentMode: value as ScheduleAgentMode })
+            }
+            ariaLabel="Agent 模式"
+          />
+        </Field>
+        <Field label="所属项目">
+          <Select
+            value={projectId ?? ''}
+            options={projectOptions}
+            onChange={(value) => onPolicyChange({ projectId: value || null })}
+            ariaLabel="所属项目"
+          />
+        </Field>
+        <div className="ui-field-full">
+          <Field
+            label="高危确认"
+            hint="关闭时，删除等操作仍会弹窗确认；开启后定时跑技能可自动通过确认闸门。"
+          >
+            <Switch
+              checked={allowAutoConfirm}
+              onChange={(checked) => onPolicyChange({ allowAutoConfirm: checked })}
+              label="允许自动确认高危"
+            />
+          </Field>
+        </div>
       </div>
     </div>
   )

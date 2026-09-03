@@ -45,6 +45,9 @@ import {
   type ProjectType,
   type ScheduleOccurrence,
   type ScheduleReminderEvent,
+  type ScheduleRun,
+  type ScheduleRunsGetInput,
+  type ScheduleRunsListInput,
   type ScheduleTask,
   type ScheduleTaskSaveResult,
   type ScheduleTasksExpandInput,
@@ -154,6 +157,10 @@ const shy = {
     ipcRenderer.invoke(IPC.scheduleTasksDelete, id),
   scheduleTasksExpand: (input: ScheduleTasksExpandInput): Promise<ScheduleOccurrence[]> =>
     ipcRenderer.invoke(IPC.scheduleTasksExpand, input),
+  scheduleRunsGet: (input: ScheduleRunsGetInput): Promise<ScheduleRun | null> =>
+    ipcRenderer.invoke(IPC.scheduleRunsGet, input),
+  scheduleRunsList: (input: ScheduleRunsListInput): Promise<ScheduleRun[]> =>
+    ipcRenderer.invoke(IPC.scheduleRunsList, input),
   listAgentLogs: (): Promise<AgentLogFileSummary[]> => ipcRenderer.invoke(IPC.logsAgentList),
   readAgentLog: (input: {
     name: string

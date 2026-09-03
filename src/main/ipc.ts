@@ -550,6 +550,10 @@ export function registerCoreIpc(): void {
     return { ok: true, started: true }
   })
 
-  // 调度器：每 30s 检查一次 calendar task
-  startScheduler((event) => mainWindow?.webContents.send(IPC.scheduleRemind, event))
+  // 调度器：每 30s 检查一次 calendar task；跑技能时复用确认闸门与 agent 事件通道
+  startScheduler(
+    (event) => mainWindow?.webContents.send(IPC.scheduleRemind, event),
+    waitConfirm,
+    (sessionId, event) => emitToRenderer({ sessionId, ...event })
+  )
 }

@@ -95,6 +95,46 @@ describe('schedule task store', () => {
     expect(store.deleteScheduleTask('missing')).toBe(false)
   })
 
+  it('创建任务默认 agentMode=goal、allowAutoConfirm=false、projectId=null', async () => {
+    const store = await import('./store')
+    const created = store.createScheduleTask({
+      title: '默认策略',
+      enabled: true,
+      action: 'remind',
+      payload: { message: 'x' },
+      schedule: dailySchedule
+    })
+    expect(created.agentMode).toBe('goal')
+    expect(created.allowAutoConfirm).toBe(false)
+    expect(created.projectId).toBeNull()
+    expect(store.getScheduleTask(created.id)).toMatchObject({
+      agentMode: 'goal',
+      allowAutoConfirm: false,
+      projectId: null
+    })
+  })
+
+  it('可更新 agentMode / allowAutoConfirm / projectId', async () => {
+    const store = await import('./store')
+    const created = store.createScheduleTask({
+      title: '策略',
+      enabled: true,
+      action: 'run_skill',
+      payload: { skillId: 's1' },
+      schedule: dailySchedule
+    })
+    const updated = store.updateScheduleTask(created.id, {
+      agentMode: 'normal',
+      allowAutoConfirm: true,
+      projectId: 'proj-1'
+    })
+    expect(updated).toMatchObject({
+      agentMode: 'normal',
+      allowAutoConfirm: true,
+      projectId: 'proj-1'
+    })
+  })
+
   it('重复建表保持幂等', async () => {
     const store = await import('./store')
 

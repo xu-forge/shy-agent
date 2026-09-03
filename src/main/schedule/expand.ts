@@ -15,15 +15,21 @@ export function expandOccurrences(
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs > endMs) return []
 
   // 展开层保留调用方传入的停用任务，月历可据此灰态展示；调度器负责过滤 enabled。
-  const compiledTasks = tasks.map((task) => ({
-    task,
-    cron: compileCron(task.schedule)
-  }))
+  // 创建时间之前的槽位不展示（重复任务不会「回溯」填满过去）。
+  const compiledTasks = tasks.map((task) => {
+    const createdMs = Date.parse(task.createdAt)
+    return {
+      task,
+      cron: compileCron(task.schedule),
+      earliestMs: Number.isFinite(createdMs) ? floorToMinute(createdMs) : null
+    }
+  })
   const occurrences: ScheduleOccurrence[] = []
 
   for (let atMs = startMs; atMs <= endMs; atMs += 60_000) {
     const at = new Date(atMs)
-    for (const { task, cron } of compiledTasks) {
+    for (const { task, cron, earliestMs } of compiledTasks) {
+      if (earliestMs != null && atMs < earliestMs) continue
       if (!cronMatches(cron, at)) continue
       occurrences.push({
         taskId: task.id,

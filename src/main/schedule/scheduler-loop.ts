@@ -1,5 +1,6 @@
-import { checkCalendarTasks, setScheduleEventSink, type ScheduleEventSink } from './runner'
+import { checkCalendarTasks, setScheduleAgentEmit, setScheduleConfirmWaiter, setScheduleEventSink, type ScheduleEventSink } from './runner'
 import { listScheduleTasks } from './store'
+import type { ScheduleAgentEmit, ScheduleWaitConfirm } from './runner'
 
 const TICK_INTERVAL_MS = 30_000
 
@@ -7,17 +8,20 @@ let timer: NodeJS.Timeout | null = null
 
 /**
  * 启动一个轻量循环，每 30s 调用一次 checkCalendarTasks。
- * workflow 砍掉后不再做工作流调度——只剩 calendar task 检查。
  */
-export function startScheduler(emitSchedule?: ScheduleEventSink): void {
+export function startScheduler(
+  emitSchedule?: ScheduleEventSink,
+  waitConfirm?: ScheduleWaitConfirm,
+  emitAgent?: ScheduleAgentEmit
+): void {
   setScheduleEventSink(emitSchedule ?? null)
+  setScheduleConfirmWaiter(waitConfirm ?? null)
+  setScheduleAgentEmit(emitAgent ?? null)
   if (timer) return
-  // 启动时立即跑一次；后续每 30s 一次。
   void runTick()
   timer = setInterval(() => {
     void runTick()
   }, TICK_INTERVAL_MS)
-  // 防止 Node 退出时悬挂 timer。
   if (typeof timer === 'object' && timer !== null && 'unref' in timer) {
     ;(timer as { unref: () => void }).unref()
   }
@@ -29,11 +33,12 @@ export function stopScheduler(): void {
     timer = null
   }
   setScheduleEventSink(null)
+  setScheduleConfirmWaiter(null)
+  setScheduleAgentEmit(null)
 }
 
 async function runTick(): Promise<void> {
   try {
-    // 触发一次列表读取确保 store 已初始化，并喂给 runner。
     void listScheduleTasks()
     await checkCalendarTasks()
   } catch (error: unknown) {

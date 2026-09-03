@@ -4,11 +4,17 @@ import {
   type CreateScheduleTaskInput,
   type ScheduleConflictWarning,
   type ScheduleOccurrence,
+  type ScheduleRunsGetInput,
+  type ScheduleRunsListInput,
   type ScheduleTask,
   type ScheduleTasksExpandInput,
   type UpdateScheduleTaskInput
 } from '../../shared/ipc'
 import { detectWorkflowScheduleConflicts, expandOccurrences } from './expand'
+import {
+  getScheduleRunByTaskAt,
+  listScheduleRunsInRange
+} from './runs-store'
 import {
   createScheduleTask,
   deleteScheduleTask,
@@ -24,6 +30,8 @@ export type ScheduleIpcDependencies = {
   updateTask: (id: string, patch: UpdateScheduleTaskInput) => ScheduleTask | null
   deleteTask: (id: string) => boolean
   expand: (tasks: ScheduleTask[], rangeStart: Date, rangeEnd: Date) => ScheduleOccurrence[]
+  getRunByTaskAt: typeof getScheduleRunByTaskAt
+  listRunsInRange: typeof listScheduleRunsInRange
 }
 
 const defaultDependencies: ScheduleIpcDependencies = {
@@ -32,7 +40,9 @@ const defaultDependencies: ScheduleIpcDependencies = {
   createTask: createScheduleTask,
   updateTask: updateScheduleTask,
   deleteTask: deleteScheduleTask,
-  expand: expandOccurrences
+  expand: expandOccurrences,
+  getRunByTaskAt: getScheduleRunByTaskAt,
+  listRunsInRange: listScheduleRunsInRange
 }
 
 export function registerScheduleIpc(
@@ -71,5 +81,11 @@ export function registerScheduleIpc(
         new Date(input.rangeStart),
         new Date(input.rangeEnd)
       )
+  )
+  ipcMain.handle(IPC.scheduleRunsGet, async (_event, input: ScheduleRunsGetInput) =>
+    dependencies.getRunByTaskAt(input.taskId, input.scheduledAt)
+  )
+  ipcMain.handle(IPC.scheduleRunsList, async (_event, input: ScheduleRunsListInput) =>
+    dependencies.listRunsInRange(new Date(input.rangeStart), new Date(input.rangeEnd))
   )
 }
