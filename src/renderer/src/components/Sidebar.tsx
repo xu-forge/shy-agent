@@ -32,7 +32,7 @@ type Props = {
 const SUB_NAV: { key: NavKey; label: string; icon: React.JSX.Element }[] = [
   {
     key: 'calendar',
-    label: '已安排',
+    label: '定时任务',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="8.5" />

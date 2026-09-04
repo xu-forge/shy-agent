@@ -9288,7 +9288,7 @@
   appearance: none;
   width: 100%;
   text-align: left;
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid transparent;
   border-radius: 10px;
   background: #fff;
   padding: 10px;
@@ -9296,10 +9296,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  color: var(--text);
 }
 .sch-week-card:hover {
-  border-color: var(--border-strong, #cbd5e1);
   box-shadow: 0 2px 8px rgba(15, 20, 34, 0.06);
+  filter: brightness(0.98);
 }
 .sch-week-card-top {
   display: flex;
@@ -9310,11 +9311,11 @@
 .sch-week-card-time {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text);
+  color: inherit;
 }
 .sch-week-card-title {
   font-size: 13px;
-  color: var(--text);
+  color: inherit;
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -9326,32 +9327,52 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
+  color: inherit;
+  opacity: 0.92;
 }
-.sch-week-card-status.status-pending,
-.sch-detail-status-pill.status-pending {
-  color: #ea580c;
-}
-.sch-week-card-status.status-paused,
-.sch-detail-status-pill.status-paused {
-  color: var(--text-muted);
-}
-.sch-week-card-status.status-missed,
+
+/* 状态语义色：周卡片 / 月 chip / 详情 pill */
+.sch-week-card.status-pending,
+.sch-month-chip.status-pending,
+.sch-detail-status-pill.status-pending,
+.sch-week-card.status-missed,
+.sch-month-chip.status-missed,
 .sch-detail-status-pill.status-missed {
-  color: var(--text-secondary);
+  background: #f1f5f9;
+  color: #64748b;
+  border-color: #cbd5e1;
 }
-.sch-week-card-status.status-running,
+.sch-week-card.status-running,
+.sch-month-chip.status-running,
 .sch-detail-status-pill.status-running,
-.sch-week-card-status.status-waiting_confirm,
+.sch-week-card.status-waiting_confirm,
+.sch-month-chip.status-waiting_confirm,
 .sch-detail-status-pill.status-waiting_confirm {
-  color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
 }
-.sch-week-card-status.status-succeeded,
+.sch-week-card.status-succeeded,
+.sch-month-chip.status-succeeded,
 .sch-detail-status-pill.status-succeeded {
-  color: #16a34a;
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #86efac;
 }
-.sch-week-card-status.status-failed,
+.sch-week-card.status-failed,
+.sch-month-chip.status-failed,
 .sch-detail-status-pill.status-failed {
-  color: #dc2626;
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+.sch-week-card.status-paused,
+.sch-month-chip.status-paused,
+.sch-detail-status-pill.status-paused {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  opacity: 0.85;
 }
 
 /* —— 月 —— */
@@ -9417,7 +9438,7 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 6px;
   padding: 4px 6px;
   background: #eef2f7;
@@ -9427,7 +9448,7 @@
   text-align: left;
 }
 .sch-month-chip:hover {
-  background: #e2e8f0;
+  filter: brightness(0.97);
 }
 .sch-month-chip.is-disabled {
   opacity: 0.55;
@@ -9435,13 +9456,15 @@
 .sch-month-chip-time {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
-  color: #475569;
+  color: inherit;
+  opacity: 0.9;
 }
 .sch-month-chip-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: inherit;
 }
 
 /* —— 详情 —— */
@@ -9457,6 +9480,10 @@
   gap: 6px;
   font-size: 13px;
   margin-bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  width: fit-content;
 }
 .sch-detail-meta {
   display: grid;
@@ -9558,13 +9585,49 @@
 
 [data-theme='dark'] .sch-week,
 [data-theme='dark'] .sch-month,
-[data-theme='dark'] .sch-week-card,
 [data-theme='dark'] .sch-month-cell {
   background: var(--bg-panel);
 }
-[data-theme='dark'] .sch-month-chip {
-  background: var(--bg-soft);
-  color: var(--text);
+[data-theme='dark'] .sch-week-card.status-pending,
+[data-theme='dark'] .sch-month-chip.status-pending,
+[data-theme='dark'] .sch-detail-status-pill.status-pending,
+[data-theme='dark'] .sch-week-card.status-missed,
+[data-theme='dark'] .sch-month-chip.status-missed,
+[data-theme='dark'] .sch-detail-status-pill.status-missed {
+  background: rgba(148, 163, 184, 0.16);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.28);
+}
+[data-theme='dark'] .sch-week-card.status-running,
+[data-theme='dark'] .sch-month-chip.status-running,
+[data-theme='dark'] .sch-detail-status-pill.status-running,
+[data-theme='dark'] .sch-week-card.status-waiting_confirm,
+[data-theme='dark'] .sch-month-chip.status-waiting_confirm,
+[data-theme='dark'] .sch-detail-status-pill.status-waiting_confirm {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.35);
+}
+[data-theme='dark'] .sch-week-card.status-succeeded,
+[data-theme='dark'] .sch-month-chip.status-succeeded,
+[data-theme='dark'] .sch-detail-status-pill.status-succeeded {
+  background: rgba(22, 163, 74, 0.18);
+  color: #86efac;
+  border-color: rgba(74, 222, 128, 0.35);
+}
+[data-theme='dark'] .sch-week-card.status-failed,
+[data-theme='dark'] .sch-month-chip.status-failed,
+[data-theme='dark'] .sch-detail-status-pill.status-failed {
+  background: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+[data-theme='dark'] .sch-week-card.status-paused,
+[data-theme='dark'] .sch-month-chip.status-paused,
+[data-theme='dark'] .sch-detail-status-pill.status-paused {
+  background: rgba(148, 163, 184, 0.1);
+  color: #64748b;
+  border-color: rgba(100, 116, 139, 0.25);
 }
 [data-theme='dark'] .sch-detail-body {
   background: var(--bg-soft);
